@@ -43,6 +43,8 @@ router = APIRouter()
 async def list_plans():
     """获取所有活跃套餐"""
     # 实现同前...
+    plans = Plans.list_active_plans()
+    return {"success": True, "plans": [plan.model_dump() for plan in plans]}
 
 
 @router.post("/plans", status_code=status.HTTP_201_CREATED, summary="创建新套餐")
@@ -50,7 +52,16 @@ async def create_plan(
     plan_data: PlanModel = Body(...), _: UserModel = Depends(get_admin_user)
 ):
     """创建新套餐（管理员权限）"""
-    # 实现同前...
+    try:
+        # 如果没有提供ID，生成一个
+        if not plan_data.id:
+            plan_data.id = str(uuid.uuid4())[:8]
+            
+        # 确保传入的是PlanModel实例
+        plan = Plans.create_plan(plan_data)
+        return {"success": True, "plan": plan.model_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put(
@@ -68,7 +79,9 @@ async def update_plan(
 ):
     """更新套餐信息"""
     try:
-        updated_plan = Plans.update_plan(plan_id, PlanModel(**plan_data))
+        # 创建PlanModel实例，确保类型正确
+        plan_model = PlanModel(**plan_data)
+        updated_plan = Plans.update_plan(plan_id, plan_model)
         return {
             "success": True,
             "data": updated_plan.model_dump(),
@@ -99,10 +112,19 @@ async def delete_plan(plan_id: str = Path(...), _: UserModel = Depends(get_admin
 
 @router.get("/users/{user_id}/subscription", summary="获取用户订阅详情")
 async def get_user_subscription(
-    user_id: str, user: UserModel = Depends(get_current_user)
+    user_id: str,
+    user: UserModel = Depends(get_current_user)
 ):
     """获取用户当前订阅状态"""
-    # 实现同前...
+    # 检查权限（只能查看自己的订阅或管理员可查看所有）
+    if user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权查看他人订阅信息"
+        )
+        
+    return Subscriptions.get_user_subscription(user_id)
+
 
 
 @router.post(
@@ -261,6 +283,7 @@ async def redeem_code(
 # ============== 支付记录接口 ==============
 
 
+# 删除这个重复的接口定义
 @router.get("/payments/{payment_id}", summary="获取支付记录详情")
 async def get_payment_detail(
     payment_id: str, user: UserModel = Depends(get_current_user)
@@ -289,7 +312,7 @@ async def get_payment_detail(
             detail=f"获取失败: {str(e)}",
         )
 
-
+# 保留这个更详细的接口定义
 @router.get(
     "/payments/{payment_id}",
     summary="获取支付记录详情",

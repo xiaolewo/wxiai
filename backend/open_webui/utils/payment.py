@@ -148,8 +148,8 @@ async def handle_payment_callback(callback_data: Dict[str, Any]) -> str:
             "id": subscription_id,
             "user_id": payment.user_id,
             "plan_id": payment.plan_id,
-            "start_time": now,
-            "end_time": now + (plan.duration * 86400),  # 转换天数为秒数
+            "start_date": now,  # 修改为 start_date
+            "end_date": now + (plan.duration * 86400),  # 修改为 end_date
             "status": "active",
         }
         Subscriptions.subscribe_user(subscription)
