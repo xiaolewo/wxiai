@@ -223,11 +223,11 @@ class GroupTable:
                 group = self.get_group_by_id(id)
                 if not group:
                     return None
-                
+
                 # 如果管理员不在组内，先添加到组内
                 if admin_id not in group.user_ids:
                     group.user_ids.append(admin_id)
-                
+
                 db.query(Group).filter_by(id=id).update(
                     {
                         "admin_id": admin_id,
@@ -240,7 +240,7 @@ class GroupTable:
         except Exception as e:
             log.exception(e)
             return None
-    
+
     def get_user_group(self, user_id: str) -> Optional[GroupModel]:
         """获取用户所在的权限组"""
         groups = self.get_groups_by_member_id(user_id)
@@ -255,7 +255,7 @@ class GroupTable:
             with get_db() as db:
                 # 获取用户所在的所有组
                 groups = self.get_groups_by_member_id(user_id)
-                
+
                 # 从其他组中移除用户
                 for group in groups:
                     if group.id != target_group_id and user_id in group.user_ids:
@@ -266,7 +266,7 @@ class GroupTable:
                                 "updated_at": int(time.time()),
                             }
                         )
-                
+
                 db.commit()
                 return True
         except Exception:

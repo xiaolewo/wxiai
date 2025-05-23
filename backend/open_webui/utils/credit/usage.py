@@ -180,22 +180,22 @@ class CreditDeduct:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         from open_webui.models.groups import Groups
-        
+
         # 获取用户所在的权限组
         group = Groups.get_user_group(self.user.id)
         user_id_to_deduct = self.user.id
         desc = f"updated by {self.__class__.__name__}"
-        
+
         # 如果用户在权限组中且该组有管理员，并且用户不是管理员
         if group and group.admin_id and group.admin_id != self.user.id:
             # 获取管理员的积分
             admin_credit = Credits.get_credit_by_user_id(group.admin_id)
-            
+
             # 如果管理员有足够的积分，则扣除管理员的积分
             if admin_credit and admin_credit.credit >= self.total_price:
                 user_id_to_deduct = group.admin_id
                 desc = f"{desc} (代用户 {self.user.id} 支付)"
-        
+
         # 扣除积分
         Credits.add_credit_by_user_id(
             form_data=AddCreditForm(

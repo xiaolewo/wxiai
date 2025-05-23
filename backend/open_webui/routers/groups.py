@@ -98,11 +98,11 @@ async def set_group_admin(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ERROR_MESSAGES.DEFAULT("Invalid admin user ID"),
             )
-        
+
         # 设置管理员并确保该用户只在这一个组内
         group = Groups.set_group_admin_by_id(id, form_data.admin_id)
         Groups.ensure_user_in_single_group(form_data.admin_id, id)
-        
+
         if group:
             return group
         else:
@@ -129,7 +129,7 @@ async def get_group_admin_credit(user=Depends(get_verified_user)):
     try:
         # 获取用户所在的权限组
         group = Groups.get_user_group(user.id)
-        
+
         # 如果用户不在任何组内或组内没有设置管理员
         if not group or not group.admin_id:
             # 返回用户自己的积分
@@ -142,12 +142,12 @@ async def get_group_admin_credit(user=Depends(get_verified_user)):
                 "group_id": None,
                 "group_name": None,
             }
-        
+
         # 获取管理员信息
         admin_user = Users.get_user_by_id(group.admin_id)
         admin_credit = Credits.get_credit_by_user_id(group.admin_id)
         user_credit = Credits.get_credit_by_user_id(user.id)
-        
+
         return {
             "user_credit": user_credit.credit if user_credit else 0,
             "admin_credit": admin_credit.credit if admin_credit else 0,
@@ -176,7 +176,7 @@ async def update_group_by_id(
     try:
         if form_data.user_ids:
             form_data.user_ids = Users.get_valid_user_ids(form_data.user_ids)
-            
+
             # 确保每个用户只在这一个组内
             for user_id in form_data.user_ids:
                 Groups.ensure_user_in_single_group(user_id, id)
