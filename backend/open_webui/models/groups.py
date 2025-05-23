@@ -36,6 +36,7 @@ class Group(Base):
 
     permissions = Column(JSON, nullable=True)
     user_ids = Column(JSON, nullable=True)
+    admin_id = Column(Text, nullable=True)  # spj新增管理员ID字段
 
     created_at = Column(BigInteger)
     updated_at = Column(BigInteger)
@@ -54,6 +55,7 @@ class GroupModel(BaseModel):
 
     permissions: Optional[dict] = None
     user_ids: list[str] = []
+    admin_id: Optional[str] = None  # 新增管理员ID字段
 
     created_at: int  # timestamp in epoch
     updated_at: int  # timestamp in epoch
@@ -73,6 +75,7 @@ class GroupResponse(BaseModel):
     data: Optional[dict] = None
     meta: Optional[dict] = None
     user_ids: list[str] = []
+    admin_id: Optional[str] = None  # 新增管理员ID字段
     created_at: int  # timestamp in epoch
     updated_at: int  # timestamp in epoch
 
@@ -85,6 +88,11 @@ class GroupForm(BaseModel):
 
 class GroupUpdateForm(GroupForm):
     user_ids: Optional[list[str]] = None
+    admin_id: Optional[str] = None  # 新增管理员ID字段
+
+
+class GroupAdminForm(BaseModel):
+    admin_id: str  # 设置管理员的表单
 
 
 class GroupTable:
@@ -206,6 +214,63 @@ class GroupTable:
                 return True
             except Exception:
                 return False
+
+    def set_group_admin_by_id(self, id: str, admin_id: str) -> Optional[GroupModel]:
+        """设置权限组管理员"""
+        try:
+            with get_db() as db:
+                # 确保管理员是组内成员
+                group = self.get_group_by_id(id)
+                if not group:
+                    return None
+                
+                # 如果管理员不在组内，先添加到组内
+                if admin_id not in group.user_ids:
+                    group.user_ids.append(admin_id)
+                
+                db.query(Group).filter_by(id=id).update(
+                    {
+                        "admin_id": admin_id,
+                        "user_ids": group.user_ids,
+                        "updated_at": int(time.time()),
+                    }
+                )
+                db.commit()
+                return self.get_group_by_id(id=id)
+        except Exception as e:
+            log.exception(e)
+            return None
+    
+    def get_user_group(self, user_id: str) -> Optional[GroupModel]:
+        """获取用户所在的权限组"""
+        groups = self.get_groups_by_member_id(user_id)
+        if groups:
+            # 用户应该只在一个组内，返回第一个找到的组
+            return groups[0]
+        return None
+
+    def ensure_user_in_single_group(self, user_id: str, target_group_id: str) -> bool:
+        """确保用户只在一个权限组内"""
+        try:
+            with get_db() as db:
+                # 获取用户所在的所有组
+                groups = self.get_groups_by_member_id(user_id)
+                
+                # 从其他组中移除用户
+                for group in groups:
+                    if group.id != target_group_id and user_id in group.user_ids:
+                        group.user_ids.remove(user_id)
+                        db.query(Group).filter_by(id=group.id).update(
+                            {
+                                "user_ids": group.user_ids,
+                                "updated_at": int(time.time()),
+                            }
+                        )
+                
+                db.commit()
+                return True
+        except Exception:
+            return False
 
 
 Groups = GroupTable()

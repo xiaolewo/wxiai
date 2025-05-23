@@ -179,9 +179,27 @@ class CreditDeduct:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        from open_webui.models.groups import Groups
+        
+        # 获取用户所在的权限组
+        group = Groups.get_user_group(self.user.id)
+        user_id_to_deduct = self.user.id
+        desc = f"updated by {self.__class__.__name__}"
+        
+        # 如果用户在权限组中且该组有管理员，并且用户不是管理员
+        if group and group.admin_id and group.admin_id != self.user.id:
+            # 获取管理员的积分
+            admin_credit = Credits.get_credit_by_user_id(group.admin_id)
+            
+            # 如果管理员有足够的积分，则扣除管理员的积分
+            if admin_credit and admin_credit.credit >= self.total_price:
+                user_id_to_deduct = group.admin_id
+                desc = f"{desc} (代用户 {self.user.id} 支付)"
+        
+        # 扣除积分
         Credits.add_credit_by_user_id(
             form_data=AddCreditForm(
-                user_id=self.user.id,
+                user_id=user_id_to_deduct,
                 amount=Decimal(-self.total_price),
                 detail=SetCreditFormDetail(
                     usage={
@@ -201,13 +219,14 @@ class CreditDeduct:
                         ),
                         "is_stream": self.is_stream,
                     },
-                    desc=f"updated by {self.__class__.__name__}",
+                    desc=desc,
                 ),
             )
         )
         logger.info(
-            "[credit_deduct] user: %s; tokens: %d %d; cost: %s",
+            "[credit_deduct] user: %s; actual_payer: %s; tokens: %d %d; cost: %s",
             self.user.id,
+            user_id_to_deduct,
             self.usage.prompt_tokens,
             self.usage.completion_tokens,
             self.total_price,
