@@ -481,7 +481,13 @@ async def lifespan(app: FastAPI):
 
     # 创建数据库表
     from open_webui.models.credits import Credit, CreditLog, TradeTicket
-    from open_webui.models.subscription import Plan, Subscription, RedeemCode, Payment, DailyCreditGrant
+    from open_webui.models.subscription import (
+        Plan,
+        Subscription,
+        RedeemCode,
+        Payment,
+        DailyCreditGrant,
+    )
     from open_webui.internal.db import Base, engine
 
     # 创建所有表
@@ -497,7 +503,7 @@ async def lifespan(app: FastAPI):
         limiter.total_tokens = THREAD_POOL_SIZE
 
     asyncio.create_task(periodic_usage_pool_cleanup())
-    
+
     # 启动任务调度器
     log.info("启动任务调度器...")
     start_task_scheduler()

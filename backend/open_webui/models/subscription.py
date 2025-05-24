@@ -59,12 +59,14 @@ class Subscription(Base):
 
 class DailyCreditGrant(Base):
     __tablename__ = "subscription_daily_credit_grants"
-    
+
     id = Column(String, primary_key=True)
     user_id = Column(String, nullable=False, index=True)
     subscription_id = Column(String, ForeignKey("subscription_subscriptions.id"))
     plan_id = Column(String, ForeignKey("subscription_plans.id"))
-    grant_date = Column(BigInteger, nullable=False, index=True)  # 发放日期（当天0点的时间戳）
+    grant_date = Column(
+        BigInteger, nullable=False, index=True
+    )  # 发放日期（当天0点的时间戳）
     credits_granted = Column(BigInteger, default=0)  # 发放的积分数量
     created_at = Column(BigInteger, default=lambda: int(time.time()))
 
@@ -297,9 +299,9 @@ class SubscriptionsTable:
                 sub = (
                     db.query(Subscription)
                     .filter(
-                        Subscription.user_id == user_id, 
+                        Subscription.user_id == user_id,
                         Subscription.status == "active",
-                        Subscription.end_date > int(time.time())
+                        Subscription.end_date > int(time.time()),
                     )
                     .first()
                 )
@@ -482,15 +484,15 @@ class SubscriptionsTable:
                     db.query(Subscription)
                     .filter(
                         Subscription.status == "active",
-                        Subscription.end_date > current_time
+                        Subscription.end_date > current_time,
                     )
                     .all()
                 )
-                
+
                 return [
-                    SubscriptionModel.model_validate({
-                        c.name: getattr(sub, c.name) for c in sub.__table__.columns
-                    })
+                    SubscriptionModel.model_validate(
+                        {c.name: getattr(sub, c.name) for c in sub.__table__.columns}
+                    )
                     for sub in subscriptions
                 ]
         except Exception:
@@ -516,7 +518,7 @@ class DailyCreditGrantsTable:
                     .filter(
                         DailyCreditGrant.user_id == user_id,
                         DailyCreditGrant.subscription_id == subscription_id,
-                        DailyCreditGrant.grant_date == today_timestamp
+                        DailyCreditGrant.grant_date == today_timestamp,
                     )
                     .first()
                 )
@@ -524,7 +526,9 @@ class DailyCreditGrantsTable:
         except Exception:
             return False
 
-    def grant_daily_credits(self, user_id: str, subscription_id: str, plan_id: str, credits_amount: int) -> Optional[DailyCreditGrantModel]:
+    def grant_daily_credits(
+        self, user_id: str, subscription_id: str, plan_id: str, credits_amount: int
+    ) -> Optional[DailyCreditGrantModel]:
         """发放每日积分"""
         try:
             # 检查今天是否已经发放过
@@ -532,7 +536,7 @@ class DailyCreditGrantsTable:
                 return None
 
             today_timestamp = self.get_today_timestamp()
-            
+
             with get_db() as db:
                 # 创建积分发放记录
                 grant_id = str(uuid.uuid4())
@@ -542,30 +546,38 @@ class DailyCreditGrantsTable:
                     subscription_id=subscription_id,
                     plan_id=plan_id,
                     grant_date=today_timestamp,
-                    credits_granted=credits_amount
+                    credits_granted=credits_amount,
                 )
                 db.add(grant)
-                
+
                 # 给用户添加积分
-                from open_webui.models.credits import Credits, AddCreditForm, SetCreditFormDetail
+                from open_webui.models.credits import (
+                    Credits,
+                    AddCreditForm,
+                    SetCreditFormDetail,
+                )
+
                 Credits.add_credit_by_user_id(
                     AddCreditForm(
                         user_id=user_id,
                         amount=Decimal(credits_amount),
                         detail=SetCreditFormDetail(
                             desc=f"每日套餐积分发放 - 套餐ID: {plan_id}",
-                            api_params={"subscription_id": subscription_id, "plan_id": plan_id},
-                            usage={"daily_grant": credits_amount}
-                        )
+                            api_params={
+                                "subscription_id": subscription_id,
+                                "plan_id": plan_id,
+                            },
+                            usage={"daily_grant": credits_amount},
+                        ),
                     )
                 )
-                
+
                 db.commit()
                 db.refresh(grant)
-                
-                return DailyCreditGrantModel.model_validate({
-                    c.name: getattr(grant, c.name) for c in grant.__table__.columns
-                })
+
+                return DailyCreditGrantModel.model_validate(
+                    {c.name: getattr(grant, c.name) for c in grant.__table__.columns}
+                )
         except Exception as e:
             print(f"发放每日积分失败: {str(e)}")
             return None
@@ -575,44 +587,46 @@ class DailyCreditGrantsTable:
         try:
             successful_grants = 0
             failed_grants = 0
-            
+
             # 获取所有活跃订阅
             active_subscriptions = Subscriptions.get_all_active_subscriptions()
-            
+
             for subscription in active_subscriptions:
                 # 获取套餐信息
                 plan = Plans.get_plan_by_id(subscription.plan_id)
                 if not plan or plan.credits <= 0:
                     continue
-                
+
                 # 尝试发放积分
                 grant = self.grant_daily_credits(
                     user_id=subscription.user_id,
                     subscription_id=subscription.id,
                     plan_id=subscription.plan_id,
-                    credits_amount=plan.credits
+                    credits_amount=plan.credits,
                 )
-                
+
                 if grant:
                     successful_grants += 1
                 else:
                     failed_grants += 1
-            
+
             return {
                 "success": True,
                 "total_subscriptions": len(active_subscriptions),
                 "successful_grants": successful_grants,
                 "failed_grants": failed_grants,
-                "message": f"处理完成: 成功发放 {successful_grants} 个用户的积分"
+                "message": f"处理完成: 成功发放 {successful_grants} 个用户的积分",
             }
         except Exception as e:
             return {
                 "success": False,
                 "error": str(e),
-                "message": "每日积分发放处理失败"
+                "message": "每日积分发放处理失败",
             }
 
-    def get_user_grant_history(self, user_id: str, page: int = 1, limit: int = 10) -> Dict[str, Any]:
+    def get_user_grant_history(
+        self, user_id: str, page: int = 1, limit: int = 10
+    ) -> Dict[str, Any]:
         """获取用户积分发放历史"""
         try:
             with get_db() as db:
@@ -621,7 +635,7 @@ class DailyCreditGrantsTable:
                     .filter(DailyCreditGrant.user_id == user_id)
                     .count()
                 )
-                
+
                 grants = (
                     db.query(DailyCreditGrant)
                     .filter(DailyCreditGrant.user_id == user_id)
@@ -630,18 +644,21 @@ class DailyCreditGrantsTable:
                     .limit(limit)
                     .all()
                 )
-                
+
                 return {
                     "success": True,
                     "total": total,
                     "page": page,
                     "limit": limit,
                     "grants": [
-                        DailyCreditGrantModel.model_validate({
-                            c.name: getattr(grant, c.name) for c in grant.__table__.columns
-                        }).model_dump()
+                        DailyCreditGrantModel.model_validate(
+                            {
+                                c.name: getattr(grant, c.name)
+                                for c in grant.__table__.columns
+                            }
+                        ).model_dump()
                         for grant in grants
-                    ]
+                    ],
                 }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))

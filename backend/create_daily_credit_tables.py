@@ -23,10 +23,14 @@ def check_table_exists(table_name):
     """检查表是否存在"""
     try:
         with engine.connect() as conn:
-            result = conn.execute(text(f"""
+            result = conn.execute(
+                text(
+                    f"""
                 SELECT name FROM sqlite_master 
                 WHERE type='table' AND name='{table_name}'
-            """))
+            """
+                )
+            )
             return result.fetchone() is not None
     except Exception:
         return False
@@ -36,41 +40,45 @@ def create_daily_credit_tables():
     """创建每日积分发放相关的数据库表"""
     print("🔧 每日积分发放功能 - 数据库迁移")
     print("=" * 50)
-    
+
     try:
         # 导入所有相关模型
         from open_webui.models.subscription import DailyCreditGrant
         from open_webui.models.credits import Credit, CreditLog, TradeTicket
-        
+
         # 检查表是否已存在
         table_name = "subscription_daily_credit_grants"
         if check_table_exists(table_name):
             print(f"✅ 表 '{table_name}' 已存在，跳过创建")
             return True
-        
+
         print(f"📝 创建表 '{table_name}'...")
-        
+
         # 显示当前所有表
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            result = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
             existing_tables = [row[0] for row in result.fetchall()]
             print(f"📋 当前数据库中的表: {existing_tables}")
-        
+
         # 创建所有表（只会创建不存在的表）
         print("🔨 开始创建表...")
         Base.metadata.create_all(bind=engine)
         print("🔨 表创建命令执行完成")
-        
+
         # 检查创建后的表
         with engine.connect() as conn:
-            result = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
+            result = conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
             all_tables = [row[0] for row in result.fetchall()]
             print(f"📋 创建后数据库中的表: {all_tables}")
-        
+
         # 验证表是否创建成功
         if check_table_exists(table_name):
             print(f"✅ 表 '{table_name}' 创建成功")
-            
+
             # 显示表结构
             with engine.connect() as conn:
                 result = conn.execute(text(f"PRAGMA table_info({table_name})"))
@@ -78,15 +86,17 @@ def create_daily_credit_tables():
                 print(f"\n📋 表结构:")
                 for col in columns:
                     print(f"  - {col[1]} ({col[2]})")
-            
+
             return True
         else:
             print(f"❌ 表 '{table_name}' 创建失败")
-            
+
             # 尝试手动创建表
             print("🔧 尝试手动创建表...")
             with engine.connect() as conn:
-                conn.execute(text("""
+                conn.execute(
+                    text(
+                        """
                     CREATE TABLE IF NOT EXISTS subscription_daily_credit_grants (
                         id VARCHAR PRIMARY KEY,
                         user_id VARCHAR NOT NULL,
@@ -98,17 +108,28 @@ def create_daily_credit_tables():
                         FOREIGN KEY(subscription_id) REFERENCES subscription_subscriptions (id),
                         FOREIGN KEY(plan_id) REFERENCES subscription_plans (id)
                     )
-                """))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscription_daily_credit_grants_user_id ON subscription_daily_credit_grants (user_id)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_subscription_daily_credit_grants_grant_date ON subscription_daily_credit_grants (grant_date)"))
+                """
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_subscription_daily_credit_grants_user_id ON subscription_daily_credit_grants (user_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_subscription_daily_credit_grants_grant_date ON subscription_daily_credit_grants (grant_date)"
+                    )
+                )
                 conn.commit()
                 print("✅ 手动创建表成功")
-            
+
             return check_table_exists(table_name)
-            
+
     except Exception as e:
         print(f"❌ 数据库迁移失败: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -116,20 +137,20 @@ def create_daily_credit_tables():
 def verify_integration():
     """验证功能集成"""
     print(f"\n🔍 验证功能集成...")
-    
+
     try:
         # 测试导入所有相关模块
         from open_webui.models.subscription import DailyCreditGrants
         from open_webui.utils.task_scheduler import TaskScheduler
-        
+
         print("✅ 所有功能模块导入成功")
-        
+
         # 测试基础功能
         today_timestamp = DailyCreditGrants.get_today_timestamp()
         print(f"✅ 今日时间戳获取成功: {today_timestamp}")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ 功能集成验证失败: {e}")
         return False
@@ -138,7 +159,7 @@ def verify_integration():
 def main():
     """主函数"""
     success = create_daily_credit_tables()
-    
+
     if success:
         verify_integration()
         print(f"\n🎉 每日积分发放功能数据库迁移完成！")
@@ -153,4 +174,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

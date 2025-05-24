@@ -199,9 +199,7 @@ async def cancel_subscription(
     summary="手动触发每日积分发放",
     description="管理员手动触发为所有活跃订阅用户发放每日积分",
 )
-async def process_daily_credits(
-    _: UserModel = Depends(get_admin_user)
-):
+async def process_daily_credits(_: UserModel = Depends(get_admin_user)):
     """手动触发每日积分发放（管理员权限）"""
     try:
         result = DailyCreditGrants.process_daily_grants_for_all_users()
@@ -220,7 +218,7 @@ async def process_daily_credits(
 )
 async def grant_daily_credits_to_user(
     user_id: str = Path(..., description="用户ID"),
-    _: UserModel = Depends(get_admin_user)
+    _: UserModel = Depends(get_admin_user),
 ):
     """手动为指定用户发放每日积分（管理员权限）"""
     try:
@@ -228,36 +226,34 @@ async def grant_daily_credits_to_user(
         subscription = Subscriptions.get_user_active_subscription(user_id)
         if not subscription:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, 
-                detail="用户没有活跃订阅"
+                status_code=status.HTTP_404_NOT_FOUND, detail="用户没有活跃订阅"
             )
-        
+
         # 获取套餐信息
         plan = Plans.get_plan_by_id(subscription.plan_id)
         if not plan or plan.credits <= 0:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="套餐不存在或不包含积分"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="套餐不存在或不包含积分"
             )
-        
+
         # 发放积分
         grant = DailyCreditGrants.grant_daily_credits(
             user_id=user_id,
             subscription_id=subscription.id,
             plan_id=subscription.plan_id,
-            credits_amount=plan.credits
+            credits_amount=plan.credits,
         )
-        
+
         if not grant:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="今日已发放过积分或发放失败"
+                detail="今日已发放过积分或发放失败",
             )
-        
+
         return {
             "success": True,
             "data": grant.model_dump(),
-            "message": f"成功为用户 {user_id} 发放 {plan.credits} 积分"
+            "message": f"成功为用户 {user_id} 发放 {plan.credits} 积分",
         }
     except HTTPException:
         raise
@@ -277,16 +273,15 @@ async def get_user_credit_grant_history(
     user_id: str = Path(..., description="用户ID"),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
-    user: UserModel = Depends(get_current_user)
+    user: UserModel = Depends(get_current_user),
 ):
     """获取用户积分发放历史"""
     # 检查权限（只能查看自己的历史或管理员可查看所有）
     if user_id != user.id and user.role != "admin":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="无权查看他人积分发放历史"
+            status_code=status.HTTP_403_FORBIDDEN, detail="无权查看他人积分发放历史"
         )
-    
+
     try:
         return DailyCreditGrants.get_user_grant_history(user_id, page, limit)
     except Exception as e:
@@ -303,16 +298,15 @@ async def get_user_credit_grant_history(
 )
 async def check_daily_credit_status(
     user_id: str = Path(..., description="用户ID"),
-    user: UserModel = Depends(get_current_user)
+    user: UserModel = Depends(get_current_user),
 ):
     """检查用户今日积分发放状态"""
     # 检查权限
     if user_id != user.id and user.role != "admin":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="无权查看他人积分状态"
+            status_code=status.HTTP_403_FORBIDDEN, detail="无权查看他人积分状态"
         )
-    
+
     try:
         # 获取用户当前活跃订阅
         subscription = Subscriptions.get_user_active_subscription(user_id)
@@ -321,15 +315,15 @@ async def check_daily_credit_status(
                 "success": True,
                 "has_active_subscription": False,
                 "granted_today": False,
-                "message": "用户没有活跃订阅"
+                "message": "用户没有活跃订阅",
             }
-        
+
         # 检查今日是否已发放
         granted_today = DailyCreditGrants.has_granted_today(user_id, subscription.id)
-        
+
         # 获取套餐信息
         plan = Plans.get_plan_by_id(subscription.plan_id)
-        
+
         return {
             "success": True,
             "has_active_subscription": True,
@@ -338,7 +332,7 @@ async def check_daily_credit_status(
             "plan_id": subscription.plan_id,
             "plan_name": plan.name if plan else None,
             "daily_credits": plan.credits if plan else 0,
-            "subscription_end_date": subscription.end_date
+            "subscription_end_date": subscription.end_date,
         }
     except Exception as e:
         raise HTTPException(
