@@ -57,6 +57,20 @@ class Subscription(Base):
     )
 
 
+class DailyCreditGrant(Base):
+    __tablename__ = "subscription_daily_credit_grants"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    subscription_id = Column(String, ForeignKey("subscription_subscriptions.id"))
+    plan_id = Column(String, ForeignKey("subscription_plans.id"))
+    grant_date = Column(
+        BigInteger, nullable=False, index=True
+    )  # 发放日期（当天0点的时间戳）
+    credits_granted = Column(BigInteger, default=0)  # 发放的积分数量
+    created_at = Column(BigInteger, default=lambda: int(time.time()))
+
+
 class RedeemCode(Base):
     __tablename__ = "subscription_redeem_codes"
 
@@ -98,7 +112,7 @@ class Payment(Base):
 
 
 class PlanModel(BaseModel):
-    id: str
+    id: Optional[str] = None  # 将id设为可选字段
     name: str
     description: str
     price: float
@@ -120,6 +134,17 @@ class SubscriptionModel(BaseModel):
     end_date: int
     created_at: int = Field(default_factory=lambda: int(time.time()))
     updated_at: int = Field(default_factory=lambda: int(time.time()))
+
+
+class DailyCreditGrantModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
+    user_id: str
+    subscription_id: str
+    plan_id: str
+    grant_date: int
+    credits_granted: int
+    created_at: int = Field(default_factory=lambda: int(time.time()))
 
 
 class RedeemCodeModel(BaseModel):
@@ -274,7 +299,9 @@ class SubscriptionsTable:
                 sub = (
                     db.query(Subscription)
                     .filter(
-                        Subscription.user_id == user_id, Subscription.status == "active"
+                        Subscription.user_id == user_id,
+                        Subscription.status == "active",
+                        Subscription.end_date > int(time.time()),
                     )
                     .first()
                 )
@@ -448,8 +475,196 @@ class SubscriptionsTable:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    def get_all_active_subscriptions(self) -> List[SubscriptionModel]:
+        """获取所有活跃订阅"""
+        try:
+            with get_db() as db:
+                current_time = int(time.time())
+                subscriptions = (
+                    db.query(Subscription)
+                    .filter(
+                        Subscription.status == "active",
+                        Subscription.end_date > current_time,
+                    )
+                    .all()
+                )
+
+                return [
+                    SubscriptionModel.model_validate(
+                        {c.name: getattr(sub, c.name) for c in sub.__table__.columns}
+                    )
+                    for sub in subscriptions
+                ]
+        except Exception:
+            return []
+
 
 Subscriptions = SubscriptionsTable()
+
+
+class DailyCreditGrantsTable:
+    def get_today_timestamp(self) -> int:
+        """获取今天0点的时间戳"""
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return int(today.timestamp())
+
+    def has_granted_today(self, user_id: str, subscription_id: str) -> bool:
+        """检查今天是否已经发放过积分"""
+        try:
+            today_timestamp = self.get_today_timestamp()
+            with get_db() as db:
+                grant = (
+                    db.query(DailyCreditGrant)
+                    .filter(
+                        DailyCreditGrant.user_id == user_id,
+                        DailyCreditGrant.subscription_id == subscription_id,
+                        DailyCreditGrant.grant_date == today_timestamp,
+                    )
+                    .first()
+                )
+                return grant is not None
+        except Exception:
+            return False
+
+    def grant_daily_credits(
+        self, user_id: str, subscription_id: str, plan_id: str, credits_amount: int
+    ) -> Optional[DailyCreditGrantModel]:
+        """发放每日积分"""
+        try:
+            # 检查今天是否已经发放过
+            if self.has_granted_today(user_id, subscription_id):
+                return None
+
+            today_timestamp = self.get_today_timestamp()
+
+            with get_db() as db:
+                # 创建积分发放记录
+                grant_id = str(uuid.uuid4())
+                grant = DailyCreditGrant(
+                    id=grant_id,
+                    user_id=user_id,
+                    subscription_id=subscription_id,
+                    plan_id=plan_id,
+                    grant_date=today_timestamp,
+                    credits_granted=credits_amount,
+                )
+                db.add(grant)
+
+                # 给用户添加积分
+                from open_webui.models.credits import (
+                    Credits,
+                    AddCreditForm,
+                    SetCreditFormDetail,
+                )
+
+                Credits.add_credit_by_user_id(
+                    AddCreditForm(
+                        user_id=user_id,
+                        amount=Decimal(credits_amount),
+                        detail=SetCreditFormDetail(
+                            desc=f"每日套餐积分发放 - 套餐ID: {plan_id}",
+                            api_params={
+                                "subscription_id": subscription_id,
+                                "plan_id": plan_id,
+                            },
+                            usage={"daily_grant": credits_amount},
+                        ),
+                    )
+                )
+
+                db.commit()
+                db.refresh(grant)
+
+                return DailyCreditGrantModel.model_validate(
+                    {c.name: getattr(grant, c.name) for c in grant.__table__.columns}
+                )
+        except Exception as e:
+            print(f"发放每日积分失败: {str(e)}")
+            return None
+
+    def process_daily_grants_for_all_users(self) -> Dict[str, Any]:
+        """为所有活跃订阅用户发放每日积分"""
+        try:
+            successful_grants = 0
+            failed_grants = 0
+
+            # 获取所有活跃订阅
+            active_subscriptions = Subscriptions.get_all_active_subscriptions()
+
+            for subscription in active_subscriptions:
+                # 获取套餐信息
+                plan = Plans.get_plan_by_id(subscription.plan_id)
+                if not plan or plan.credits <= 0:
+                    continue
+
+                # 尝试发放积分
+                grant = self.grant_daily_credits(
+                    user_id=subscription.user_id,
+                    subscription_id=subscription.id,
+                    plan_id=subscription.plan_id,
+                    credits_amount=plan.credits,
+                )
+
+                if grant:
+                    successful_grants += 1
+                else:
+                    failed_grants += 1
+
+            return {
+                "success": True,
+                "total_subscriptions": len(active_subscriptions),
+                "successful_grants": successful_grants,
+                "failed_grants": failed_grants,
+                "message": f"处理完成: 成功发放 {successful_grants} 个用户的积分",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "每日积分发放处理失败",
+            }
+
+    def get_user_grant_history(
+        self, user_id: str, page: int = 1, limit: int = 10
+    ) -> Dict[str, Any]:
+        """获取用户积分发放历史"""
+        try:
+            with get_db() as db:
+                total = (
+                    db.query(DailyCreditGrant)
+                    .filter(DailyCreditGrant.user_id == user_id)
+                    .count()
+                )
+
+                grants = (
+                    db.query(DailyCreditGrant)
+                    .filter(DailyCreditGrant.user_id == user_id)
+                    .order_by(DailyCreditGrant.grant_date.desc())
+                    .offset((page - 1) * limit)
+                    .limit(limit)
+                    .all()
+                )
+
+                return {
+                    "success": True,
+                    "total": total,
+                    "page": page,
+                    "limit": limit,
+                    "grants": [
+                        DailyCreditGrantModel.model_validate(
+                            {
+                                c.name: getattr(grant, c.name)
+                                for c in grant.__table__.columns
+                            }
+                        ).model_dump()
+                        for grant in grants
+                    ],
+                }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+DailyCreditGrants = DailyCreditGrantsTable()
 
 
 class RedeemCodesTable:
@@ -515,74 +730,6 @@ class RedeemCodesTable:
 
                 db.commit()
                 return SubscriptionModel.model_validate(subscription)
-        except Exception:
-            return None
-
-
-RedeemCodes = RedeemCodesTable()
-
-
-class PaymentsTable:
-    def create_payment(self, payment_data: Dict[str, Any]) -> Optional[PaymentModel]:
-        """创建支付记录"""
-        try:
-            with get_db() as db:
-                # 确保有ID
-                if "id" not in payment_data:
-                    payment_data["id"] = str(uuid.uuid4())
-
-                # 创建支付记录
-                payment = Payment(**payment_data)
-                db.add(payment)
-                db.commit()
-                db.refresh(payment)
-                return PaymentModel.model_validate(payment)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    def update_payment(
-        self, payment_id: str, payment_data: PaymentModel
-    ) -> Optional[PaymentModel]:
-        """更新支付记录"""
-        try:
-            with get_db() as db:
-                # 更新支付记录
-                db.query(Payment).filter(Payment.id == payment_id).update(
-                    payment_data.model_dump(exclude_unset=True),
-                    synchronize_session=False,
-                )
-                db.commit()
-                # 返回更新后的记录
-                payment = db.query(Payment).filter(Payment.id == payment_id).first()
-                return PaymentModel.model_validate(payment) if payment else None
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    def get_payment(self, payment_id: str) -> Optional[PaymentModel]:
-        """获取支付记录"""
-        try:
-            with get_db() as db:
-                payment = db.query(Payment).filter(Payment.id == payment_id).first()
-                return PaymentModel.model_validate(payment) if payment else None
-        except Exception:
-            return None
-
-    def update_payment_status(
-        self, payment_id: str, status: str, transaction_id: Optional[str] = None
-    ) -> Optional[PaymentModel]:
-        try:
-            update_data = {"status": status, "updated_at": int(time.time())}
-            if status == "completed":
-                update_data["completed_at"] = int(time.time())
-            if transaction_id:
-                update_data["transaction_id"] = transaction_id
-
-            with get_db() as db:
-                db.query(Payment).filter(Payment.id == payment_id).update(
-                    update_data, synchronize_session=False
-                )
-                db.commit()
-                return self.get_payment_by_id(payment_id)
         except Exception:
             return None
 
@@ -685,12 +832,12 @@ RedeemCodes = RedeemCodesTable()
 
 
 class PaymentsTable:
-    def create_payment(self, payment_data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_payment_order(self, payment_data: Dict[str, Any]) -> Dict[str, Any]:
         """创建支付订单"""
         try:
-            user_id = data.get("user_id")
-            plan_id = data.get("plan_id")
-            payment_method = data.get("payment_method", "lantupay")
+            user_id = payment_data.get("user_id")
+            plan_id = payment_data.get("plan_id")
+            payment_method = payment_data.get("payment_method", "lantupay")
 
             if not user_id or not plan_id:
                 raise HTTPException(status_code=400, detail="用户ID和套餐ID不能为空")
@@ -728,6 +875,69 @@ class PaymentsTable:
                 }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+    def create_payment(self, payment_data: Dict[str, Any]) -> Optional[PaymentModel]:
+        """创建支付记录"""
+        try:
+            with get_db() as db:
+                # 确保有ID
+                if "id" not in payment_data:
+                    payment_data["id"] = str(uuid.uuid4())
+
+                # 创建支付记录
+                payment = Payment(**payment_data)
+                db.add(payment)
+                db.commit()
+                db.refresh(payment)
+                return PaymentModel.model_validate(payment)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    def update_payment(
+        self, payment_id: str, payment_data: PaymentModel
+    ) -> Optional[PaymentModel]:
+        """更新支付记录"""
+        try:
+            with get_db() as db:
+                # 更新支付记录
+                db.query(Payment).filter(Payment.id == payment_id).update(
+                    payment_data.model_dump(exclude_unset=True),
+                    synchronize_session=False,
+                )
+                db.commit()
+                # 返回更新后的记录
+                payment = db.query(Payment).filter(Payment.id == payment_id).first()
+                return PaymentModel.model_validate(payment) if payment else None
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    def get_payment(self, payment_id: str) -> Optional[PaymentModel]:
+        """获取支付记录"""
+        try:
+            with get_db() as db:
+                payment = db.query(Payment).filter(Payment.id == payment_id).first()
+                return PaymentModel.model_validate(payment) if payment else None
+        except Exception:
+            return None
+
+    def update_payment_status(
+        self, payment_id: str, status: str, transaction_id: Optional[str] = None
+    ) -> Optional[PaymentModel]:
+        try:
+            update_data = {"status": status, "updated_at": int(time.time())}
+            if status == "completed":
+                update_data["completed_at"] = int(time.time())
+            if transaction_id:
+                update_data["transaction_id"] = transaction_id
+
+            with get_db() as db:
+                db.query(Payment).filter(Payment.id == payment_id).update(
+                    update_data, synchronize_session=False
+                )
+                db.commit()
+                return self.get_payment(payment_id)
+        except Exception:
+            return None
 
     def payment_callback(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """支付回调处理"""
@@ -840,7 +1050,7 @@ class PaymentsTable:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    def get_payment(self, payment_id: str) -> Dict[str, Any]:
+    def get_payment_detail(self, payment_id: str) -> Dict[str, Any]:
         """获取支付记录详情"""
         try:
             with get_db() as db:
