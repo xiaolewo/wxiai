@@ -42,6 +42,7 @@ from open_webui.models.subscription import (
     Subscriptions,
     RedeemCodes,
     Payments,
+    DailyCreditGrants,
     PlanModel,
     SubscriptionModel,
     RedeemCodeModel,
@@ -51,6 +52,7 @@ from open_webui.utils import logger
 from open_webui.utils.audit import AuditLevel, AuditLoggingMiddleware
 from open_webui.utils.credit.utils import is_free_request, check_credit_by_user_id
 from open_webui.utils.logger import start_logger
+from open_webui.utils.task_scheduler import start_task_scheduler, stop_task_scheduler
 from open_webui.socket.main import (
     app as socket_app,
     periodic_usage_pool_cleanup,
@@ -479,7 +481,7 @@ async def lifespan(app: FastAPI):
 
     # 创建数据库表
     from open_webui.models.credits import Credit, CreditLog, TradeTicket
-    from open_webui.models.subscription import Plan, Subscription, RedeemCode, Payment
+    from open_webui.models.subscription import Plan, Subscription, RedeemCode, Payment, DailyCreditGrant
     from open_webui.internal.db import Base, engine
 
     # 创建所有表
@@ -495,8 +497,16 @@ async def lifespan(app: FastAPI):
         limiter.total_tokens = THREAD_POOL_SIZE
 
     asyncio.create_task(periodic_usage_pool_cleanup())
+    
+    # 启动任务调度器
+    log.info("启动任务调度器...")
+    start_task_scheduler()
 
     yield
+
+    # 关闭任务调度器
+    log.info("停止任务调度器...")
+    stop_task_scheduler()
 
 
 app = FastAPI(

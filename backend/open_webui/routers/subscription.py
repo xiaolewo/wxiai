@@ -20,10 +20,12 @@ from open_webui.models.subscription import (
     Subscriptions,
     RedeemCodes,
     Payments,
+    DailyCreditGrants,
     PlanModel,
     SubscriptionModel,
     RedeemCodeModel,
     PaymentModel,
+    DailyCreditGrantModel,
 )
 from open_webui.models.users import UserModel
 from open_webui.utils.auth import get_current_user, get_admin_user
@@ -189,6 +191,162 @@ async def cancel_subscription(
         )
 
 
+# ============== 每日积分发放接口 ==============
+
+
+@router.post(
+    "/daily-credits/process",
+    summary="手动触发每日积分发放",
+    description="管理员手动触发为所有活跃订阅用户发放每日积分",
+)
+async def process_daily_credits(
+    _: UserModel = Depends(get_admin_user)
+):
+    """手动触发每日积分发放（管理员权限）"""
+    try:
+        result = DailyCreditGrants.process_daily_grants_for_all_users()
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"处理失败: {str(e)}",
+        )
+
+
+@router.post(
+    "/daily-credits/grant/{user_id}",
+    summary="手动为指定用户发放每日积分",
+    description="管理员手动为指定用户发放当日套餐积分",
+)
+async def grant_daily_credits_to_user(
+    user_id: str = Path(..., description="用户ID"),
+    _: UserModel = Depends(get_admin_user)
+):
+    """手动为指定用户发放每日积分（管理员权限）"""
+    try:
+        # 获取用户当前活跃订阅
+        subscription = Subscriptions.get_user_active_subscription(user_id)
+        if not subscription:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="用户没有活跃订阅"
+            )
+        
+        # 获取套餐信息
+        plan = Plans.get_plan_by_id(subscription.plan_id)
+        if not plan or plan.credits <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="套餐不存在或不包含积分"
+            )
+        
+        # 发放积分
+        grant = DailyCreditGrants.grant_daily_credits(
+            user_id=user_id,
+            subscription_id=subscription.id,
+            plan_id=subscription.plan_id,
+            credits_amount=plan.credits
+        )
+        
+        if not grant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="今日已发放过积分或发放失败"
+            )
+        
+        return {
+            "success": True,
+            "data": grant.model_dump(),
+            "message": f"成功为用户 {user_id} 发放 {plan.credits} 积分"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"发放失败: {str(e)}",
+        )
+
+
+@router.get(
+    "/daily-credits/history/{user_id}",
+    summary="获取用户积分发放历史",
+    description="获取指定用户的每日积分发放历史记录",
+)
+async def get_user_credit_grant_history(
+    user_id: str = Path(..., description="用户ID"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
+    user: UserModel = Depends(get_current_user)
+):
+    """获取用户积分发放历史"""
+    # 检查权限（只能查看自己的历史或管理员可查看所有）
+    if user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="无权查看他人积分发放历史"
+        )
+    
+    try:
+        return DailyCreditGrants.get_user_grant_history(user_id, page, limit)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"获取历史失败: {str(e)}",
+        )
+
+
+@router.get(
+    "/daily-credits/status/{user_id}",
+    summary="检查用户今日积分发放状态",
+    description="检查指定用户今日是否已发放积分",
+)
+async def check_daily_credit_status(
+    user_id: str = Path(..., description="用户ID"),
+    user: UserModel = Depends(get_current_user)
+):
+    """检查用户今日积分发放状态"""
+    # 检查权限
+    if user_id != user.id and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="无权查看他人积分状态"
+        )
+    
+    try:
+        # 获取用户当前活跃订阅
+        subscription = Subscriptions.get_user_active_subscription(user_id)
+        if not subscription:
+            return {
+                "success": True,
+                "has_active_subscription": False,
+                "granted_today": False,
+                "message": "用户没有活跃订阅"
+            }
+        
+        # 检查今日是否已发放
+        granted_today = DailyCreditGrants.has_granted_today(user_id, subscription.id)
+        
+        # 获取套餐信息
+        plan = Plans.get_plan_by_id(subscription.plan_id)
+        
+        return {
+            "success": True,
+            "has_active_subscription": True,
+            "granted_today": granted_today,
+            "subscription_id": subscription.id,
+            "plan_id": subscription.plan_id,
+            "plan_name": plan.name if plan else None,
+            "daily_credits": plan.credits if plan else 0,
+            "subscription_end_date": subscription.end_date
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"检查状态失败: {str(e)}",
+        )
+
+
 # ============== 兑换码接口 ==============
 
 
@@ -280,7 +438,6 @@ async def redeem_code(
 # ============== 支付记录接口 ==============
 
 
-# 删除这个重复的接口定义
 @router.get("/payments/{payment_id}", summary="获取支付记录详情")
 async def get_payment_detail(
     payment_id: str, user: UserModel = Depends(get_current_user)
