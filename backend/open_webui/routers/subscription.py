@@ -406,11 +406,9 @@ async def redeem_code(
             )
 
         # 调用业务逻辑
-        subscription = RedeemCodes.redeem_code(code, user.id)
+        subscription, message = RedeemCodes.redeem_code(code, user.id)
         if not subscription:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="兑换码无效或已使用"
-            )
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
         return {
             "success": True,

@@ -1,7 +1,7 @@
 import time
 import uuid
 from decimal import Decimal
-from typing import List, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException
@@ -691,7 +691,7 @@ class RedeemCodesTable:
         except Exception:
             return None
 
-    def redeem_code(self, code: str, user_id: str) -> Optional[SubscriptionModel]:
+    def redeem_code(self, code: str, user_id: str) -> tuple:
         try:
             with get_db() as db:
                 redeem_code = (
@@ -706,16 +706,17 @@ class RedeemCodesTable:
                 )
 
                 if not redeem_code:
-                    return None
+                    return None, "兑换码不存在、已被使用或已过期"
 
                 plan = db.query(Plan).filter(Plan.id == redeem_code.plan_id).first()
                 if not plan:
-                    return None
+                    return None, "关联的套餐不存在"
 
                 start_date = int(time.time())
                 end_date = start_date + redeem_code.duration_days * 86400
 
                 subscription = Subscription(
+                    id=str(uuid.uuid4().hex),  # 添加这一行生成唯一ID
                     user_id=user_id,
                     plan_id=redeem_code.plan_id,
                     start_date=start_date,
@@ -729,9 +730,9 @@ class RedeemCodesTable:
                 )
 
                 db.commit()
-                return SubscriptionModel.model_validate(subscription)
-        except Exception:
-            return None
+                return SubscriptionModel.model_validate(subscription), "兑换成功"
+        except Exception as e:
+            return None, f"处理异常: {str(e)}"
 
     def get_redeem_codes(self, page: int = 1, limit: int = 10) -> Dict[str, Any]:
         """获取兑换码列表"""
