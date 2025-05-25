@@ -13,7 +13,7 @@ import pytz
 from pytz import UTC
 from typing import Optional, Union, List, Dict
 
-from open_webui.config import WEBUI_URL
+
 from open_webui.utils.smtp import send_email
 
 from open_webui.models.users import Users
@@ -136,7 +136,7 @@ def get_license_data(app, key):
         },
         "metadata": {
             "type": "enterprise",
-            "organization_name": os.getenv("ORGANIZATION_NAME", "OpenWebui"),
+            "organization_name": os.getenv("ORGANIZATION_NAME", ""),
         },
     }
     try:

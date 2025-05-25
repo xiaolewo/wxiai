@@ -367,6 +367,13 @@ from open_webui.config import (
     SMTP_PORT,
     SMTP_USERNAME,
     SMTP_PASSWORD,
+    # Custom
+    ORGANIZATION_NAME,
+    CUSTOM_NAME,
+    CUSTOM_ICO,
+    CUSTOM_PNG,
+    CUSTOM_SVG,
+    CUSTOM_DARK_PNG,
     USAGE_CALCULATE_MINIMUM_COST,
     EZFP_PAY_PRIORITY,
 )
@@ -603,6 +610,13 @@ app.state.config.SMTP_HOST = SMTP_HOST
 app.state.config.SMTP_PORT = SMTP_PORT
 app.state.config.SMTP_USERNAME = SMTP_USERNAME
 app.state.config.SMTP_PASSWORD = SMTP_PASSWORD
+
+app.state.config.ORGANIZATION_NAME = ORGANIZATION_NAME
+app.state.config.CUSTOM_NAME = CUSTOM_NAME
+app.state.config.CUSTOM_ICO = CUSTOM_ICO
+app.state.config.CUSTOM_PNG = CUSTOM_PNG
+app.state.config.CUSTOM_SVG = CUSTOM_SVG
+app.state.config.CUSTOM_DARK_PNG = CUSTOM_DARK_PNG
 
 app.state.config.ENABLE_API_KEY = ENABLE_API_KEY
 app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS = (

@@ -79,6 +79,8 @@ async def create_ticket(
     out_trade_no = (
         f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.{uuid.uuid4().hex}"
     )
+    # alipay
+    # wxpay
     return TradeTickets.insert_new_ticket(
         id=out_trade_no,
         user_id=user.id,

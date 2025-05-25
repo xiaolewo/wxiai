@@ -148,22 +148,28 @@ async def handle_payment_callback(callback_data: Dict[str, Any]) -> str:
             "id": subscription_id,
             "user_id": payment.user_id,
             "plan_id": payment.plan_id,
-            "start_date": now,  # 修改为 start_date
-            "end_date": now + (plan.duration * 86400),  # 修改为 end_date
+            "start_date": now,
+            "end_date": now + (plan.duration * 86400),
             "status": "active",
         }
         Subscriptions.subscribe_user(subscription)
 
-        # 如果套餐包含积分，给用户增加积分
-        if plan.credits > 0:
-            Credits.add_credit_by_user_id(
-                user_id=payment.user_id,
-                amount=Decimal(plan.credits),
-                detail={
-                    "desc": f"套餐 {plan.name} 包含积分 {plan.credits}",
-                    "subscription_id": subscription_id,
-                    "payment_id": payment.id,
-                },
+        # 发放积分
+        grant = DailyCreditGrants.grant_daily_credits(
+            user_id=payment.user_id,
+            subscription_id=subscription_id,
+            plan_id=payment.plan_id,
+            credits_amount=Decimal(payment.credits),
+        )
+
+        if not grant:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="今日已发放过积分或发放失败",
             )
 
-    return "success"
+    return {
+        "success": True,
+        "data": grant.model_dump(),
+        "message": f"成功为用户 {user_id} 发放 {plan.credits} 积分",
+    }

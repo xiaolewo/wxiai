@@ -1,3 +1,4 @@
+from sqlalchemy import Boolean
 from fastapi import (
     APIRouter,
     Depends,
@@ -42,10 +43,15 @@ router = APIRouter()
     summary="获取所有套餐",
     description="获取所有可用的订阅套餐列表（仅返回活跃套餐）",
 )
-async def list_plans():
-    """获取所有活跃套餐"""
+async def list_plans(
+    is_active: Optional[bool] = Query(
+        None,
+        description="套餐状态：True=活跃, False=不活跃, 不传=全部",
+    )
+):
+    """获取套餐列表"""
     # 实现同前...
-    plans = Plans.list_active_plans()
+    plans = Plans.list_active_plans(is_active)
     return {"success": True, "plans": [plan.model_dump() for plan in plans]}
 
 
@@ -81,8 +87,20 @@ async def update_plan(
 ):
     """更新套餐信息"""
     try:
+        existing_plan = Plans.get_plan_by_id(plan_id)
+        # 合并新旧数据（只更新传入的字段）
+
+        if not existing_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="套餐不存在",
+            )
+        update_data = existing_plan.model_dump()
+        # 验证并更新
+        update_data.update({k: v for k, v in plan_data.items() if v is not None})
+        plan_model = PlanModel(**update_data)
         # 创建PlanModel实例，确保类型正确
-        plan_model = PlanModel(**plan_data)
+        # plan_model = PlanModel(**plan_data)
         updated_plan = Plans.update_plan(plan_id, plan_model)
         return {
             "success": True,
@@ -134,6 +152,7 @@ async def get_user_subscription(
 async def purchase_subscription(
     request: Request,
     plan_id: str = Body(..., embed=True),
+    pay_type: str = Body(..., embed=True),  # 添加支付方式参数
     user: UserModel = Depends(get_current_user),
 ):
     """发起套餐购买（生成支付订单）"""
@@ -149,7 +168,9 @@ async def purchase_subscription(
             user=user,
             payment_type="subscription",
             amount=plan.price,
+            pay_type=pay_type,  # 使用传入的支付方式
             plan_id=plan_id,
+            credits=plan.credits,  # 添加积分信息
         )
     except Exception as e:
         raise HTTPException(
@@ -183,7 +204,9 @@ async def cancel_subscription(
                 status_code=status.HTTP_403_FORBIDDEN, detail="无权操作他人订阅"
             )
 
-        return Subscriptions.cancel_subscription({"subscription_id": subscription_id})
+        return Subscriptions.cancel_subscription(
+            {"subscription_id": subscription_id, "user_id": user.id}
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -410,6 +433,29 @@ async def redeem_code(
         if not subscription:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
+        from open_webui.models.subscription import (
+            DailyCreditGrants,
+        )
+
+        plan = Plans.get_plan_by_id(subscription.plan_id)
+        if not plan:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="关联的套餐不存在",
+            )
+        # 发放积分
+        grant = DailyCreditGrants.grant_daily_credits(
+            user_id=user.id,
+            subscription_id=subscription.id,
+            plan_id=subscription.plan_id,
+            credits_amount=plan.credits,
+        )
+
+        if not grant:
+            raise HTTPException(
+                status_code=400,
+                detail="今日已发放过积分或发放失败",
+            )
         return {
             "success": True,
             "data": {

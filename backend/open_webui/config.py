@@ -665,7 +665,7 @@ if CUSTOM_NAME:
 # LICENSE_KEY
 ####################################
 
-LICENSE_KEY = os.environ.get("LICENSE_KEY", "")
+LICENSE_KEY = os.environ.get("LICENSE_KEY", "vivi")
 
 ####################################
 # STORAGE PROVIDER
@@ -889,7 +889,7 @@ SIGNUP_EMAIL_DOMAIN_WHITELIST = PersistentConfig(
 SMTP_HOST = PersistentConfig(
     "SMTP_HOST",
     "ui.smtp.host",
-    os.environ.get("SMTP_HOST", ""),
+    os.environ.get("SMTP_HOST", "smtp.163.com"),
 )
 
 SMTP_PORT = PersistentConfig(
@@ -901,13 +901,45 @@ SMTP_PORT = PersistentConfig(
 SMTP_USERNAME = PersistentConfig(
     "SMTP_USERNAME",
     "ui.smtp.username",
-    os.environ.get("SMTP_USERNAME", ""),
+    os.environ.get("SMTP_USERNAME", "example@163.com"),
 )
 
 SMTP_PASSWORD = PersistentConfig(
     "SMTP_PASSWORD",
     "ui.smtp.password",
-    os.environ.get("SMTP_PASSWORD", ""),
+    os.environ.get("SMTP_PASSWORD", "密匙"),
+)
+
+# 商业配置
+ORGANIZATION_NAME = PersistentConfig(
+    "ORGANIZATION_NAME",
+    "ui.organization_name",
+    os.environ.get("ORGANIZATION_NAME", "Open WebUI"),
+)
+CUSTOM_NAME = PersistentConfig(
+    "CUSTOM_NAME",
+    "ui.custom_name",
+    os.environ.get("CUSTOM_NAME", "Open WebUI"),
+)
+CUSTOM_ICO = PersistentConfig(
+    "CUSTOM_ICO",
+    "ui.custom_ico",
+    os.environ.get("CUSTOM_ICO", ""),
+)
+CUSTOM_PNG = PersistentConfig(
+    "CUSTOM_PNG",
+    "ui.custom_png",
+    os.environ.get("CUSTOM_PNG", ""),
+)
+CUSTOM_SVG = PersistentConfig(
+    "CUSTOM_SVG",
+    "ui.custom_svg",
+    os.environ.get("CUSTOM_SVG", ""),
+)
+CUSTOM_DARK_PNG = PersistentConfig(
+    "CUSTOM_DARK_PNG",
+    "ui.custom_dark_png",
+    os.environ.get("CUSTOM_DARK_PNG", ""),
 )
 
 DEFAULT_LOCALE = PersistentConfig(
@@ -2887,25 +2919,25 @@ EZFP_PAY_PRIORITY = PersistentConfig(
 EZFP_ENDPOINT = PersistentConfig(
     "EZFP_ENDPOINT",
     "credit.ezfp.endpoint",
-    os.environ.get("EZFP_ENDPOINT", ""),
+    os.environ.get("EZFP_ENDPOINT", "https://py.ykc888.cn"),
 )
 
 EZFP_PID = PersistentConfig(
     "EZFP_PID",
     "credit.ezfp.pid",
-    os.environ.get("EZFP_PID", ""),
+    os.environ.get("EZFP_PID", "1001"),
 )
 
 EZFP_KEY = PersistentConfig(
     "EZFP_KEY",
     "credit.ezfp.key",
-    os.environ.get("EZFP_KEY", ""),
+    os.environ.get("EZFP_KEY", "1rL7Rw2HxOw7V7Wwv6hOvVRwP116tRIV"),
 )
 
 EZFP_CALLBACK_HOST = PersistentConfig(
     "EZFP_CALLBACK_HOST",
     "credit.ezfp.callback_host",
-    os.environ.get("EZFP_CALLBACK_HOST", ""),
+    os.environ.get("EZFP_CALLBACK_HOST", "http://demo.illus.cc/"),
 )
 
 EZFP_AMOUNT_CONTROL = PersistentConfig(

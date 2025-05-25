@@ -751,6 +751,23 @@ async def get_admin_config(request: Request, user=Depends(get_admin_user)):
         "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
         "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
         "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+        # 添加SMTP配置
+        "SMTP_HOST": request.app.state.config.SMTP_HOST,
+        "SMTP_PORT": request.app.state.config.SMTP_PORT,
+        "SMTP_USERNAME": request.app.state.config.SMTP_USERNAME,
+        "SMTP_PASSWORD": request.app.state.config.SMTP_PASSWORD,
+        # 组织名称，填写你喜欢的名称
+        "ORGANIZATION_NAME": request.app.state.config.ORGANIZATION_NAME,
+        # 网站名称
+        "CUSTOM_NAME": request.app.state.config.CUSTOM_NAME,
+        # 网站 Logo，ICO 格式
+        "CUSTOM_ICO": request.app.state.config.CUSTOM_ICO,
+        # 网站 Logo，PNG 格式
+        "CUSTOM_PNG": request.app.state.config.CUSTOM_PNG,
+        # 网站 Logo，SVG 格式
+        "CUSTOM_SVG": request.app.state.config.CUSTOM_SVG,
+        # 网站深色模式 LOGO，PNG 格式
+        "CUSTOM_DARK_PNG": request.app.state.config.CUSTOM_DARK_PNG,
     }
 
 
@@ -770,6 +787,23 @@ class AdminConfig(BaseModel):
     ENABLE_CHANNELS: bool
     ENABLE_NOTES: bool
     ENABLE_USER_WEBHOOKS: bool
+    # 添加SMTP配置
+    SMTP_HOST: str
+    SMTP_PORT: int
+    SMTP_USERNAME: str
+    SMTP_PASSWORD: str
+    # 组织名称，填写你喜欢的名称
+    ORGANIZATION_NAME: str
+    # 网站名称
+    CUSTOM_NAME: str
+    # 网站 Logo，ICO 格式
+    CUSTOM_ICO: str
+    # 网站 Logo，PNG 格式
+    CUSTOM_PNG: str
+    # 网站 Logo，SVG 格式
+    CUSTOM_SVG: str
+    # 网站深色模式 LOGO，PNG 格式
+    CUSTOM_DARK_PNG: str
 
 
 @router.post("/admin/config")
@@ -810,6 +844,23 @@ async def update_admin_config(
     request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
 
     request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
+    # 添加SMTP配置
+    request.app.state.config.SMTP_HOST = form_data.SMTP_HOST
+    request.app.state.config.SMTP_PORT = form_data.SMTP_PORT
+    request.app.state.config.SMTP_USERNAME = form_data.SMTP_USERNAME
+    request.app.state.config.SMTP_PASSWORD = form_data.SMTP_PASSWORD
+    # 组织名称，填写你喜欢的名称
+    request.app.state.config.ORGANIZATION_NAME = form_data.ORGANIZATION_NAME
+    # 网站名称
+    request.app.state.config.CUSTOM_NAME = form_data.CUSTOM_NAME
+    # 网站 Logo，ICO 格式
+    request.app.state.config.CUSTOM_ICO = form_data.CUSTOM_ICO
+    # 网站 Logo，PNG 格式
+    request.app.state.config.CUSTOM_PNG = form_data.CUSTOM_PNG
+    # 网站 Logo，SVG 格式
+    request.app.state.config.CUSTOM_SVG = form_data.CUSTOM_SVG
+    # 网站深色模式 LOGO，PNG 格式
+    request.app.state.config.CUSTOM_DARK_PNG = form_data.CUSTOM_DARK_PNG
 
     return {
         "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
@@ -827,6 +878,23 @@ async def update_admin_config(
         "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
         "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
         "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+        # 添加SMTP配置
+        "SMTP_HOST": request.app.state.config.SMTP_HOST,
+        "SMTP_PORT": request.app.state.config.SMTP_PORT,
+        "SMTP_USERNAME": request.app.state.config.SMTP_USERNAME,
+        "SMTP_PASSWORD": request.app.state.config.SMTP_PASSWORD,
+        # 组织名称，填写你喜欢的名称
+        "ORGANIZATION_NAME": request.app.state.config.ORGANIZATION_NAME,
+        # 网站名称
+        "CUSTOM_NAME": request.app.state.config.CUSTOM_NAME,
+        # 网站 Logo，ICO 格式
+        "CUSTOM_ICO": request.app.state.config.CUSTOM_ICO,
+        # 网站 Logo，PNG 格式
+        "CUSTOM_PNG": request.app.state.config.CUSTOM_PNG,
+        # 网站 Logo，SVG 格式
+        "CUSTOM_SVG": request.app.state.config.CUSTOM_SVG,
+        # 网站深色模式 LOGO，PNG 格式
+        "CUSTOM_DARK_PNG": request.app.state.config.CUSTOM_DARK_PNG,
     }
 
 

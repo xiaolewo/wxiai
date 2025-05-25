@@ -209,10 +209,14 @@ class PlansTable:
         except Exception:
             return None
 
-    def list_active_plans(self) -> List[PlanModel]:
+    def list_active_plans(self, is_active) -> List[PlanModel]:
         try:
             with get_db() as db:
-                plans = db.query(Plan).filter(Plan.is_active == True).all()
+                if is_active != None:
+                    plans = db.query(Plan).filter(Plan.is_active == is_active).all()
+                else:
+                    plans = db.query(Plan).all()
+                # plans = db.query(Plan).filter(Plan.is_active == True).all()
                 # 转换每个 SQLAlchemy 对象为字典
                 return [
                     PlanModel.model_validate(
@@ -367,7 +371,12 @@ class SubscriptionsTable:
                         "user_id": subscription.user_id,
                         "plan_id": subscription.plan_id,
                         "plan": (
-                            PlanModel.model_validate(plan).model_dump()
+                            PlanModel.model_validate(
+                                {
+                                    c.name: getattr(plan, c.name)
+                                    for c in plan.__table__.columns
+                                }
+                            ).model_dump()
                             if plan
                             else None
                         ),
