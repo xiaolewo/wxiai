@@ -129,7 +129,6 @@
 				// }
 				users = res.plans ?? [];
 				total = res.plans?.length ?? 0;
-			
 			}
 		} catch (err) {
 			console.error(err);
@@ -375,28 +374,28 @@
 						</div>
 					</th>
 					<th
-					scope="col"
-					class="px-3 py-1.5 cursor-pointer select-none"
-					on:click={() => setSortKey('last_active_at')}
-				>
-					<div class="flex gap-1.5 items-center">
-						{$i18n.t('menucredits')}
+						scope="col"
+						class="px-3 py-1.5 cursor-pointer select-none"
+						on:click={() => setSortKey('last_active_at')}
+					>
+						<div class="flex gap-1.5 items-center">
+							{$i18n.t('menucredits')}
 
-						{#if orderBy === 'last_active_at'}
-							<span class="font-normal"
-								>{#if direction === 'asc'}
+							{#if orderBy === 'last_active_at'}
+								<span class="font-normal"
+									>{#if direction === 'asc'}
+										<ChevronUp className="size-2" />
+									{:else}
+										<ChevronDown className="size-2" />
+									{/if}
+								</span>
+							{:else}
+								<span class="invisible">
 									<ChevronUp className="size-2" />
-								{:else}
-									<ChevronDown className="size-2" />
-								{/if}
-							</span>
-						{:else}
-							<span class="invisible">
-								<ChevronUp className="size-2" />
-							</span>
-						{/if}
-					</div>
-				</th>
+								</span>
+							{/if}
+						</div>
+					</th>
 					<th
 						scope="col"
 						class="px-3 py-1.5 cursor-pointer select-none"
@@ -458,11 +457,11 @@
 						<td class=" px-3 py-1"> {user.price} </td>
 
 						<td class=" px-3 py-1">
-						{user.duration}
+							{user.duration}
 						</td>
 						<td class=" px-3 py-1">
 							{user.credits}
-							</td>
+						</td>
 						<td class=" px-3 py-1">
 							{dayjs(user.created_at * 1000).format('LL')}
 						</td>
@@ -490,7 +489,7 @@
 										class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 										on:click={async () => {
 											showEditUserModal = !showEditUserModal;
-											selectedUser =JSON.parse(JSON.stringify(user)) ;
+											selectedUser = JSON.parse(JSON.stringify(user));
 										}}
 									>
 										<svg
@@ -543,7 +542,6 @@
 			</tbody>
 		</table>
 	</div>
-
 
 	<Pagination bind:page count={total} perPage={30} />
 {/if}

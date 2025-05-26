@@ -399,8 +399,7 @@ export const subCodes = async (
 	token: string,
 	plan_id: string,
 	count: number | null,
-	duration_days: number | null,
-
+	duration_days: number | null
 ) => {
 	let error = null;
 
@@ -413,7 +412,7 @@ export const subCodes = async (
 		body: JSON.stringify({
 			plan_id: plan_id,
 			count: count,
-			duration_days: duration_days,
+			duration_days: duration_days
 		})
 	})
 		.then(async (res) => {
@@ -434,7 +433,7 @@ export const subCodes = async (
 };
 
 // 获取兑换码
-export const getSubCodes  = async (token: string = '') => {
+export const getSubCodes = async (token: string = '') => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/redeem-codes`, {
@@ -460,7 +459,6 @@ export const getSubCodes  = async (token: string = '') => {
 
 	return res;
 };
-
 
 export const updateUserProfile = async (token: string, name: string, profileImageUrl: string) => {
 	let error = null;
@@ -767,8 +765,6 @@ export const deleteAPIKey = async (token: string) => {
 	return res;
 };
 
-
-
 import { getUserPosition } from '$lib/utils';
 
 export const getUserGroups = async (token: string) => {
@@ -887,7 +883,7 @@ export const updateUserRole = async (token: string, id: string, role: string) =>
 };
 
 // 获取用户套餐
-export const usersubscriptionmenu = async (token: string,user_id: string) => {
+export const usersubscriptionmenu = async (token: string, user_id: string) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/users/${user_id}/subscription`, {
@@ -915,7 +911,7 @@ export const usersubscriptionmenu = async (token: string,user_id: string) => {
 };
 
 // 订购套餐
-export const subscriptionPurchase = async (token: string, id: string,type: string) => {
+export const subscriptionPurchase = async (token: string, id: string, type: string) => {
 	let error = null;
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/subscriptions/purchase`, {
@@ -925,8 +921,8 @@ export const subscriptionPurchase = async (token: string, id: string,type: strin
 			Authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
-			'plan_id': id,
-			'pay_type': type
+			plan_id: id,
+			pay_type: type
 		})
 	})
 		.then(async (res) => {
@@ -934,7 +930,6 @@ export const subscriptionPurchase = async (token: string, id: string,type: strin
 			return res.json();
 		})
 		.catch((err) => {
-
 			error = err.detail;
 			return null;
 		});
@@ -947,9 +942,9 @@ export const subscriptionPurchase = async (token: string, id: string,type: strin
 };
 
 // 获取支付记录详情
-export const SubscriptionPayments = async (token: string,user_id: string) => {
+export const SubscriptionPayments = async (token: string, user_id: string) => {
 	let error = null;
-console.log("获取支付记录详情",user_id)
+	console.log('获取支付记录详情', user_id);
 	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/payments/${user_id}`, {
 		method: 'GET',
 		headers: {
@@ -1078,7 +1073,6 @@ export const getUserSettings = async (token: string) => {
 	return res;
 };
 
-
 export const subscriptionprocess = async (token: string) => {
 	let error = null;
 
@@ -1087,8 +1081,7 @@ export const subscriptionprocess = async (token: string) => {
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`
-		},
-
+		}
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();
@@ -1106,7 +1099,6 @@ export const subscriptionprocess = async (token: string) => {
 
 	return res;
 };
-
 
 export const updateUserSettings = async (token: string, settings: object) => {
 	let error = null;
@@ -1138,8 +1130,6 @@ export const updateUserSettings = async (token: string, settings: object) => {
 	return res;
 };
 
-
-
 export const subscriptionRedeem = async (token: string, code: string) => {
 	let error = null;
 
@@ -1150,7 +1140,7 @@ export const subscriptionRedeem = async (token: string, code: string) => {
 			Authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
-			'code': code
+			code: code
 		})
 	})
 		.then(async (res) => {
@@ -1169,9 +1159,6 @@ export const subscriptionRedeem = async (token: string, code: string) => {
 
 	return res;
 };
-
-
-
 
 export const getUserById = async (token: string, userId: string) => {
 	let error = null;

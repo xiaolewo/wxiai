@@ -343,7 +343,7 @@
 								{/each}
 							</div>
 						</div>
-<!-- 删除隐藏 -->
+						<!-- 删除隐藏 -->
 						<!-- <div class="mt-1 text-xs text-gray-400 dark:text-gray-500">
 							{$i18n.t('Trouble accessing Ollama?')}
 							<a

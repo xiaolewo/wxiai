@@ -41,8 +41,8 @@
 	}
 
 	const submitHandler = async () => {
-		console.log('创建套餐',_user);
-	
+		console.log('创建套餐', _user);
+
 		const stopLoading = () => {
 			dispatch('save');
 			loading = false;
@@ -162,12 +162,9 @@
 						submitHandler();
 					}}
 				>
-				
-
 					<div class="px-1">
 						{#if tab === ''}
-							
-						<!-- <div class="flex flex-col w-full my-2">
+							<!-- <div class="flex flex-col w-full my-2">
 							<div class=" mb-1 text-xs text-gray-500">{$i18n.t('menuname')}</div>
 
 							<div class="flex-1">
@@ -250,13 +247,12 @@
 									/>
 								</div>
 							</div>
-							
-							<div class="flex  justify-between w-full my-1">
+
+							<div class="flex justify-between w-full my-1">
 								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('menuis_active')}</div>
 
 								<Switch bind:state={_user.is_active} />
 							</div>
-							
 						{:else if tab === 'import'}
 							<div>
 								<div class="mb-3 w-full">

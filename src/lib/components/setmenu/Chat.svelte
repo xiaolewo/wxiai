@@ -5,7 +5,7 @@
 	import { user } from '$lib/stores';
 	import ConfirmDialog from '$lib/components/common/ExchangeDialog.svelte';
 	import PaymentDialog from '$lib/components/common/PaymentDialog.svelte';
-	import { getUsers, usersubscriptionmenu ,subscriptionprocess} from '$lib/apis/setmenu';
+	import { getUsers, usersubscriptionmenu, subscriptionprocess } from '$lib/apis/setmenu';
 
 	const i18n = getContext('i18n');
 
@@ -13,8 +13,7 @@
 	let showPaymentDialog = false;
 	let loaded = false;
 	let menus: any[] = [];
-	let frmoMenu =null;
-
+	let frmoMenu = null;
 
 	const usermenu = async () => {
 		try {
@@ -50,12 +49,11 @@
 
 	onMount(async () => {
 		console.log('用户', $user);
-	
+
 		loaded = true;
 		menuList();
 	});
 
-	
 	const nihasd = async () => {
 		try {
 			const res = await subscriptionprocess(localStorage.token).catch((error) => {
@@ -64,8 +62,7 @@
 			});
 
 			if (res) {
-			console.log('订单', res);
-		
+				console.log('订单', res);
 			}
 		} catch (err) {
 			console.error(err);
@@ -84,7 +81,9 @@
 	<!-- 顶部标题和切换 -->
 	<div class="text-center mb-6">
 		<div class="text-4xl font-extrabold mb-2 text-black">{$i18n.t('Upgrade Package')}</div>
-		<div class="text-base text-gray-500 mb-3">{$i18n.t('Get more points to improve efficiency')}</div>
+		<div class="text-base text-gray-500 mb-3">
+			{$i18n.t('Get more points to improve efficiency')}
+		</div>
 		<div class="flex justify-center gap-4 mb-4">
 			<button
 				type="button"
@@ -124,15 +123,15 @@
 				}}
 			>
 				<span class="flex items-center gap-1">
-				<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
-				><path
-					fill="currentColor"
-					d="M12 20q-3.35 0-5.675-2.325T4 12t2.325-5.675T12 4q1.725 0 3.3.712T18 6.75V5q0-.425.288-.712T19 4t.713.288T20 5v5q0 .425-.288.713T19 11h-5q-.425 0-.712-.288T13 10t.288-.712T14 9h3.2q-.8-1.4-2.187-2.2T12 6Q9.5 6 7.75 7.75T6 12t1.75 4.25T12 18q1.7 0 3.113-.862t2.187-2.313q.2-.35.563-.487t.737-.013q.4.125.575.525t-.025.75q-1.025 2-2.925 3.2T12 20"
-				/></svg
-			>
+					<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
+						><path
+							fill="currentColor"
+							d="M12 20q-3.35 0-5.675-2.325T4 12t2.325-5.675T12 4q1.725 0 3.3.712T18 6.75V5q0-.425.288-.712T19 4t.713.288T20 5v5q0 .425-.288.713T19 11h-5q-.425 0-.712-.288T13 10t.288-.712T14 9h3.2q-.8-1.4-2.187-2.2T12 6Q9.5 6 7.75 7.75T6 12t1.75 4.25T12 18q1.7 0 3.113-.862t2.187-2.313q.2-.35.563-.487t.737-.013q.4.125.575.525t-.025.75q-1.025 2-2.925 3.2T12 20"
+						/></svg
+					>
 
-				{$i18n.t('refresh-menu-info')}
-			</span>
+					{$i18n.t('refresh-menu-info')}
+				</span>
 			</button>
 		</div>
 		<div
@@ -142,9 +141,13 @@
 				class="px-6 flex-1 py-1.5 rounded-full border border-gray-200 bg-white text-black font-medium shadow-sm focus:outline-none"
 				>{$i18n.t('Personal')}</button
 			>
-			<button class="px-6 flex-1 py-1.5 rounded-full text-gray-500 font-medium">{$i18n.t('Enterprise')}</button>
+			<button class="px-6 flex-1 py-1.5 rounded-full text-gray-500 font-medium"
+				>{$i18n.t('Enterprise')}</button
+			>
 		</div>
-		<div class="text-xs text-gray-400 mt-2">* {$i18n.t('Use two fingers to slide left and right or hold Shift to scroll more')}</div>
+		<div class="text-xs text-gray-400 mt-2">
+			* {$i18n.t('Use two fingers to slide left and right or hold Shift to scroll more')}
+		</div>
 	</div>
 
 	<!-- 套餐卡片 -->
@@ -165,9 +168,9 @@
 					${menu.price} <span class="text-base font-normal text-gray-500">/ {menu.duration}天</span>
 				</div>
 				<div class="text-xl font-bold mb-2 text-black">{menu.credits}点数</div>
-		
+
 				<div class="text-gray-500 text-sm mb-4">{menu.description}</div>
-		
+
 				{#if menu.is_active}
 					<div class="text-xs text-gray-400 mb-2">当前使用中</div>
 					<button
@@ -183,7 +186,7 @@
 				{:else}
 					<button
 						on:click={() => {
-							nihasd()
+							nihasd();
 						}}
 						class="w-full bg-black text-white py-2 rounded font-bold flex items-center justify-center gap-2"
 					>

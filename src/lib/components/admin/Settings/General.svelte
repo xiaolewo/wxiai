@@ -189,43 +189,41 @@
 							</div>
 						</div>
 						<div class="flex w-full justify-between items-center">
-
 							<input
-							class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-							type="text"
-							placeholder={$i18n.t('website_enterprise_placeholder')}
-							bind:value={adminConfig.CUSTOM_LOGO}
-						/>
-						<label
-							class="ml-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg cursor-pointer"
-						>
-							<input
-								type="file"
-								class="hidden"
-								accept="image/*"
-								on:change={(e) => {
-									const file = e.target.files[0];
-									if (file) {
-										const reader = new FileReader();
-										reader.onload = (e) => {
-											adminConfig.CUSTOM_LOGO = e.target.result;
-										};
-										reader.readAsDataURL(file);
-									}
-								}}
+								class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
+								type="text"
+								placeholder={$i18n.t('website_enterprise_placeholder')}
+								bind:value={adminConfig.CUSTOM_LOGO}
 							/>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
-								><path
-									fill="none"
-									stroke="currentColor"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									stroke-width="2"
-									d="M12 10v9m0-9l3 3m-3-3l-3 3m8.5 2c1.519 0 2.5-1.231 2.5-2.75a2.75 2.75 0 0 0-2.016-2.65A5 5 0 0 0 8.37 8.108a3.5 3.5 0 0 0-1.87 6.746"
-								/></svg
+							<label
+								class="ml-2 px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg cursor-pointer"
 							>
-						</label>
-
+								<input
+									type="file"
+									class="hidden"
+									accept="image/*"
+									on:change={(e) => {
+										const file = e.target.files[0];
+										if (file) {
+											const reader = new FileReader();
+											reader.onload = (e) => {
+												adminConfig.CUSTOM_LOGO = e.target.result;
+											};
+											reader.readAsDataURL(file);
+										}
+									}}
+								/>
+								<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24"
+									><path
+										fill="none"
+										stroke="currentColor"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M12 10v9m0-9l3 3m-3-3l-3 3m8.5 2c1.519 0 2.5-1.231 2.5-2.75a2.75 2.75 0 0 0-2.016-2.65A5 5 0 0 0 8.37 8.108a3.5 3.5 0 0 0-1.87 6.746"
+									/></svg
+								>
+							</label>
 						</div>
 					</div>
 				</div>

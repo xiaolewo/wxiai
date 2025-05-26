@@ -135,12 +135,12 @@
 
 								<div class="flex-1">
 									<input
-									class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
-									type="number"
-									bind:value={_user.price}
-									placeholder={$i18n.t('menuprice_placeholder')}
-									autocomplete="off"
-								/>
+										class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
+										type="number"
+										bind:value={_user.price}
+										placeholder={$i18n.t('menuprice_placeholder')}
+										autocomplete="off"
+									/>
 								</div>
 							</div>
 							<div class="flex flex-col w-full">
@@ -148,15 +148,15 @@
 
 								<div class="flex-1">
 									<input
-									class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
-									type="number"
-									bind:value={_user.credits}
-									placeholder={$i18n.t('menucredits_placeholder')}
-									autocomplete="off"
-								/>
+										class="w-full text-sm bg-transparent disabled:text-gray-500 dark:disabled:text-gray-500 outline-hidden"
+										type="number"
+										bind:value={_user.credits}
+										placeholder={$i18n.t('menucredits_placeholder')}
+										autocomplete="off"
+									/>
 								</div>
 							</div>
-							<div class="flex  justify-between w-full my-1">
+							<div class="flex justify-between w-full my-1">
 								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('menuis_active')}</div>
 
 								<Switch bind:state={_user.is_active} />

@@ -319,9 +319,7 @@
 		</div>
 	{/if}
 
-	{#if $config?.features.enable_community_sharing}
-	
-	{/if}
+	{#if $config?.features.enable_community_sharing}{/if}
 {:else}
 	<div class="w-full h-full flex justify-center items-center">
 		<Spinner />

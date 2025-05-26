@@ -214,10 +214,6 @@
 <div class="flex flex-col h-full justify-between text-sm">
 	<div class=" space-y-3 lg:max-h-full">
 		<div class="space-y-1">
-		
-
-
-
 			{#if !tradeInfo?.detail?.qrcode && !tradeInfo?.detail?.imgDisplayUrl}
 				<hr class=" border-gray-100 dark:border-gray-700/10 my-2.5 w-full" />
 

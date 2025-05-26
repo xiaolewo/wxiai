@@ -47,15 +47,13 @@
 		show = false;
 		try {
 			// 调用兑换码API
-			const res = await subscriptionRedeem(localStorage.token,	inputValue).catch(
-				(error) => {
-					toast.error(`${error}`);
-					return null;
-				}
-			);
+			const res = await subscriptionRedeem(localStorage.token, inputValue).catch((error) => {
+				toast.error(`${error}`);
+				return null;
+			});
 
 			if (res) {
-				console.log('兑换码使用',res);
+				console.log('兑换码使用', res);
 				toast.success(`${res.message}`);
 				await onConfirm();
 				dispatch('confirm', inputValue);
@@ -138,12 +136,14 @@
 					<!-- 输入框区域 -->
 					<div class=" text-sm text-gray-500 flex-1">
 						<textarea
-						bind:value={inputValue}
-						placeholder={inputPlaceholder ? inputPlaceholder : $i18n.t('exchangecode-description')}
-						class="w-full mt-2 rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 outline-hidden resize-none"
-						rows="3"
-						required
-					/>
+							bind:value={inputValue}
+							placeholder={inputPlaceholder
+								? inputPlaceholder
+								: $i18n.t('exchangecode-description')}
+							class="w-full mt-2 rounded-lg px-4 py-2 text-sm dark:text-gray-300 dark:bg-gray-900 outline-hidden resize-none"
+							rows="3"
+							required
+						/>
 					</div>
 				</slot>
 

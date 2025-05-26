@@ -90,18 +90,18 @@
 				<div class=" self-center truncate">{$i18n.t('Archived Chats')}</div>
 			</button>
 
-		
 			<a
-			class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
-			href="/setmenu"
-		
-		>
-			<div class=" self-center mr-3">
-				<svg xmlns="http://www.w3.org/2000/svg" fill="none"
-					viewBox="0 0 24 24"
-					stroke-width="1.5"
-					stroke="currentColor"
-					class="w-5 h-5"
+				class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+				href="/setmenu"
+			>
+				<div class=" self-center mr-3">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="1.5"
+						stroke="currentColor"
+						class="w-5 h-5"
 						><g
 							fill="none"
 							fill-rule="evenodd"
@@ -114,9 +114,9 @@
 							/></g
 						></svg
 					>
-			</div>
-			<div class=" self-center truncate">{$i18n.t('Setmenu')}</div>
-		</a>
+				</div>
+				<div class=" self-center truncate">{$i18n.t('Setmenu')}</div>
+			</a>
 			{#if role === 'admin'}
 				<a
 					class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"

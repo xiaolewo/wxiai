@@ -375,7 +375,6 @@ export const deleteUserById = async (token: string, userId: string) => {
 	return res;
 };
 
-
 export const deleteadminById = async (token: string, id: string, userId: string) => {
 	let error = null;
 
@@ -406,15 +405,14 @@ export const deleteadminById = async (token: string, id: string, userId: string)
 	return res;
 };
 
-
 type UserUpdateForm = {
-	id: string,
-		name: string,
-		description: string,
-		price: number,
-		credits: number,
-		duration: number,
-		is_active: boolean
+	id: string;
+	name: string;
+	description: string;
+	price: number;
+	credits: number;
+	duration: number;
+	is_active: boolean;
 };
 
 export const updateUserById = async (token: string, userId: string, user: UserUpdateForm) => {

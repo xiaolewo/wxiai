@@ -63,7 +63,8 @@
 				}}
 			>
 				<ArrowUpCircle strokeWidth="2" />
-				1<div class="flex items-center">{$i18n.t('Upload files')}</div>
+				1
+				<div class="flex items-center">{$i18n.t('Upload files')}</div>
 			</DropdownMenu.Item>
 
 			<DropdownMenu.Item

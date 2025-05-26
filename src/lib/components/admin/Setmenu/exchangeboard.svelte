@@ -110,7 +110,7 @@
 			);
 
 			if (res) {
-				console.log('兑换码',res);
+				console.log('兑换码', res);
 				users = res.codes;
 				total = res.total;
 			}
@@ -129,7 +129,6 @@
 			);
 
 			if (res) {
-			
 				menus = res.plans ?? [];
 				// console.log('菜单',menus);
 			}
@@ -293,7 +292,7 @@
 					
 						/>
 					</th> -->
-			
+
 					<th
 						scope="col"
 						class="px-3 py-1.5 cursor-pointer select-none"
@@ -365,74 +364,74 @@
 						</div>
 					</th>
 					<th
-					scope="col"
-					class="px-3 py-1.5 cursor-pointer select-none"
-					on:click={() => setSortKey('last_active_at')}
-				>
-					<div class="flex gap-1.5 items-center">
-						{$i18n.t('exchangetext-user')}
+						scope="col"
+						class="px-3 py-1.5 cursor-pointer select-none"
+						on:click={() => setSortKey('last_active_at')}
+					>
+						<div class="flex gap-1.5 items-center">
+							{$i18n.t('exchangetext-user')}
 
-						{#if orderBy === 'last_active_at'}
-							<span class="font-normal"
-								>{#if direction === 'asc'}
-									<ChevronUp className="size-2" />
-								{:else}
-									<ChevronDown className="size-2" />
-								{/if}
-							</span>
-						{:else}
-							<span class="invisible">
-								<ChevronUp className="size-2" />
-							</span>
-						{/if}
-					</div>
-				</th>
-				<th
-				scope="col"
-				class="px-3 py-1.5 cursor-pointer select-none"
-				on:click={() => setSortKey('last_active_at')}
-			>
-				<div class="flex gap-1.5 items-center">
-					{$i18n.t('exchangetext-last_active_at')}
-
-					{#if orderBy === 'last_active_at'}
-						<span class="font-normal"
-							>{#if direction === 'asc'}
-								<ChevronUp className="size-2" />
+							{#if orderBy === 'last_active_at'}
+								<span class="font-normal"
+									>{#if direction === 'asc'}
+										<ChevronUp className="size-2" />
+									{:else}
+										<ChevronDown className="size-2" />
+									{/if}
+								</span>
 							{:else}
-								<ChevronDown className="size-2" />
+								<span class="invisible">
+									<ChevronUp className="size-2" />
+								</span>
 							{/if}
-						</span>
-					{:else}
-						<span class="invisible">
-							<ChevronUp className="size-2" />
-						</span>
-					{/if}
-				</div>
-			</th>
-			<th
-			scope="col"
-			class="px-3 py-1.5 cursor-pointer select-none"
-			on:click={() => setSortKey('last_active_at')}
-		>
-			<div class="flex gap-1.5 items-center">
-				{$i18n.t('exchangetext-created_at')}
+						</div>
+					</th>
+					<th
+						scope="col"
+						class="px-3 py-1.5 cursor-pointer select-none"
+						on:click={() => setSortKey('last_active_at')}
+					>
+						<div class="flex gap-1.5 items-center">
+							{$i18n.t('exchangetext-last_active_at')}
 
-				{#if orderBy === 'last_active_at'}
-					<span class="font-normal"
-						>{#if direction === 'asc'}
-							<ChevronUp className="size-2" />
-						{:else}
-							<ChevronDown className="size-2" />
-						{/if}
-					</span>
-				{:else}
-					<span class="invisible">
-						<ChevronUp className="size-2" />
-					</span>
-				{/if}
-			</div>
-		</th>
+							{#if orderBy === 'last_active_at'}
+								<span class="font-normal"
+									>{#if direction === 'asc'}
+										<ChevronUp className="size-2" />
+									{:else}
+										<ChevronDown className="size-2" />
+									{/if}
+								</span>
+							{:else}
+								<span class="invisible">
+									<ChevronUp className="size-2" />
+								</span>
+							{/if}
+						</div>
+					</th>
+					<th
+						scope="col"
+						class="px-3 py-1.5 cursor-pointer select-none"
+						on:click={() => setSortKey('last_active_at')}
+					>
+						<div class="flex gap-1.5 items-center">
+							{$i18n.t('exchangetext-created_at')}
+
+							{#if orderBy === 'last_active_at'}
+								<span class="font-normal"
+									>{#if direction === 'asc'}
+										<ChevronUp className="size-2" />
+									{:else}
+										<ChevronDown className="size-2" />
+									{/if}
+								</span>
+							{:else}
+								<span class="invisible">
+									<ChevronUp className="size-2" />
+								</span>
+							{/if}
+						</div>
+					</th>
 					<th
 						scope="col"
 						class="px-3 py-1.5 cursor-pointer select-none"
@@ -463,19 +462,17 @@
 			<tbody class="">
 				{#each users as user, userIdx}
 					<tr class="bg-white dark:bg-gray-900 dark:border-gray-850 text-xs">
-				
-				
 						<td class=" px-3 py-1"> {user.code} </td>
 
 						<td class=" px-3 py-1">
-							{menus.find(menu => menu.id === user.plan_id)?.name}
+							{menus.find((menu) => menu.id === user.plan_id)?.name}
 						</td>
-						
+
 						<td class=" px-3 py-1">
 							{#if user.is_used}
-								<Badge type="success"  content={$i18n.t('exchangetext-status-used')} />
+								<Badge type="success" content={$i18n.t('exchangetext-status-used')} />
 							{:else}
-								<Badge type="muted"  content={$i18n.t('exchangetext-status-unused')} />
+								<Badge type="muted" content={$i18n.t('exchangetext-status-unused')} />
 							{/if}
 						</td>
 						<td class=" px-3 py-1"> {user.used_by} </td>
@@ -560,8 +557,6 @@
 			</tbody>
 		</table>
 	</div>
-
-
 
 	<Pagination bind:page count={total} perPage={30} />
 {/if}

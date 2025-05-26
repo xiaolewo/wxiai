@@ -3,7 +3,7 @@
 	import { WEBUI_NAME, showSidebar, functions } from '$lib/stores';
 	import MenuLines from '$lib/components/icons/MenuLines.svelte';
 	import { page } from '$app/stores';
-	console.log('WEBUI_NAME',$WEBUI_NAME);
+	console.log('WEBUI_NAME', $WEBUI_NAME);
 	const i18n = getContext('i18n');
 
 	onMount(async () => {});
@@ -20,8 +20,6 @@
 		? 'md:max-w-[calc(100%-260px)]'
 		: ''} max-w-full"
 >
-
-
 	<div class=" flex-1 max-h-full overflow-y-auto">
 		<slot />
 	</div>

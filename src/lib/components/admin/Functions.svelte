@@ -468,9 +468,7 @@
 	</div>
 </div>
 
-{#if $config?.features.enable_community_sharing}
-
-{/if}
+{#if $config?.features.enable_community_sharing}{/if}
 
 <DeleteConfirmDialog
 	bind:show={showDeleteConfirm}

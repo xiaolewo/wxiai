@@ -3,7 +3,7 @@
 	import { createEventDispatcher } from 'svelte';
 	import { onMount, getContext } from 'svelte';
 	import { subCodes } from '$lib/apis/setmenu';
-	import { getUsers  } from '$lib/apis/setmenu';
+	import { getUsers } from '$lib/apis/setmenu';
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
@@ -17,12 +17,10 @@
 	});
 	const getUserList = async () => {
 		try {
-			const res = await getUsers(localStorage.token).catch(
-				(error) => {
-					toast.error(`${error}`);
-					return null;
-				}
-			);
+			const res = await getUsers(localStorage.token).catch((error) => {
+				toast.error(`${error}`);
+				return null;
+			});
 
 			if (res) {
 				menulist = res.plans ?? [];
@@ -33,7 +31,6 @@
 	};
 	export let show = false;
 
-
 	let loading = false;
 	let tab = '';
 	let inputFiles;
@@ -41,20 +38,20 @@
 	let _user = {
 		plan_id: '',
 		count: null,
-		duration_days: null,
+		duration_days: null
 	};
 
 	$: if (show) {
 		_user = {
 			plan_id: '',
 			count: null,
-			duration_days: null,
+			duration_days: null
 		};
 	}
 
 	const submitHandler = async () => {
-		console.log('创建兑换码',_user);
-	
+		console.log('创建兑换码', _user);
+
 		const stopLoading = () => {
 			dispatch('save');
 			loading = false;
@@ -66,7 +63,7 @@
 				localStorage.token,
 				_user.plan_id,
 				_user.count,
-				_user.duration_days,
+				_user.duration_days
 			).catch((error) => {
 				toast.error(`${error}`);
 			});
@@ -112,33 +109,28 @@
 						submitHandler();
 					}}
 				>
-				
-
 					<div class="px-1">
 						{#if tab === ''}
-						<div class="flex flex-col w-full mb-3">
-							<div class=" mb-1 text-xs text-gray-500">{$i18n.t('exchangetext-menu')}</div>
+							<div class="flex flex-col w-full mb-3">
+								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('exchangetext-menu')}</div>
 
-							<div class="flex-1">
-								<select
-									class="w-full capitalize rounded-lg text-sm bg-transparent dark:disabled:text-gray-500 outline-hidden"
-									bind:value={_user.plan_id}
-									required
-								>
-								<option value="" disabled selected>
-									{$i18n.t('exchangetext-menu-placeholder')}
-								  </option>
-									{#each menulist as menu}
-										<option value={menu.id}> {menu.name} </option>
-									{/each}
-								</select>
+								<div class="flex-1">
+									<select
+										class="w-full capitalize rounded-lg text-sm bg-transparent dark:disabled:text-gray-500 outline-hidden"
+										bind:value={_user.plan_id}
+										required
+									>
+										<option value="" disabled selected>
+											{$i18n.t('exchangetext-menu-placeholder')}
+										</option>
+										{#each menulist as menu}
+											<option value={menu.id}> {menu.name} </option>
+										{/each}
+									</select>
+								</div>
 							</div>
-						</div>	
-			
 
 							<hr class=" border-gray-100 dark:border-gray-850 my-2.5 w-full" />
-
-		
 
 							<div class="flex flex-col w-full my-2">
 								<div class=" mb-1 text-xs text-gray-500">{$i18n.t('exchangetext-count')}</div>
@@ -166,7 +158,6 @@
 									/>
 								</div>
 							</div>
-							
 						{:else if tab === 'import'}
 							<div>
 								<div class="mb-3 w-full">
