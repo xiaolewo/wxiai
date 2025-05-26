@@ -22,7 +22,7 @@ from open_webui.models.auths import (
 )
 from open_webui.models.credits import Credits
 from open_webui.models.users import Users, UserModel
-
+from open_webui.utils.auth import get_license_data
 from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from open_webui.env import (
     WEBUI_AUTH,
@@ -862,6 +862,15 @@ async def update_admin_config(
     # 网站深色模式 LOGO，PNG 格式
     request.app.state.config.CUSTOM_DARK_PNG = form_data.CUSTOM_DARK_PNG
 
+    get_license_data(
+        request.app,
+        "",
+        form_data.CUSTOM_PNG,
+        form_data.CUSTOM_SVG,
+        form_data.CUSTOM_ICO,
+        form_data.CUSTOM_DARK_PNG,
+        form_data.ORGANIZATION_NAME,
+    )
     return {
         "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
         "WEBUI_URL": request.app.state.config.WEBUI_URL,

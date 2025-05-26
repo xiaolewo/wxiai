@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import pytz
 from pytz import UTC
 from typing import Optional, Union, List, Dict
-
+from open_webui.config import WEBUI_URL
 
 from open_webui.utils.smtp import send_email
 
@@ -76,67 +76,83 @@ def override_static(path: str, content: str):
         shutil.copyfileobj(r.raw, f)
 
 
-def get_license_data(app, key):
+def get_license_data(
+    app,
+    key,
+    CUSTOM_PNG="",
+    CUSTOM_SVG="",
+    CUSTOM_ICO="",
+    CUSTOM_DARK_PNG="",
+    ORGANIZATION_NAME="",
+):
     payload = {
         "resources": {
-            os.path.join(STATIC_DIR, "logo.png"): os.getenv("CUSTOM_PNG", ""),
-            os.path.join(STATIC_DIR, "favicon.png"): os.getenv("CUSTOM_PNG", ""),
-            os.path.join(STATIC_DIR, "favicon.svg"): os.getenv("CUSTOM_SVG", ""),
-            os.path.join(STATIC_DIR, "favicon-96x96.png"): os.getenv("CUSTOM_PNG", ""),
+            os.path.join(STATIC_DIR, "logo.png"): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
+            os.path.join(STATIC_DIR, "favicon.png"): os.getenv(
+                "CUSTOM_PNG", CUSTOM_PNG
+            ),
+            os.path.join(STATIC_DIR, "favicon.svg"): os.getenv(
+                "CUSTOM_SVG", CUSTOM_SVG
+            ),
+            os.path.join(STATIC_DIR, "favicon-96x96.png"): os.getenv(
+                "CUSTOM_PNG", CUSTOM_PNG
+            ),
             os.path.join(STATIC_DIR, "apple-touch-icon.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(STATIC_DIR, "web-app-manifest-192x192.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(STATIC_DIR, "web-app-manifest-512x512.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
-            os.path.join(STATIC_DIR, "splash.png"): os.getenv("CUSTOM_PNG", ""),
-            os.path.join(STATIC_DIR, "favicon.ico"): os.getenv("CUSTOM_ICO", ""),
+            os.path.join(STATIC_DIR, "splash.png"): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
+            os.path.join(STATIC_DIR, "favicon.ico"): os.getenv(
+                "CUSTOM_ICO", CUSTOM_ICO
+            ),
             os.path.join(STATIC_DIR, "favicon-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", ""
+                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
             ),
             os.path.join(STATIC_DIR, "splash-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", ""
+                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "favicon.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.svg"): os.getenv(
-                "CUSTOM_SVG", ""
+                "CUSTOM_SVG", CUSTOM_SVG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon-96x96.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/apple-touch-icon.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(
                 FRONTEND_BUILD_DIR, "static/web-app-manifest-192x192.png"
-            ): os.getenv("CUSTOM_PNG", ""),
+            ): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
             os.path.join(
                 FRONTEND_BUILD_DIR, "static/web-app-manifest-512x512.png"
-            ): os.getenv("CUSTOM_PNG", ""),
+            ): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
             os.path.join(FRONTEND_BUILD_DIR, "static/splash.png"): os.getenv(
-                "CUSTOM_PNG", ""
+                "CUSTOM_PNG", CUSTOM_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.ico"): os.getenv(
-                "CUSTOM_ICO", ""
+                "CUSTOM_ICO", CUSTOM_ICO
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", ""
+                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/splash-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", ""
+                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
             ),
         },
         "metadata": {
             "type": "enterprise",
-            "organization_name": os.getenv("ORGANIZATION_NAME", ""),
+            "organization_name": os.getenv("ORGANIZATION_NAME", ORGANIZATION_NAME),
         },
     }
     try:
