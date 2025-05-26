@@ -40,8 +40,8 @@
 		model_token_pie: Array<ChartItem>;
 		user_cost_pie: Array<ChartItem>;
 		user_token_pie: Array<ChartItem>;
-		user_payment_stats_x: Array<String>;
-		user_payment_stats_y: Array<Number>;
+		user_payment_stats_x: Array<string>;
+		user_payment_stats_y: Array<number>;
 	};
 
 	let period = 7;
