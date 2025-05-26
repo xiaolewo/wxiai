@@ -86,7 +86,7 @@
 		}
 	};
 
-	const showQRCode = (detail: object): boolean => {
+	const showQRCode = (detail: object): Boolean => {
 		if (detail?.img) {
 			tradeInfo.detail.imgDisplayUrl = detail.img;
 			return true;
@@ -108,7 +108,7 @@
 		return false;
 	};
 
-	const redirectLink = (detail: object): boolean => {
+	const redirectLink = (detail: object): Boolean => {
 		if (detail?.payurl) {
 			window.location.href = detail.payurl;
 			return true;
@@ -214,6 +214,48 @@
 <div class="flex flex-col h-full justify-between text-sm">
 	<div class=" space-y-3 lg:max-h-full">
 		<div class="space-y-1">
+			<div class="pt-0.5">
+				<div class="flex flex-col w-full">
+					<div class="mb-1 text-base font-medium">{$i18n.t('Credit')}</div>
+					<div class="flex items-center">
+						<div>{credit}</div>
+						<button class="ml-1" on:click={() => doInit()}>
+							<svg
+								viewBox="0 0 1024 1024"
+								xmlns="http://www.w3.org/2000/svg"
+								width="16"
+								height="16"
+							>
+								<path
+									d="M832 512a32 32 0 0 0-32 32c0 158.784-129.216 288-288 288s-288-129.216-288-288 129.216-288 288-288c66.208 0 129.536 22.752 180.608 64H608a32 32 0 0 0 0 64h160a32 32 0 0 0 32-32V192a32 32 0 0 0-64 0v80.96A350.464 350.464 0 0 0 512 192C317.92 192 160 349.92 160 544s157.92 352 352 352 352-157.92 352-352a32 32 0 0 0-32-32"
+									fill="#3E3A39"
+								></path>
+							</svg>
+						</button>
+					</div>
+				</div>
+			</div>
+
+	
+
+		
+
+			<div class="max-h-[14rem] flex flex-col items-center w-full">
+				<div id="trade-qrcode" class="max-h-[128px] max-w-[128px]"></div>
+				{#if tradeInfo?.detail?.imgDisplayUrl}
+					<img
+						src={tradeInfo?.detail?.imgDisplayUrl}
+						alt="trade qrcode"
+						class="object-contain max-h-[128px] max-w-[128px]"
+					/>
+				{/if}
+				{#if tradeInfo?.detail?.qrcode || tradeInfo?.detail?.imgDisplayUrl}
+					<div class="mt-2">
+						{$i18n.t('Please refresh after payment')}
+					</div>
+				{/if}
+			</div>
+
 			{#if !tradeInfo?.detail?.qrcode && !tradeInfo?.detail?.imgDisplayUrl}
 				<hr class=" border-gray-100 dark:border-gray-700/10 my-2.5 w-full" />
 
