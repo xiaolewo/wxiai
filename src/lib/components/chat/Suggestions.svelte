@@ -76,7 +76,8 @@
 				? ' -mt-1'
 				: 'text-center items-center justify-center'}  self-start text-gray-400 dark:text-gray-600"
 		>
-			{$WEBUI_NAME} ‧ v{WEBUI_VERSION}
+			<!-- 我是对话版本号	{$WEBUI_NAME} ‧ v{WEBUI_VERSION} -->
+			为兹科技vivi 2.0
 		</div>
 	{/if}
 </div>
