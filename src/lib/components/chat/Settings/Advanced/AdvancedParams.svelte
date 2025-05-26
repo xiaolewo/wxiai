@@ -46,7 +46,7 @@
 	}
 </script>
 
-<div class=" space-y-1 text-xs pb-safe-bottom">
+<div  class=" space-y-1 text-xs pb-safe-bottom">
 	<div>
 		<Tooltip
 			content={$i18n.t(

@@ -83,13 +83,17 @@
 
 			<hr class="my-2 border-gray-50 dark:border-gray-700/10" />
 
-			<Collapsible title={$i18n.t('Advanced Params')} open={true} buttonClassName="w-full">
-				<div class="text-sm mt-1.5" slot="content">
-					<div>
-						<AdvancedParams admin={$user?.role === 'admin'} bind:params />
-					</div>
+		<div>
+		{#if false}
+		<Collapsible title={$i18n.t('Advanced Params')} open={true} buttonClassName="w-full">
+			<div class="text-sm mt-1.5" slot="content">
+				<div>
+					<AdvancedParams admin={$user?.role === 'admin'} bind:params />
 				</div>
-			</Collapsible>
+			</div>
+		</Collapsible>
+		{/if}
+		</div>
 		{/if}
 	</div>
 </div>

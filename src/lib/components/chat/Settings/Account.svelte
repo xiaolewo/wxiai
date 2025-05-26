@@ -211,14 +211,17 @@
 							}}>{$i18n.t('Use Initials')}</button
 						>
 
-						<button
-							class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-full px-4 py-0.5 bg-gray-100 dark:bg-gray-850"
-							on:click={async () => {
-								const url = await getGravatarUrl(localStorage.token, $user?.email);
+					{#if false}
+					
+					<button
+					class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-full px-4 py-0.5 bg-gray-100 dark:bg-gray-850"
+					on:click={async () => {
+						const url = await getGravatarUrl(localStorage.token, $user?.email);
 
-								profileImageUrl = url;
-							}}>{$i18n.t('Use Gravatar')}</button
-						>
+						profileImageUrl = url;
+					}}>{$i18n.t('Use Gravatar')}</button
+				>
+				{/if}
 
 						<button
 							class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-lg px-2 py-1"
@@ -246,7 +249,8 @@
 				</div>
 			</div>
 
-			{#if $config?.features?.enable_user_webhooks}
+			<!-- {#if $config?.features?.enable_user_webhooks} -->
+			{#if false}
 				<div class="pt-2">
 					<div class="flex flex-col w-full">
 						<div class=" mb-1 text-xs font-medium">{$i18n.t('Notification Webhook')}</div>
@@ -271,7 +275,8 @@
 			<UpdatePassword />
 		</div>
 
-		{#if ($config?.features?.enable_api_key ?? true) || $user?.role === 'admin'}
+		<!-- {#if ($config?.features?.enable_api_key ?? true) || $user?.role === 'admin'} -->
+		{#if false}
 			<div class="flex justify-between items-center text-sm mb-2">
 				<div class="  font-medium">{$i18n.t('API keys')}</div>
 				<button
