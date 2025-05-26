@@ -49,6 +49,16 @@
 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
 	import { chatCompletion } from '$lib/apis/openai';
 
+	import { beforeNavigate } from '$app/navigation';
+	import { updated } from '$app/state';
+
+	// handle frontend updates (https://svelte.dev/docs/kit/configuration#version)
+	beforeNavigate(({ willUnload, to }) => {
+		if (updated.current && !willUnload && to?.url) {
+			location.href = to.url.href;
+		}
+	});
+
 	setContext('i18n', i18n);
 
 	const bc = new BroadcastChannel('active-tab-channel');
@@ -454,11 +464,11 @@
 		}
 
 		if (now >= exp) {
-			await userSignOut();
+			const res = await userSignOut();
 			user.set(null);
-
 			localStorage.removeItem('token');
-			location.href = '/auth';
+
+			location.href = res?.redirect_url ?? '/auth';
 		}
 	};
 
@@ -536,8 +546,9 @@
 		let backendConfig = null;
 		try {
 			backendConfig = await getBackendConfig();
+			console.log('Backend config:', backendConfig);
 		} catch (error) {
-			console.error('加载后端配置时出错：', error);
+			console.error('Error loading backend config:', error);
 		}
 		// Initialize i18n even if we didn't get a backend config,
 		// so `/error` can show something that's not `undefined`.
