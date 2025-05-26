@@ -63,7 +63,7 @@
 			</div>
 			<div class=" self-center">{$i18n.t('Overview')}</div>
 		</button>
-111
+
 		<button
 			class="px-0.5 py-1 min-w-fit rounded-lg lg:flex-none flex text-right transition {selectedTab ===
 			'groups'
