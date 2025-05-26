@@ -29,8 +29,6 @@
 	let showDeleteConfirmDialog = false;
 
 	export let name = '';
-	export let id = '';
-	export let adminId = '';
 	export let description = '';
 
 	export let permissions = {
@@ -80,12 +78,10 @@
 
 	const init = () => {
 		if (group) {
-			console.log('group', group.id);
 			name = group.name;
 			description = group.description;
 			permissions = group?.permissions ?? {};
-			id = group.id;
-			adminId = group.admin_id;
+
 			userIds = group?.user_ids ?? [];
 		}
 	};
@@ -225,13 +221,12 @@
 						<div
 							class="flex-1 mt-1 lg:mt-1 lg:h-[22rem] lg:max-h-[22rem] overflow-y-auto scrollbar-hidden"
 						>
-		
 							{#if selectedTab == 'general'}
 								<Display bind:name bind:description />
 							{:else if selectedTab == 'permissions'}
 								<Permissions bind:permissions />
 							{:else if selectedTab == 'users'}
-								<Users bind:userIds bind:adminId bind:id {users} />
+								<Users bind:userIds {users} />
 							{/if}
 						</div>
 					</div>

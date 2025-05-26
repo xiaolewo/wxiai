@@ -51,13 +51,19 @@
 					<div
 						class="flex gap-1 scrollbar-none overflow-x-auto w-fit text-center text-sm font-medium rounded-full bg-transparent pt-1"
 					>
+					我是顶部导航栏
 						<a
 							class="min-w-fit rounded-full p-1.5 {['/admin/users'].includes($page.url.pathname)
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
 							href="/admin">{$i18n.t('Users')}</a
 						>
-
+						<a
+						class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/admin/setmenu')
+							? ''
+							: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+						href="/admin/setmenu">{$i18n.t('Setmenu')}</a
+					>
 						<a
 							class="min-w-fit rounded-full p-1.5 {$page.url.pathname.includes('/admin/evaluations')
 								? ''

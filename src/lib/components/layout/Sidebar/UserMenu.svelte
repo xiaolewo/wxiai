@@ -37,6 +37,7 @@
 			align="start"
 			transition={(e) => fade(e, { duration: 100 })}
 		>
+			我是侧边栏
 			<button
 				class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 				on:click={async () => {
@@ -89,6 +90,33 @@
 				<div class=" self-center truncate">{$i18n.t('Archived Chats')}</div>
 			</button>
 
+		
+			<a
+			class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+			href="/setmenu"
+		
+		>
+			<div class=" self-center mr-3">
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="1.5"
+					stroke="currentColor"
+					class="w-5 h-5"
+						><g
+							fill="none"
+							fill-rule="evenodd"
+							stroke="currentColor"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="1"
+							><path d="m15.5 4l3 4l-8 10l-8-10l3.009-4zm-13 4h16m-11 0l3 10m3-10l-3 10" /><path
+								d="M5.509 4L7.5 8l3-4l3 4l2-4"
+							/></g
+						></svg
+					>
+			</div>
+			<div class=" self-center truncate">{$i18n.t('Setmenu')}</div>
+		</a>
 			{#if role === 'admin'}
 				<a
 					class="flex rounded-md py-2 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition"

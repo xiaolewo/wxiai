@@ -375,29 +375,65 @@ export const deleteUserById = async (token: string, userId: string) => {
 	return res;
 };
 
-type UserUpdateForm = {
-	profile_image_url: string;
-	email: string;
-	name: string;
-	password: string;
-	credit: number;
-};
 
-export const updateUserById = async (token: string, userId: string, user: UserUpdateForm) => {
+export const deleteadminById = async (token: string, id: string, userId: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/users/${userId}/update`, {
-		method: 'POST',
+	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/set-admin`, {
+		method: 'post',
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
-			profile_image_url: user.profile_image_url,
-			email: user.email,
+			admin_id: userId
+		})
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.log(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+
+type UserUpdateForm = {
+	id: string,
+		name: string,
+		description: string,
+		price: number,
+		credits: number,
+		duration: number,
+		is_active: boolean
+};
+
+export const updateUserById = async (token: string, userId: string, user: UserUpdateForm) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/plans/${userId}`, {
+		method: 'put',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		},
+		body: JSON.stringify({
 			name: user.name,
-			password: user.password !== '' ? user.password : undefined,
-			credit: user.credit
+			id: user.id,
+			description: user.description,
+			price: user.price,
+			credits: user.credits,
+			duration: user.duration,
+			is_active: user.is_active
 		})
 	})
 		.then(async (res) => {

@@ -7,12 +7,10 @@
 	import { WEBUI_BASE_URL } from '$lib/constants';
 	import Checkbox from '$lib/components/common/Checkbox.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
-	import {  deleteadminById } from '$lib/apis/users';
+
 	export let users = [];
 	export let userIds = [];
-	export let id = '';
-	export let adminId = '';
-	import { toast } from 'svelte-sonner';
+
 	let filteredUsers = [];
 
 	$: filteredUsers = users
@@ -46,39 +44,8 @@
 		});
 
 	let query = '';
-
-	import ConfirmDialog from '$lib/components/common/EnterpriseDialog.svelte';
-
-	let showDeleteConfirmDialog = false;
-
-	let show = false;
-	let selectedUser = null;
-	let onDelete = () => {
-		console.log('onDelete', selectedUser);
-	};
-	const deleteUserHandler = async (id, userId) => {
-	
-		const res = await deleteadminById(localStorage.token, id, userId).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		
-
-		if (res) {
-
-			adminId = res.admin_id;
-			// getUserList();
-		}
-	};
 </script>
 
-<ConfirmDialog
-	bind:show={showDeleteConfirmDialog}
-	on:confirm={() => {
-		deleteUserHandler(id, selectedUser.id);
-	}}
-/>
 <div>
 	<div class="flex w-full">
 		<div class="flex flex-1">
@@ -140,26 +107,7 @@
 							</Tooltip>
 
 							{#if userIds.includes(user.id)}
-								<div class="flex items-center gap-2">
-									{#if adminId !== user.id}
-										<button
-											on:click={async (e) => {
-												e.preventDefault();
-												e.stopPropagation();
-												console.log('enterprise-admin', user);
-												showDeleteConfirmDialog = true;
-												selectedUser = user;
-											}}
-										>
-											<Badge type="info" content={$i18n.t('enterprise-admin1')} />
-										</button>
-									{/if}
-									{#if adminId === user.id}
-									<Badge type="info" content={$i18n.t('enterprise-admin')} />
-								{/if}
-
-									<Badge type="success" content="member" />
-								</div>
+								<Badge type="success" content="member" />
 							{/if}
 						</div>
 					</div>
