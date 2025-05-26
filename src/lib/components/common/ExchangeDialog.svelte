@@ -11,6 +11,7 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import alipayLogo from '$lib/assets/Alipay.png';
 	import wechatLogo from '$lib/assets/Wechat.png';
+	
 	import { marked } from 'marked';
 	export let menu;
 	export let title = '';
