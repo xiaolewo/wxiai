@@ -3,15 +3,14 @@
 
 	import { onMount, getContext, createEventDispatcher, onDestroy } from 'svelte';
 	import * as FocusTrap from 'focus-trap';
-	import { subscriptionPurchase, SubscriptionPayments } from '$lib/apis/setmenu';
+	import { subscriptionPurchase } from '$lib/apis/setmenu';
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
-	import qrcode from 'qrcode-generator';
+	import QRCode from 'qrcode';
 	import { fade } from 'svelte/transition';
 	import { flyAndScale } from '$lib/utils/transitions';
 	import alipayLogo from '$lib/assets/Alipay.png';
 	import wechatLogo from '$lib/assets/Wechat.png';
-	
 	import { marked } from 'marked';
 	export let menu;
 	export let title = '';
@@ -32,23 +31,13 @@
 		qrCodeUrl: '',
 		trade_no: ''
 	}; // 二维码图片地址
-
+	export let onPayTypeChange = (type: string) => {};
 	export let onJump = () => {};
 
 	let modalElement = null;
 	let mounted = false;
 
 	let focusTrap: FocusTrap.FocusTrap | null = null;
-
-	const onPayTypeChange = (type: string) => {
-		if(payType==type ){
-			return
-		}else{
-			payType=type
-			dinggou()
-		}
-		
-	};
 
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.key === 'Escape') {
@@ -83,14 +72,17 @@
 
 			if (res) {
 				console.log('订购套餐', res.detail);
-				qrCodeUrl.trade_no = res.id;
+				qrCodeUrl.trade_no = res.detail.trade_no;
 				if (res.detail.qrcode) {
-					const qr = qrcode(0, 'M');
-					qr.addData(res.detail.qrcode);
-					qr.make();
-					const dataUrl = qr.createDataURL(4); // 4 是二维码尺寸
-					console.log('dataUrl', dataUrl);
-					qrCodeUrl.qrCodeUrl = dataUrl;
+					QRCode.toDataURL(res.detail.qrcode)
+						.then((dataUrl: string) => {
+							console.log('dataUrl', dataUrl);
+							qrCodeUrl.qrCodeUrl = dataUrl;
+						})
+						.catch((err: unknown) => {
+							console.error(err);
+							toast.error('二维码生成失败');
+						});
 				} else {
 					toast.error('未获取到支付链接，无法生成二维码');
 					qrCodeUrl.qrCodeUrl = '';
@@ -101,31 +93,37 @@
 		}
 	};
 
-	$: if (menu) {
+	$: if (mounted) {
+		if (show && modalElement) {
+			document.body.appendChild(modalElement);
+			focusTrap = FocusTrap.createFocusTrap(modalElement);
+			focusTrap.activate();
+
+			window.addEventListener('keydown', handleKeyDown);
+			document.body.style.overflow = 'hidden';
+		} else if (modalElement) {
+			focusTrap.deactivate();
+
+			window.removeEventListener('keydown', handleKeyDown);
+			document.body.removeChild(modalElement);
+
+			document.body.style.overflow = 'unset';
+		}
+	}
+
+	$: if (modalElement) {
 		dinggou();
 	}
 
 	onDestroy(() => {
 		show = false;
-	});
-
-	const ashuda = async () => {
-		console.log('你好111111');
-		try {
-			const res = await SubscriptionPayments(localStorage.token, qrCodeUrl.trade_no).catch(
-				(error) => {
-					toast.error(`${error}`);
-					return null;
-				}
-			);
-
-			if (res) {
-				console.log('获取订购套餐详情', res.detail);
-			}
-		} catch (err) {
-			console.error(err);
+		if (focusTrap) {
+			focusTrap.deactivate();
 		}
-	};
+		if (modalElement) {
+			document.body.removeChild(modalElement);
+		}
+	});
 </script>
 
 {#if show}
@@ -185,9 +183,9 @@
 						</div>
 						<div
 							class="flex-1 border rounded-xl p-4 flex flex-col items-center cursor-pointer transition-all"
-							class:bg-green-50={payType === 'wxpay'}
-							class:border-green-500={payType === 'wxpay'}
-							on:click={() => onPayTypeChange('wxpay')}
+							class:bg-green-50={payType === 'wechat'}
+							class:border-green-500={payType === 'wechat'}
+							on:click={() => onPayTypeChange('wechat')}
 						>
 							<img src={wechatLogo} alt="WeChat Pay" class="w-10 h-10 mb-2" />
 							<div class="font-bold text-green-600">{$i18n.t('WeChat')}</div>
@@ -210,7 +208,11 @@
 					<div class="text-center text-gray-700 mb-2">
 						金额: <span class="font-bold">${menu.price}</span>
 					</div>
-					<div class=" text-gray-400  text-center cursor-pointer" on:click={ashuda}>支付后请点击此处手动刷新</div>
+
+					<div class="text-xs text-gray-400 text-center">
+						系统会自动检测支付状态，支付成功后将自动更新您的套餐。<br />
+						安全支付通过 <a href="https://yzf.330bk.com/" class="text-blue-500 underline">易支付</a>
+					</div>
 				</div>
 			</div>
 		</div>

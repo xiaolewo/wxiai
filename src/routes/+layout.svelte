@@ -536,9 +536,8 @@
 		let backendConfig = null;
 		try {
 			backendConfig = await getBackendConfig();
-	
 		} catch (error) {
-			console.error('Error loading backend config:', error);
+			console.error('加载后端配置时出错：', error);
 		}
 		// Initialize i18n even if we didn't get a backend config,
 		// so `/error` can show something that's not `undefined`.
