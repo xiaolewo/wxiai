@@ -135,7 +135,7 @@
 					class=" px-2 py-2 rounded-xl hover:bg-gray-700/10 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition font-medium text-sm flex items-center space-x-1"
 					aria-label={$i18n.t('Create Knowledge')}
 					on:click={() => {
-						goto('/workspace/knowledge/create');
+						goto('/knowledge/create');
 					}}
 				>
 					<Plus className="size-3.5" />
@@ -156,7 +156,7 @@
 							)
 						);
 					} else {
-						goto(`/workspace/knowledge/${item.id}`);
+						goto(`/knowledge/${item.id}`);
 					}
 				}}
 			>

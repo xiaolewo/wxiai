@@ -581,7 +581,7 @@
 		if (res) {
 			knowledge = res;
 		} else {
-			goto('/workspace/knowledge');
+			goto('/knowledge');
 		}
 
 		const dropZone = document.querySelector('body');

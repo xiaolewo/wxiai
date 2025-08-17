@@ -99,7 +99,7 @@
 			id: `${model.id}-clone`,
 			name: `${model.name} (Clone)`
 		});
-		goto('/workspace/models/create');
+		goto('/models/create');
 	};
 
 	const shareModelHandler = async (model) => {
@@ -271,7 +271,7 @@
 			<div>
 				<a
 					class=" px-2 py-2 rounded-xl hover:bg-gray-700/10 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition font-medium text-sm flex items-center space-x-1"
-					href="/workspace/models/create"
+					href="/models/create"
 				>
 					<Plus className="size-3.5" />
 				</a>
@@ -417,7 +417,7 @@
 								<a
 									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 									type="button"
-									href={`/workspace/models/edit?id=${encodeURIComponent(model.id)}`}
+									href={`/models/edit?id=${encodeURIComponent(model.id)}`}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
