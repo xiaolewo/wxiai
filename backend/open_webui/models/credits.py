@@ -1,14 +1,20 @@
 import time
 import uuid
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import JSON, BigInteger, Column, Numeric, String
+from sqlalchemy import JSON, BigInteger, Column, Numeric, String, or_
 
-from open_webui.config import CREDIT_EXCHANGE_RATIO
+from open_webui.env import (
+    REDIS_URL,
+    REDIS_SENTINEL_HOSTS,
+    REDIS_SENTINEL_PORT,
+    REDIS_CLUSTER,
+)
 from open_webui.internal.db import Base, get_db
+from open_webui.utils.redis import get_redis_connection, get_sentinels_from_env
 
 
 ####################
@@ -47,6 +53,19 @@ class TradeTicket(Base):
     detail = Column(JSON, nullable=True)
 
     created_at = Column(BigInteger, index=True)
+
+
+class RedemptionCode(Base):
+    __tablename__ = "redemption_code"
+
+    code = Column(String, primary_key=True)
+    purpose = Column(String, index=True)
+    user_id = Column(String, index=True, nullable=True)
+    amount = Column(Numeric(precision=24, scale=12))
+
+    created_at = Column(BigInteger, index=True)
+    expired_at = Column(BigInteger, index=True, nullable=True)
+    received_at = Column(BigInteger, index=True, nullable=True)
 
 
 ####################
@@ -134,6 +153,17 @@ class TradeTicketModel(BaseModel):
     amount: Decimal = Field(default_factory=lambda: Decimal("0"))
     detail: dict = Field(default_factory=lambda: {})
     created_at: int = Field(default_factory=lambda: int(time.time()))
+
+
+class RedemptionCodeModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="allow")
+    code: str
+    purpose: str
+    user_id: Optional[str] = None
+    amount: Decimal
+    created_at: int
+    expired_at: Optional[int] = None
+    received_at: Optional[int] = None
 
 
 ####################
@@ -265,6 +295,8 @@ class TradeTicketTable:
             return []
 
     def update_credit_by_id(self, id: str, detail: dict) -> None:
+        from open_webui.config import CREDIT_EXCHANGE_RATIO
+
         try:
             with get_db() as db:
                 db.query(TradeTicket).filter(TradeTicket.id == id).update(
@@ -288,23 +320,23 @@ TradeTickets = TradeTicketTable()
 
 
 class CreditLogTable:
-    def count_credit_log(self, user_id: Optional[str] = None) -> int:
+    def count_credit_log(self, user_ids: list[str] = None) -> int:
         with get_db() as db:
             query = db.query(CreditLog).order_by(CreditLog.created_at.desc())
-            if user_id:
-                query = query.filter(CreditLog.user_id == user_id)
+            if user_ids:
+                query = query.filter(CreditLog.user_id.in_(user_ids))
             return query.count()
 
     def get_credit_log_by_page(
         self,
-        user_id: str = "",
+        user_ids: list[str] = None,
         offset: Optional[int] = None,
         limit: Optional[int] = None,
     ) -> list[CreditLogSimpleModel]:
         with get_db() as db:
             query = db.query(CreditLog).order_by(CreditLog.created_at.desc())
-            if user_id:
-                query = query.filter(CreditLog.user_id == user_id)
+            if user_ids:
+                query = query.filter(CreditLog.user_id.in_(user_ids))
             if offset:
                 query = query.offset(offset)
             if limit:
@@ -327,5 +359,145 @@ class CreditLogTable:
         except Exception:
             return []
 
+    def delete_log_by_timestamp(self, timestamp: int) -> int:
+        try:
+            with get_db() as db:
+                query = db.query(CreditLog).filter(CreditLog.created_at < timestamp)
+                total = query.count()
+                query.delete()
+                db.commit()
+                return total
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
+
 
 CreditLogs = CreditLogTable()
+
+
+class RedemptionCodeTable:
+    def get_code(self, code: str) -> Optional[RedemptionCodeModel]:
+        try:
+            with get_db() as db:
+                redemption_code = (
+                    db.query(RedemptionCode).filter(RedemptionCode.code == code).first()
+                )
+                return (
+                    RedemptionCodeModel.model_validate(redemption_code)
+                    if redemption_code
+                    else None
+                )
+        except Exception:
+            return None
+
+    def get_codes(
+        self, keyword: str = None, offset: int = None, limit: int = None
+    ) -> Tuple[int, List[RedemptionCodeModel]]:
+        with get_db() as db:
+            query = db.query(RedemptionCode).order_by(RedemptionCode.created_at.desc())
+            if keyword:
+                query = query.filter(
+                    or_(
+                        RedemptionCode.code == keyword,
+                        RedemptionCode.purpose == keyword,
+                    )
+                )
+            total = query.count()
+            if offset:
+                query = query.offset(offset)
+            if limit:
+                query = query.limit(limit)
+            return total, [
+                RedemptionCodeModel.model_validate(code) for code in query.all()
+            ]
+
+    def insert_codes(self, redemption_codes: List[RedemptionCodeModel]) -> None:
+        try:
+            with get_db() as db:
+                db.add_all(
+                    [RedemptionCode(**code.model_dump()) for code in redemption_codes]
+                )
+                db.commit()
+            return None
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
+
+    def update_code(self, code: RedemptionCodeModel) -> None:
+        try:
+            with get_db() as db:
+                db.query(RedemptionCode).filter(
+                    RedemptionCode.code == code.code
+                ).update(
+                    {
+                        "purpose": code.purpose,
+                        "amount": code.amount,
+                        "expired_at": code.expired_at,
+                    }
+                )
+                db.commit()
+            return None
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
+
+    def delete_code(self, code: str) -> None:
+        try:
+            with get_db() as db:
+                db.query(RedemptionCode).filter(RedemptionCode.code == code).delete()
+                db.commit()
+            return None
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
+
+    def receive_code(self, code: str, user_id: str) -> None:
+        # receive
+        try:
+            # load code
+            redemption_code = self.get_code(code)
+            if redemption_code is None:
+                raise HTTPException(status_code=404, detail="Code not found")
+            # check if code is received
+            if redemption_code.user_id is not None:
+                raise HTTPException(status_code=400, detail="Code already received")
+            # check expired
+            now = int(time.time())
+            if (
+                redemption_code.expired_at is not None
+                and redemption_code.expired_at < now
+            ):
+                raise HTTPException(status_code=400, detail="Code expired")
+            # concurrency control
+            cache_key = f"redemption_code:{code}"
+            redis = get_redis_connection(
+                redis_url=REDIS_URL,
+                redis_sentinels=get_sentinels_from_env(
+                    REDIS_SENTINEL_HOSTS, REDIS_SENTINEL_PORT
+                ),
+                redis_cluster=REDIS_CLUSTER,
+            )
+            if not redis.set(cache_key, cache_key, nx=True, ex=60):
+                raise HTTPException(status_code=400, detail="Code already received")
+            # receive
+            with get_db() as db:
+                db.query(RedemptionCode).filter(RedemptionCode.code == code).update(
+                    {
+                        "user_id": user_id,
+                        "received_at": int(time.time()),
+                    }
+                )
+                db.commit()
+            Credits.add_credit_by_user_id(
+                AddCreditForm(
+                    user_id=user_id,
+                    amount=redemption_code.amount,
+                    detail=SetCreditFormDetail(
+                        desc="redemption code received", api_params={"code": code}
+                    ),
+                )
+            )
+            return
+        except HTTPException as err:
+            raise err
+        except Exception as err:
+            raise HTTPException(status_code=500, detail=str(err))
+
+
+RedemptionCodes = RedemptionCodeTable()

@@ -21,17 +21,28 @@
 	>
 		<div class="m-auto pb-10 flex flex-col justify-center">
 			<div class="max-w-md">
-				<div class="text-center dark:text-white text-2xl font-medium z-50">
-					{$i18n.t('Account Activation Pending')}<br />
-					{$i18n.t('Contact Admin for WebUI Access')}
+				<div
+					class="text-center dark:text-white text-2xl font-medium z-50"
+					style="white-space: pre-wrap;"
+				>
+					{#if ($config?.ui?.pending_user_overlay_title ?? '').trim() !== ''}
+						{$config.ui.pending_user_overlay_title}
+					{:else}
+						{$i18n.t('Account Activation Pending')}<br />
+						{$i18n.t('Contact Admin for WebUI Access')}
+					{/if}
 				</div>
 
-				<div class=" mt-4 text-center text-sm dark:text-gray-200 w-full">
-					{$i18n.t('Your account status is currently pending activation.')}<br />
-					{#if $config?.features?.enable_signup_verify}
+				<div
+					class=" mt-4 text-center text-sm dark:text-gray-200 w-full"
+					style="white-space: pre-wrap;"
+				>
+					{#if ($config?.ui?.pending_user_overlay_content ?? '').trim() !== ''}
+						{$config.ui.pending_user_overlay_content}
+					{:else if $config?.features?.enable_signup_verify}
 						{$i18n.t('Please check your email inbox for the activation link.')}
 					{:else}
-						{$i18n.t(
+						{$i18n.t('Your account status is currently pending activation.')}{'\n'}{$i18n.t(
 							'To access the WebUI, please reach out to the administrator. Admins can manage user statuses from the Admin Panel.'
 						)}
 					{/if}

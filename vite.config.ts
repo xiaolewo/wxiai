@@ -2,26 +2,9 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 import { viteStaticCopy } from 'vite-plugin-static-copy';
-import commonjs from '@rollup/plugin-commonjs';
-// /** @type {import('vite').Plugin} */
-// const viteServerConfig = {
-// 	name: 'log-request-middleware',
-// 	configureServer(server) {
-// 		server.middlewares.use((req, res, next) => {
-// 			res.setHeader('Access-Control-Allow-Origin', '*');
-// 			res.setHeader('Access-Control-Allow-Methods', 'GET');
-// 			res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-// 			res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-// 			next();
-// 		});
-// 	}
-// };
 
 export default defineConfig({
 	plugins: [
-		commonjs({
-			ignoreDynamicRequires: true // 解决动态 require 问题
-		}),
 		sveltekit(),
 		viteStaticCopy({
 			targets: [
@@ -38,9 +21,24 @@ export default defineConfig({
 		APP_BUILD_HASH: JSON.stringify(process.env.APP_BUILD_HASH || 'dev-build')
 	},
 	build: {
-		sourcemap: true
+		sourcemap: false,
+		chunkSizeWarningLimit: 20000,
+		cssCodeSplit: false,
+		rollupOptions: {
+			output: {
+				compact: true,
+				entryFileNames: 'assets/[name]-[hash].js',
+				chunkFileNames: 'assets/[name]-[hash].js',
+				assetFileNames: 'assets/[name]-[hash].[ext]'
+			},
+			external: []
+		}
 	},
 	worker: {
 		format: 'es'
+	},
+	esbuild: {
+		pure: process.env.ENV === 'dev' ? [] : ['console.log', 'console.debug'],
+		treeShaking: true
 	}
 });

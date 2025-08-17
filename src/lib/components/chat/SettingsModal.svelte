@@ -17,6 +17,7 @@
 	import User from '../icons/User.svelte';
 	import Personalization from './Settings/Personalization.svelte';
 	import Search from '../icons/Search.svelte';
+	import XMark from '../icons/XMark.svelte';
 	import Connections from './Settings/Connections.svelte';
 	import Tools from './Settings/Tools.svelte';
 
@@ -35,93 +36,160 @@
 			id: 'general',
 			title: 'General',
 			keywords: [
-				'general',
-				'theme',
-				'language',
-				'notifications',
-				'system',
-				'systemprompt',
-				'prompt',
-				'advanced',
-				'settings',
-				'defaultsettings',
+				'advancedparams',
+				'advancedparameters',
+				'advanced params',
+				'advanced parameters',
 				'configuration',
-				'systemsettings',
-				'notificationsettings',
-				'systempromptconfig',
-				'languageoptions',
 				'defaultparameters',
-				'systemparameters'
+				'default parameters',
+				'defaultsettings',
+				'default settings',
+				'general',
+				'keepalive',
+				'keep alive',
+				'languages',
+				'notifications',
+				'requestmode',
+				'request mode',
+				'systemparameters',
+				'system parameters',
+				'systemprompt',
+				'system prompt',
+				'systemsettings',
+				'system settings',
+				'theme',
+				'translate',
+				'webuisettings',
+				'webui settings'
 			]
 		},
 		{
 			id: 'interface',
 			title: 'Interface',
 			keywords: [
-				'defaultmodel',
-				'selectmodel',
-				'ui',
-				'userinterface',
-				'display',
-				'layout',
-				'design',
-				'landingpage',
-				'landingpagemode',
-				'default',
-				'chat',
-				'chatbubble',
-				'chatui',
-				'username',
-				'showusername',
-				'displayusername',
-				'widescreen',
-				'widescreenmode',
-				'fullscreen',
-				'expandmode',
+				'allow user location',
+				'allow voice interruption in call',
+				'allowuserlocation',
+				'allowvoiceinterruptionincall',
+				'always collapse codeblocks',
+				'always collapse code blocks',
+				'always expand details',
+				'always on web search',
+				'always play notification sound',
+				'alwayscollapsecodeblocks',
+				'alwaysexpanddetails',
+				'alwaysonwebsearch',
+				'alwaysplaynotificationsound',
+				'android',
+				'auto chat tags',
+				'auto copy response to clipboard',
+				'auto title',
+				'autochattags',
+				'autocopyresponsetoclipboard',
+				'autotitle',
+				'beta',
+				'call',
+				'chat background image',
+				'chat bubble ui',
+				'chat direction',
+				'chat tags autogen',
+				'chat tags autogeneration',
+				'chat ui',
+				'chatbackgroundimage',
+				'chatbubbleui',
 				'chatdirection',
+				'chat tags autogeneration',
+				'chattagsautogeneration',
+				'chatui',
+				'copy formatted text',
+				'copyformattedtext',
+				'default model',
+				'defaultmodel',
+				'design',
+				'detect artifacts automatically',
+				'detectartifactsautomatically',
+				'display emoji in call',
+				'display username',
+				'displayemojiincall',
+				'displayusername',
+				'enter key behavior',
+				'enterkeybehavior',
+				'expand mode',
+				'expandmode',
+				'file',
+				'followup autogeneration',
+				'followupautogeneration',
+				'fullscreen',
+				'fullwidthmode',
+				'full width mode',
+				'haptic feedback',
+				'hapticfeedback',
+				'high contrast mode',
+				'highcontrastmode',
+				'iframe sandbox allow forms',
+				'iframe sandbox allow same origin',
+				'iframesandboxallowforms',
+				'iframesandboxallowsameorigin',
+				'imagecompression',
+				'image compression',
+				'imagemaxcompressionsize',
+				'image max compression size',
+				'interface customization',
+				'interface options',
+				'interfacecustomization',
+				'interfaceoptions',
+				'landing page mode',
+				'landingpagemode',
+				'layout',
+				'left to right',
+				'left-to-right',
 				'lefttoright',
 				'ltr',
+				'paste large text as file',
+				'pastelargetextasfile',
+				'reset background',
+				'resetbackground',
+				'response auto copy',
+				'responseautocopy',
+				'rich text input for chat',
+				'richtextinputforchat',
+				'right to left',
+				'right-to-left',
 				'righttoleft',
 				'rtl',
-				'notifications',
-				'toast',
-				'toastnotifications',
-				'largechunks',
-				'streamlargechunks',
-				'scroll',
-				'scrollonbranchchange',
+				'scroll behavior',
+				'scroll on branch change',
 				'scrollbehavior',
-				'richtext',
-				'richtextinput',
-				'background',
-				'chatbackground',
-				'chatbackgroundimage',
-				'backgroundimage',
-				'uploadbackground',
-				'resetbackground',
-				'titleautogen',
+				'scrollonbranchchange',
+				'select model',
+				'selectmodel',
+				'settings',
+				'show username',
+				'showusername',
+				'stream large chunks',
+				'streamlargechunks',
+				'stylized pdf export',
+				'stylizedpdfexport',
+				'title autogeneration',
 				'titleautogeneration',
-				'autotitle',
-				'chattags',
-				'autochattags',
-				'responseautocopy',
-				'clipboard',
-				'location',
-				'userlocation',
+				'toast notifications for new updates',
+				'toastnotificationsfornewupdates',
+				'upload background',
+				'uploadbackground',
+				'user interface',
+				'user location access',
+				'userinterface',
 				'userlocationaccess',
-				'haptic',
-				'hapticfeedback',
 				'vibration',
-				'voice',
+				'voice control',
 				'voicecontrol',
-				'voiceinterruption',
-				'call',
-				'emojis',
-				'displayemoji',
-				'save',
-				'interfaceoptions',
-				'interfacecustomization',
-				'alwaysonwebsearch'
+				'widescreen mode',
+				'widescreenmode',
+				'whatsnew',
+				'whats new',
+				'websearchinchat',
+				'web search in chat'
 			]
 		},
 		...($user?.role === 'admin' ||
@@ -130,7 +198,15 @@
 					{
 						id: 'connections',
 						title: 'Connections',
-						keywords: []
+						keywords: [
+							'addconnection',
+							'add connection',
+							'manageconnections',
+							'manage connections',
+							'manage direct connections',
+							'managedirectconnections',
+							'settings'
+						]
 					}
 				]
 			: []),
@@ -141,7 +217,15 @@
 					{
 						id: 'tools',
 						title: 'Tools',
-						keywords: []
+						keywords: [
+							'addconnection',
+							'add connection',
+							'managetools',
+							'manage tools',
+							'manage tool servers',
+							'managetoolservers',
+							'settings'
+						]
 					}
 				]
 			: []),
@@ -150,101 +234,185 @@
 			id: 'personalization',
 			title: 'Personalization',
 			keywords: [
-				'personalization',
-				'memory',
-				'personalize',
-				'preferences',
-				'profile',
-				'personalsettings',
+				'account preferences',
+				'account settings',
+				'accountpreferences',
+				'accountsettings',
+				'custom settings',
 				'customsettings',
-				'userpreferences',
-				'accountpreferences'
+				'experimental',
+				'memories',
+				'memory',
+				'personalization',
+				'personalize',
+				'personal settings',
+				'personalsettings',
+				'profile',
+				'user preferences',
+				'userpreferences'
 			]
 		},
 		{
 			id: 'audio',
 			title: 'Audio',
 			keywords: [
-				'audio',
-				'sound',
-				'soundsettings',
-				'audiocontrol',
-				'volume',
-				'speech',
-				'speechrecognition',
-				'stt',
-				'speechtotext',
-				'tts',
-				'texttospeech',
-				'playback',
-				'playbackspeed',
-				'voiceplayback',
-				'speechplayback',
-				'audiooutput',
-				'speechengine',
-				'voicecontrol',
-				'audioplayback',
-				'transcription',
-				'autotranscribe',
-				'autosend',
-				'speechsettings',
-				'audiovoice',
-				'voiceoptions',
-				'setvoice',
-				'nonlocalvoices',
-				'savesettings',
+				'audio config',
+				'audio control',
+				'audio features',
+				'audio input',
+				'audio output',
+				'audio playback',
+				'audio voice',
 				'audioconfig',
-				'speechconfig',
-				'voicerecognition',
-				'speechsynthesis',
-				'speechmode',
-				'voicespeed',
-				'speechrate',
-				'speechspeed',
-				'audioinput',
+				'audiocontrol',
 				'audiofeatures',
-				'voicemodes'
+				'audioinput',
+				'audiooutput',
+				'audioplayback',
+				'audiovoice',
+				'auto playback response',
+				'autoplaybackresponse',
+				'auto transcribe',
+				'autotranscribe',
+				'instant auto send after voice transcription',
+				'instantautosendaftervoicetranscription',
+				'language',
+				'non local voices',
+				'nonlocalvoices',
+				'save settings',
+				'savesettings',
+				'set voice',
+				'setvoice',
+				'sound settings',
+				'soundsettings',
+				'speech config',
+				'speech mode',
+				'speech playback speed',
+				'speech rate',
+				'speech recognition',
+				'speech settings',
+				'speech speed',
+				'speech synthesis',
+				'speech to text engine',
+				'speechconfig',
+				'speechmode',
+				'speechplaybackspeed',
+				'speechrate',
+				'speechrecognition',
+				'speechsettings',
+				'speechspeed',
+				'speechsynthesis',
+				'speechtotextengine',
+				'speedch playback rate',
+				'speedchplaybackrate',
+				'stt settings',
+				'sttsettings',
+				'text to speech engine',
+				'text to speech',
+				'textospeechengine',
+				'texttospeech',
+				'texttospeechvoice',
+				'text to speech voice',
+				'voice control',
+				'voice modes',
+				'voice options',
+				'voice playback',
+				'voice recognition',
+				'voice speed',
+				'voicecontrol',
+				'voicemodes',
+				'voiceoptions',
+				'voiceplayback',
+				'voicerecognition',
+				'voicespeed',
+				'volume'
 			]
 		},
 		{
 			id: 'chats',
 			title: 'Chats',
 			keywords: [
-				'chat',
-				'messages',
-				'conversations',
-				'chatsettings',
-				'history',
+				'archive all chats',
+				'archive chats',
+				'archiveallchats',
+				'archivechats',
+				'archived chats',
+				'archivedchats',
+				'chat activity',
+				'chat history',
+				'chat settings',
+				'chatactivity',
 				'chathistory',
-				'messagehistory',
-				'messagearchive',
-				'convo',
-				'chats',
+				'chatsettings',
+				'conversation activity',
+				'conversation history',
+				'conversationactivity',
 				'conversationhistory',
-				'exportmessages',
-				'chatactivity'
+				'conversations',
+				'convos',
+				'delete all chats',
+				'delete chats',
+				'deleteallchats',
+				'deletechats',
+				'export chats',
+				'exportchats',
+				'import chats',
+				'importchats',
+				'message activity',
+				'message archive',
+				'message history',
+				'messagearchive',
+				'messagehistory'
 			]
 		},
 		{
 			id: 'account',
 			title: 'Account',
 			keywords: [
-				'account',
-				'profile',
-				'security',
-				'privacy',
-				'settings',
+				'account preferences',
+				'account settings',
+				'accountpreferences',
+				'accountsettings',
+				'api keys',
+				'apikeys',
+				'change password',
+				'changepassword',
+				'jwt token',
+				'jwttoken',
 				'login',
+				'new password',
+				'newpassword',
+				'notification webhook url',
+				'notificationwebhookurl',
+				'personal settings',
+				'personalsettings',
+				'privacy settings',
+				'privacysettings',
+				'profileavatar',
+				'profile avatar',
+				'profile details',
+				'profile image',
+				'profile picture',
+				'profiledetails',
+				'profileimage',
+				'profilepicture',
+				'security settings',
+				'securitysettings',
+				'update account',
+				'update password',
+				'updateaccount',
+				'updatepassword',
+				'user account',
+				'user data',
+				'user preferences',
+				'user profile',
 				'useraccount',
 				'userdata',
-				'api',
-				'apikey',
+				'username',
+				'userpreferences',
 				'userprofile',
-				'profiledetails',
-				'accountsettings',
-				'accountpreferences',
-				'securitysettings',
-				'privacysettings'
+				'webhook url',
+				'webhookurl'
 			]
 		},
 		{
@@ -253,61 +421,51 @@
 			keywords: ['credit']
 		},
 		{
-			id: 'admin',
-			title: 'Admin',
-			keywords: [
-				'admin',
-				'administrator',
-				'adminsettings',
-				'adminpanel',
-				'systemadmin',
-				'administratoraccess',
-				'systemcontrol',
-				'manage',
-				'management',
-				'admincontrols',
-				'adminfeatures',
-				'usercontrol',
-				'arenamodel',
-				'evaluations',
-				'websearch',
-				'database',
-				'pipelines',
-				'images',
-				'audio',
-				'documents',
-				'rag',
-				'models',
-				'ollama',
-				'openai',
-				'users'
-			]
-		},
-		{
 			id: 'about',
 			title: 'About',
 			keywords: [
-				'about',
-				'info',
-				'information',
-				'version',
-				'documentation',
-				'help',
-				'support',
-				'details',
-				'aboutus',
-				'softwareinfo',
-				'timothyjaeryangbaek',
-				'openwebui',
-				'release',
-				'updates',
-				'updateinfo',
-				'versioninfo',
+				'about app',
+				'about me',
+				'about open webui',
+				'about page',
+				'about us',
 				'aboutapp',
-				'terms',
-				'termsandconditions',
+				'aboutme',
+				'aboutopenwebui',
+				'aboutpage',
+				'aboutus',
+				'check for updates',
+				'checkforupdates',
 				'contact',
-				'aboutpage'
+				'copyright',
+				'details',
+				'discord',
+				'documentation',
+				'github',
+				'help',
+				'information',
+				'license',
+				'redistributions',
+				'release',
+				'see whats new',
+				'seewhatsnew',
+				'settings',
+				'software info',
+				'softwareinfo',
+				'support',
+				'terms and conditions',
+				'terms of use',
+				'termsandconditions',
+				'termsofuse',
+				'timothy jae ryang baek',
+				'timothy j baek',
+				'timothyjaeryangbaek',
+				'timothyjbaek',
+				'twitter',
+				'update info',
+				'updateinfo',
+				'version info',
+				'versioninfo'
 			]
 		}
 	];
@@ -385,54 +543,61 @@
 	}
 </script>
 
-<Modal size="xl" bind:show>
+<Modal size="lg" bind:show>
 	<div class="text-gray-700 dark:text-gray-100">
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class=" text-lg font-medium self-center">{$i18n.t('Settings')}</div>
 			<button
+				aria-label={$i18n.t('Close settings modal')}
 				class="self-center"
 				on:click={() => {
 					show = false;
 				}}
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 20 20"
-					fill="currentColor"
-					class="w-5 h-5"
-				>
-					<path
-						d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-					/>
-				</svg>
+				<XMark className="w-5 h-5"></XMark>
 			</button>
 		</div>
 
 		<div class="flex flex-col md:flex-row w-full px-4 pt-1 pb-4 md:space-x-4">
 			<div
+				role="tablist"
 				id="settings-tabs-container"
-				class="tabs flex flex-row overflow-x-auto gap-2.5 md:gap-1 md:flex-col flex-1 md:flex-none md:w-40 dark:text-gray-200 text-sm font-medium text-left mb-1 md:mb-0 -translate-y-1"
+				class="tabs flex flex-row overflow-x-auto gap-2.5 md:gap-1 md:flex-col flex-1 md:flex-none md:w-40 md:min-h-[32rem] md:max-h-[32rem] dark:text-gray-200 text-sm font-medium text-left mb-1 md:mb-0 -translate-y-1"
 			>
 				<div class="hidden md:flex w-full rounded-xl -mb-1 px-0.5 gap-2" id="settings-search">
 					<div class="self-center rounded-l-xl bg-transparent">
-						<Search className="size-3.5" />
+						<Search
+							className="size-3.5"
+							strokeWidth={($settings?.highContrastMode ?? false) ? '3' : '1.5'}
+						/>
 					</div>
+					<label class="sr-only" for="search-input-settings-modal">{$i18n.t('Search')}</label>
 					<input
-						class="w-full py-1.5 text-sm bg-transparent dark:text-gray-300 outline-hidden"
+						class={`w-full py-1.5 text-sm bg-transparent dark:text-gray-300 outline-hidden
+								${($settings?.highContrastMode ?? false) ? 'placeholder-gray-800' : ''}`}
 						bind:value={search}
+						id="search-input-settings-modal"
 						on:input={searchDebounceHandler}
 						placeholder={$i18n.t('Search')}
 					/>
 				</div>
-
 				{#if visibleTabs.length > 0}
 					{#each visibleTabs as tabId (tabId)}
 						{#if tabId === 'general'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'general'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-general"
+								aria-selected={selectedTab === 'general'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'general'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'general';
 								}}
@@ -440,6 +605,7 @@
 								<div class=" self-center mr-2">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
 										viewBox="0 0 20 20"
 										fill="currentColor"
 										class="w-4 h-4"
@@ -455,10 +621,19 @@
 							</button>
 						{:else if tabId === 'interface'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'interface'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-interface"
+								aria-selected={selectedTab === 'interface'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'interface'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'interface';
 								}}
@@ -466,6 +641,7 @@
 								<div class=" self-center mr-2">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
 										viewBox="0 0 16 16"
 										fill="currentColor"
 										class="w-4 h-4"
@@ -480,13 +656,21 @@
 								<div class=" self-center">{$i18n.t('Interface')}</div>
 							</button>
 						{:else if tabId === 'connections'}
-							{#if $user?.role === 'admin' || ($user?.role === 'user' && $config?.features?.enable_direct_connections)}
-								{#if false}
+							{#if $user?.role === 'admin1' || ($user?.role === 'user' && $config?.features?.enable_direct_connections)}
 								<button
-									class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-									'connections'
-										? ''
-										: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+									role="tab"
+									aria-controls="tab-connections"
+									aria-selected={selectedTab === 'connections'}
+									class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'connections'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 									on:click={() => {
 										selectedTab = 'connections';
 									}}
@@ -494,6 +678,7 @@
 									<div class=" self-center mr-2">
 										<svg
 											xmlns="http://www.w3.org/2000/svg"
+											aria-hidden="true"
 											viewBox="0 0 16 16"
 											fill="currentColor"
 											class="w-4 h-4"
@@ -505,15 +690,23 @@
 									</div>
 									<div class=" self-center">{$i18n.t('Connections')}</div>
 								</button>
-								{/if}
 							{/if}
 						{:else if tabId === 'tools'}
-							{#if $user?.role === 'admin' || ($user?.role === 'user' && $user?.permissions?.features?.direct_tool_servers)}
+							{#if $user?.role === 'admin1' || ($user?.role === 'user' && $user?.permissions?.features?.direct_tool_servers)}
 								<button
-									class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-									'tools'
-										? ''
-										: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+									role="tab"
+									aria-controls="tab-tools"
+									aria-selected={selectedTab === 'tools'}
+									class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'tools'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 									on:click={() => {
 										selectedTab = 'tools';
 									}}
@@ -521,6 +714,7 @@
 									<div class=" self-center mr-2">
 										<svg
 											xmlns="http://www.w3.org/2000/svg"
+											aria-hidden="true"
 											viewBox="0 0 24 24"
 											fill="currentColor"
 											class="size-4"
@@ -537,10 +731,19 @@
 							{/if}
 						{:else if tabId === 'personalization'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'personalization'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-personalization"
+								aria-selected={selectedTab === 'personalization'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'personalization'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'personalization';
 								}}
@@ -552,10 +755,19 @@
 							</button>
 						{:else if tabId === 'audio'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'audio'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-audio"
+								aria-selected={selectedTab === 'audio'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'audio'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'audio';
 								}}
@@ -563,6 +775,7 @@
 								<div class=" self-center mr-2">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
 										viewBox="0 0 16 16"
 										fill="currentColor"
 										class="w-4 h-4"
@@ -579,10 +792,19 @@
 							</button>
 						{:else if tabId === 'chats'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'chats'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-chats"
+								aria-selected={selectedTab === 'chats'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'chats'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'chats';
 								}}
@@ -590,6 +812,7 @@
 								<div class=" self-center mr-2">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
 										viewBox="0 0 16 16"
 										fill="currentColor"
 										class="w-4 h-4"
@@ -605,10 +828,19 @@
 							</button>
 						{:else if tabId === 'account'}
 							<button
-								class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-								'account'
-									? ''
-									: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+								role="tab"
+								aria-controls="tab-account"
+								aria-selected={selectedTab === 'account'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'account'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
 								on:click={() => {
 									selectedTab = 'account';
 								}}
@@ -616,6 +848,7 @@
 								<div class=" self-center mr-2">
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
 										viewBox="0 0 16 16"
 										fill="currentColor"
 										class="w-4 h-4"
@@ -655,71 +888,78 @@
 								</div>
 								<div class=" self-center">{$i18n.t('Credit')}</div>
 							</button>
-						{:else if tabId === 'about'}
-							<div>
-								{#if false}
-									<button
-										class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-										'about'
-											? ''
-											: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-										on:click={() => {
-											selectedTab = 'about';
-										}}
+						{:else if tabId === 'about1'}
+							<button
+								role="tab"
+								aria-controls="tab-about"
+								aria-selected={selectedTab === 'about'}
+								class={`px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition
+								${
+									selectedTab === 'about'
+										? ($settings?.highContrastMode ?? false)
+											? 'dark:bg-gray-800 bg-gray-200'
+											: ''
+										: ($settings?.highContrastMode ?? false)
+											? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'
+								}`}
+								on:click={() => {
+									selectedTab = 'about';
+								}}
+							>
+								<div class=" self-center mr-2">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										aria-hidden="true"
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										class="w-4 h-4"
 									>
-										<div class=" self-center mr-2">
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												viewBox="0 0 20 20"
-												fill="currentColor"
-												class="w-4 h-4"
-											>
-												<path
-													fill-rule="evenodd"
-													d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-													clip-rule="evenodd"
-												/>
-											</svg>
-										</div>
-										<div class=" self-center">{$i18n.t('About')}</div>
-									</button>
-								{/if}
-							</div>
-						{:else if tabId === 'admin'}
-							{#if $user?.role === 'admin'}
-								<button
-									class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-									'admin'
-										? ''
-										: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-									on:click={async () => {
-										await goto('/admin/settings');
-										show = false;
-									}}
-								>
-									<div class=" self-center mr-2">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											viewBox="0 0 24 24"
-											fill="currentColor"
-											class="size-4"
-										>
-											<path
-												fill-rule="evenodd"
-												d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.351.92 7.47 7.47 0 0 1-3.522.877 7.47 7.47 0 0 1-3.522-.877.75.75 0 0 1-.351-.92ZM15 8.25a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 0-1.5H15ZM14.25 12a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H15a.75.75 0 0 1-.75-.75Zm.75 2.25a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 0-1.5H15Z"
-												clip-rule="evenodd"
-											/>
-										</svg>
-									</div>
-									<div class=" self-center">{$i18n.t('Admin Settings')}</div>
-								</button>
-							{/if}
+										<path
+											fill-rule="evenodd"
+											d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+											clip-rule="evenodd"
+										/>
+									</svg>
+								</div>
+								<div class=" self-center">{$i18n.t('About')}</div>
+							</button>
 						{/if}
 					{/each}
 				{:else}
 					<div class="text-center text-gray-500 mt-4">
 						{$i18n.t('No results found')}
 					</div>
+				{/if}
+				{#if $user?.role === 'admin'}
+					<a
+						href="/admin/settings"
+						class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none md:mt-auto flex text-left transition {$settings?.highContrastMode
+							? 'hover:bg-gray-200 dark:hover:bg-gray-800'
+							: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+						on:click={async (e) => {
+							e.preventDefault();
+							await goto('/admin/settings');
+							show = false;
+						}}
+					>
+						<div class=" self-center mr-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								aria-hidden="true"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+								class="size-4"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.351.92 7.47 7.47 0 0 1-3.522.877 7.47 7.47 0 0 1-3.522-.877.75.75 0 0 1-.351-.92ZM15 8.25a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 0-1.5H15ZM14.25 12a.75.75 0 0 1 .75-.75h3.75a.75.75 0 0 1 0 1.5H15a.75.75 0 0 1-.75-.75Zm.75 2.25a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 0-1.5H15Z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+						</div>
+						<div class=" self-center">{$i18n.t('Admin Settings')}</div>
+					</a>
 				{/if}
 			</div>
 			<div class="flex-1 md:min-h-[32rem] max-h-[32rem]">
@@ -803,6 +1043,7 @@
 	}
 
 	input[type='number'] {
+		appearance: textfield;
 		-moz-appearance: textfield; /* Firefox */
 	}
 </style>

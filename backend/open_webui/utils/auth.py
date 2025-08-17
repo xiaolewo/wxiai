@@ -8,27 +8,42 @@ import hashlib
 import requests
 import os
 
+
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives import serialization
+import json
+
+
 from datetime import datetime, timedelta
 import pytz
 from pytz import UTC
 from typing import Optional, Union, List, Dict
-from open_webui.config import WEBUI_URL
 
+from opentelemetry import trace
+
+from open_webui.config import WEBUI_URL
 from open_webui.utils.smtp import send_email
 
 from open_webui.models.users import Users
 
 from open_webui.constants import ERROR_MESSAGES
+
 from open_webui.env import (
+    OFFLINE_MODE,
+    LICENSE_BLOB,
+    pk,
     WEBUI_SECRET_KEY,
     TRUSTED_SIGNATURE_KEY,
     STATIC_DIR,
     SRC_LOG_LEVELS,
+    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
     FRONTEND_BUILD_DIR,
     REDIS_URL,
     REDIS_SENTINEL_HOSTS,
     REDIS_SENTINEL_PORT,
     WEBUI_NAME,
+    REDIS_CLUSTER,
 )
 
 from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -76,83 +91,67 @@ def override_static(path: str, content: str):
         shutil.copyfileobj(r.raw, f)
 
 
-def get_license_data(
-    app,
-    key,
-    CUSTOM_PNG="",
-    CUSTOM_SVG="",
-    CUSTOM_ICO="",
-    CUSTOM_DARK_PNG="",
-    ORGANIZATION_NAME="",
-):
+def get_license_data(app, key):
     payload = {
         "resources": {
-            os.path.join(STATIC_DIR, "logo.png"): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
-            os.path.join(STATIC_DIR, "favicon.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
-            ),
-            os.path.join(STATIC_DIR, "favicon.svg"): os.getenv(
-                "CUSTOM_SVG", CUSTOM_SVG
-            ),
-            os.path.join(STATIC_DIR, "favicon-96x96.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
-            ),
+            os.path.join(STATIC_DIR, "logo.png"): os.getenv("CUSTOM_PNG", ""),
+            os.path.join(STATIC_DIR, "favicon.png"): os.getenv("CUSTOM_PNG", ""),
+            os.path.join(STATIC_DIR, "favicon.svg"): os.getenv("CUSTOM_SVG", ""),
+            os.path.join(STATIC_DIR, "favicon-96x96.png"): os.getenv("CUSTOM_PNG", ""),
             os.path.join(STATIC_DIR, "apple-touch-icon.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(STATIC_DIR, "web-app-manifest-192x192.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(STATIC_DIR, "web-app-manifest-512x512.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
-            os.path.join(STATIC_DIR, "splash.png"): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
-            os.path.join(STATIC_DIR, "favicon.ico"): os.getenv(
-                "CUSTOM_ICO", CUSTOM_ICO
-            ),
+            os.path.join(STATIC_DIR, "splash.png"): os.getenv("CUSTOM_PNG", ""),
+            os.path.join(STATIC_DIR, "favicon.ico"): os.getenv("CUSTOM_ICO", ""),
             os.path.join(STATIC_DIR, "favicon-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
+                "CUSTOM_DARK_PNG", ""
             ),
             os.path.join(STATIC_DIR, "splash-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
+                "CUSTOM_DARK_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "favicon.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.svg"): os.getenv(
-                "CUSTOM_SVG", CUSTOM_SVG
+                "CUSTOM_SVG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon-96x96.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/apple-touch-icon.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(
                 FRONTEND_BUILD_DIR, "static/web-app-manifest-192x192.png"
-            ): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
+            ): os.getenv("CUSTOM_PNG", ""),
             os.path.join(
                 FRONTEND_BUILD_DIR, "static/web-app-manifest-512x512.png"
-            ): os.getenv("CUSTOM_PNG", CUSTOM_PNG),
+            ): os.getenv("CUSTOM_PNG", ""),
             os.path.join(FRONTEND_BUILD_DIR, "static/splash.png"): os.getenv(
-                "CUSTOM_PNG", CUSTOM_PNG
+                "CUSTOM_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon.ico"): os.getenv(
-                "CUSTOM_ICO", CUSTOM_ICO
+                "CUSTOM_ICO", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/favicon-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
+                "CUSTOM_DARK_PNG", ""
             ),
             os.path.join(FRONTEND_BUILD_DIR, "static/splash-dark.png"): os.getenv(
-                "CUSTOM_DARK_PNG", CUSTOM_DARK_PNG
+                "CUSTOM_DARK_PNG", ""
             ),
         },
         "metadata": {
             "type": "enterprise",
-            "organization_name": os.getenv("ORGANIZATION_NAME", ORGANIZATION_NAME),
+            "organization_name": os.getenv("ORGANIZATION_NAME", "OpenWebui"),
         },
     }
     try:
@@ -228,6 +227,7 @@ def get_http_authorization_cred(auth_header: Optional[str]):
 
 def get_current_user(
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
     auth_token: HTTPAuthorizationCredentials = Depends(bearer_security),
 ):
@@ -240,7 +240,7 @@ def get_current_user(
         token = request.cookies.get("token")
 
     if token is None:
-        raise HTTPException(status_code=403, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
     # auth by api key
     if token.startswith("sk-"):
@@ -267,7 +267,17 @@ def get_current_user(
                     status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.API_KEY_NOT_ALLOWED
                 )
 
-        return get_current_user_by_api_key(token)
+        user = get_current_user_by_api_key(token)
+
+        # Add user info to current span
+        current_span = trace.get_current_span()
+        if current_span:
+            current_span.set_attribute("client.user.id", user.id)
+            current_span.set_attribute("client.user.email", user.email)
+            current_span.set_attribute("client.user.role", user.role)
+            current_span.set_attribute("client.auth.type", "api_key")
+
+        return user
 
     # auth by jwt token
     try:
@@ -286,6 +296,29 @@ def get_current_user(
                 detail=ERROR_MESSAGES.INVALID_TOKEN,
             )
         else:
+            if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
+                trusted_email = request.headers.get(
+                    WEBUI_AUTH_TRUSTED_EMAIL_HEADER, ""
+                ).lower()
+                if trusted_email and user.email != trusted_email:
+                    # Delete the token cookie
+                    response.delete_cookie("token")
+                    # Delete OAuth token if present
+                    if request.cookies.get("oauth_id_token"):
+                        response.delete_cookie("oauth_id_token")
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="User mismatch. Please sign in again.",
+                    )
+
+            # Add user info to current span
+            current_span = trace.get_current_span()
+            if current_span:
+                current_span.set_attribute("client.user.id", user.id)
+                current_span.set_attribute("client.user.email", user.email)
+                current_span.set_attribute("client.user.role", user.role)
+                current_span.set_attribute("client.auth.type", "jwt")
+
             # Refresh the user's last active timestamp asynchronously
             # to prevent blocking the request
             if background_tasks:
@@ -307,6 +340,14 @@ def get_current_user_by_api_key(api_key: str):
             detail=ERROR_MESSAGES.INVALID_TOKEN,
         )
     else:
+        # Add user info to current span
+        current_span = trace.get_current_span()
+        if current_span:
+            current_span.set_attribute("client.user.id", user.id)
+            current_span.set_attribute("client.user.email", user.email)
+            current_span.set_attribute("client.user.role", user.role)
+            current_span.set_attribute("client.auth.type", "api_key")
+
         Users.update_user_last_active_by_id(user.id)
 
     return user
@@ -503,6 +544,7 @@ def send_verify_email(email: str):
         redis_sentinels=get_sentinels_from_env(
             REDIS_SENTINEL_HOSTS, REDIS_SENTINEL_PORT
         ),
+        redis_cluster=REDIS_CLUSTER,
     )
     code = f"{uuid.uuid4().hex}{uuid.uuid1().hex}"
     redis.set(name=get_email_code_key(code=code), value=email, ex=timedelta(days=1))
@@ -521,5 +563,6 @@ def verify_email_by_code(code: str) -> str:
         redis_sentinels=get_sentinels_from_env(
             REDIS_SENTINEL_HOSTS, REDIS_SENTINEL_PORT
         ),
+        redis_cluster=REDIS_CLUSTER,
     )
     return redis.get(name=get_email_code_key(code=code))

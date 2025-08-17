@@ -26,6 +26,7 @@
 	import Spinner from '../common/Spinner.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils';
 	import Tooltip from '../common/Tooltip.svelte';
+	import XMark from '../icons/XMark.svelte';
 
 	let loaded = false;
 
@@ -38,10 +39,20 @@
 	let knowledgeBases = [];
 	let filteredItems = [];
 
-	$: if (knowledgeBases) {
+	$: if (knowledgeBases.length > 0) {
+		// Added a check for non-empty array, good practice
 		fuse = new Fuse(knowledgeBases, {
-			keys: ['name', 'description']
+			keys: [
+				'name',
+				'description',
+				'user.name', // Ensures Fuse looks into item.user.name
+				'user.email' // Ensures Fuse looks into item.user.email
+			],
+			threshold: 0.0 // You might want to adjust this. Lower is more strict. Default is 0.6.
+			// 0.0 is exact match.
 		});
+	} else {
+		fuse = null; // Reset fuse if knowledgeBases is empty
 	}
 
 	$: if (fuse) {
@@ -105,6 +116,18 @@
 					bind:value={query}
 					placeholder={$i18n.t('Search Knowledge')}
 				/>
+				{#if query}
+					<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
+						<button
+							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							on:click={() => {
+								query = '';
+							}}
+						>
+							<XMark className="size-3" strokeWidth="2" />
+						</button>
+					</div>
+				{/if}
 			</div>
 
 			<div>
@@ -112,7 +135,7 @@
 					class=" px-2 py-2 rounded-xl hover:bg-gray-700/10 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition font-medium text-sm flex items-center space-x-1"
 					aria-label={$i18n.t('Create Knowledge')}
 					on:click={() => {
-						goto('/workspace/knowledge/create');
+						goto('/knowledge/create');
 					}}
 				>
 					<Plus className="size-3.5" />
@@ -124,7 +147,7 @@
 	<div class="mb-5 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-2">
 		{#each filteredItems as item}
 			<button
-				class=" flex space-x-4 cursor-pointer text-left w-full px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-xl"
+				class=" flex space-x-4 cursor-pointer text-left w-full px-4 py-3 border border-gray-50 dark:border-gray-850 hover:bg-black/5 dark:hover:bg-white/5 transition rounded-2xl"
 				on:click={() => {
 					if (item?.meta?.document) {
 						toast.error(
@@ -133,7 +156,7 @@
 							)
 						);
 					} else {
-						goto(`/workspace/knowledge/${item.id}`);
+						goto(`/knowledge/${item.id}`);
 					}
 				}}
 			>
@@ -192,6 +215,6 @@
 	</div>
 {:else}
 	<div class="w-full h-full flex justify-center items-center">
-		<Spinner />
+		<Spinner className="size-5" />
 	</div>
 {/if}

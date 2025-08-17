@@ -16,7 +16,7 @@ export const getUserGroups = async (token: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -43,7 +43,7 @@ export const getUserDefaultPermissions = async (token: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -73,7 +73,7 @@ export const updateUserDefaultPermissions = async (token: string, permissions: o
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -104,7 +104,7 @@ export const updateUserRole = async (token: string, id: string, role: string) =>
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -154,7 +154,7 @@ export const getUsers = async (
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -182,7 +182,7 @@ export const getAllUsers = async (token: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -208,7 +208,7 @@ export const getUserSettings = async (token: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -238,7 +238,7 @@ export const updateUserSettings = async (token: string, settings: object) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -265,7 +265,7 @@ export const getUserById = async (token: string, userId: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -291,7 +291,7 @@ export const getUserInfo = async (token: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -321,7 +321,7 @@ export const updateUserInfo = async (token: string, info: object) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -335,7 +335,7 @@ export const updateUserInfo = async (token: string, info: object) => {
 
 export const getAndUpdateUserLocation = async (token: string) => {
 	const location = await getUserPosition().catch((err) => {
-		console.log(err);
+		console.error(err);
 		return null;
 	});
 
@@ -343,9 +343,36 @@ export const getAndUpdateUserLocation = async (token: string) => {
 		await updateUserInfo(token, { location: location });
 		return location;
 	} else {
-		console.log('Failed to get user location');
+		console.info('Failed to get user location');
 		return null;
 	}
+};
+
+export const getUserActiveStatusById = async (token: string, userId: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/users/${userId}/active`, {
+		method: 'GET',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
 };
 
 export const deleteUserById = async (token: string, userId: string) => {
@@ -363,37 +390,7 @@ export const deleteUserById = async (token: string, userId: string) => {
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
-			error = err.detail;
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const deleteadminById = async (token: string, id: string, userId: string) => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/set-admin`, {
-		method: 'post',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			admin_id: userId
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.log(err);
+			console.error(err);
 			error = err.detail;
 			return null;
 		});
@@ -406,32 +403,30 @@ export const deleteadminById = async (token: string, id: string, userId: string)
 };
 
 type UserUpdateForm = {
-	id: string;
+	role: string;
+	profile_image_url: string;
+	email: string;
 	name: string;
-	description: string;
-	price: number;
-	credits: number;
-	duration: number;
-	is_active: boolean;
+	password: string;
+	credit: number;
 };
 
 export const updateUserById = async (token: string, userId: string, user: UserUpdateForm) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/subscription/plans/${userId}`, {
-		method: 'put',
+	const res = await fetch(`${WEBUI_API_BASE_URL}/users/${userId}/update`, {
+		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`
 		},
 		body: JSON.stringify({
+			profile_image_url: user.profile_image_url,
+			role: user.role,
+			email: user.email,
 			name: user.name,
-			id: user.id,
-			description: user.description,
-			price: user.price,
-			credits: user.credits,
-			duration: user.duration,
-			is_active: user.is_active
+			password: user.password !== '' ? user.password : undefined,
+			credit: user.credit
 		})
 	})
 		.then(async (res) => {
@@ -439,7 +434,34 @@ export const updateUserById = async (token: string, userId: string, user: UserUp
 			return res.json();
 		})
 		.catch((err) => {
-			console.log(err);
+			console.error(err);
+			error = err.detail;
+			return null;
+		});
+
+	if (error) {
+		throw error;
+	}
+
+	return res;
+};
+
+export const getUserGroupsById = async (token: string, userId: string) => {
+	let error = null;
+
+	const res = await fetch(`${WEBUI_API_BASE_URL}/users/${userId}/groups`, {
+		method: 'GET',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	})
+		.then(async (res) => {
+			if (!res.ok) throw await res.json();
+			return res.json();
+		})
+		.catch((err) => {
+			console.error(err);
 			error = err.detail;
 			return null;
 		});

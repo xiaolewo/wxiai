@@ -7,7 +7,11 @@ from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.config import get_config, save_config
 from open_webui.config import BannerModel
 
-from open_webui.utils.tools import get_tool_server_data, get_tool_servers_data
+from open_webui.utils.tools import (
+    get_tool_server_data,
+    get_tool_servers_data,
+    get_tool_server_url,
+)
 
 router = APIRouter()
 
@@ -38,32 +42,39 @@ async def export_config(user=Depends(get_admin_user)):
 
 
 ############################
-# Direct Connections Config
+# Connections Config
 ############################
 
 
-class DirectConnectionsConfigForm(BaseModel):
+class ConnectionsConfigForm(BaseModel):
     ENABLE_DIRECT_CONNECTIONS: bool
+    ENABLE_BASE_MODELS_CACHE: bool
 
 
-@router.get("/direct_connections", response_model=DirectConnectionsConfigForm)
-async def get_direct_connections_config(request: Request, user=Depends(get_admin_user)):
+@router.get("/connections", response_model=ConnectionsConfigForm)
+async def get_connections_config(request: Request, user=Depends(get_admin_user)):
     return {
         "ENABLE_DIRECT_CONNECTIONS": request.app.state.config.ENABLE_DIRECT_CONNECTIONS,
+        "ENABLE_BASE_MODELS_CACHE": request.app.state.config.ENABLE_BASE_MODELS_CACHE,
     }
 
 
-@router.post("/direct_connections", response_model=DirectConnectionsConfigForm)
-async def set_direct_connections_config(
+@router.post("/connections", response_model=ConnectionsConfigForm)
+async def set_connections_config(
     request: Request,
-    form_data: DirectConnectionsConfigForm,
+    form_data: ConnectionsConfigForm,
     user=Depends(get_admin_user),
 ):
     request.app.state.config.ENABLE_DIRECT_CONNECTIONS = (
         form_data.ENABLE_DIRECT_CONNECTIONS
     )
+    request.app.state.config.ENABLE_BASE_MODELS_CACHE = (
+        form_data.ENABLE_BASE_MODELS_CACHE
+    )
+
     return {
         "ENABLE_DIRECT_CONNECTIONS": request.app.state.config.ENABLE_DIRECT_CONNECTIONS,
+        "ENABLE_BASE_MODELS_CACHE": request.app.state.config.ENABLE_BASE_MODELS_CACHE,
     }
 
 
@@ -127,7 +138,7 @@ async def verify_tool_servers_config(
         elif form_data.auth_type == "session":
             token = request.state.token.credentials
 
-        url = f"{form_data.url}/{form_data.path}"
+        url = get_tool_server_url(form_data.url, form_data.path)
         return await get_tool_server_data(token, url)
     except Exception as e:
         raise HTTPException(
@@ -321,6 +332,142 @@ async def get_banners(
 
 
 ############################
+# General Config (SMTP, Website Customization)
+############################
+
+
+class GeneralConfigForm(BaseModel):
+    # SMTP邮件配置
+    SMTP_HOST: Optional[str] = Field(default="")
+    SMTP_PORT: Optional[int] = Field(default=465)
+    SMTP_USERNAME: Optional[str] = Field(default="")
+    SMTP_PASSWORD: Optional[str] = Field(default="")
+
+    # 网站自定义配置
+    LICENSE_KEY: Optional[str] = Field(default="")
+    ORGANIZATION_NAME: Optional[str] = Field(default="")
+    CUSTOM_NAME: Optional[str] = Field(default="")
+    CUSTOM_ICO: Optional[str] = Field(default="")
+    CUSTOM_PNG: Optional[str] = Field(default="")
+    CUSTOM_DARK_PNG: Optional[str] = Field(default="")
+    CUSTOM_SVG: Optional[str] = Field(default="")
+
+
+@router.get("/general", response_model=GeneralConfigForm)
+async def get_general_config(request: Request, _=Depends(get_admin_user)):
+    try:
+        # 导入必要的配置对象
+        from open_webui.config import (
+            SMTP_HOST,
+            SMTP_PORT,
+            SMTP_USERNAME,
+            SMTP_PASSWORD,
+            LICENSE_KEY,
+            ORGANIZATION_NAME,
+            CUSTOM_ICO,
+            CUSTOM_PNG,
+            CUSTOM_DARK_PNG,
+            CUSTOM_SVG,
+        )
+
+        return {
+            # SMTP配置
+            "SMTP_HOST": SMTP_HOST.value,
+            "SMTP_PORT": SMTP_PORT.value,
+            "SMTP_USERNAME": SMTP_USERNAME.value,
+            "SMTP_PASSWORD": SMTP_PASSWORD.value,
+            # 网站自定义配置
+            "LICENSE_KEY": LICENSE_KEY.value,
+            "ORGANIZATION_NAME": ORGANIZATION_NAME.value,
+            "CUSTOM_NAME": getattr(request.app.state, "WEBUI_NAME", ""),  # 从状态获取
+            "CUSTOM_ICO": CUSTOM_ICO.value,
+            "CUSTOM_PNG": CUSTOM_PNG.value,
+            "CUSTOM_DARK_PNG": CUSTOM_DARK_PNG.value,
+            "CUSTOM_SVG": CUSTOM_SVG.value,
+        }
+    except Exception as e:
+        log.exception(f"Error loading general config: {e}")
+        # 返回默认值
+        return {
+            "SMTP_HOST": "",
+            "SMTP_PORT": 465,
+            "SMTP_USERNAME": "",
+            "SMTP_PASSWORD": "",
+            "LICENSE_KEY": "",
+            "ORGANIZATION_NAME": "",
+            "CUSTOM_NAME": "",
+            "CUSTOM_ICO": "",
+            "CUSTOM_PNG": "",
+            "CUSTOM_DARK_PNG": "",
+            "CUSTOM_SVG": "",
+        }
+
+
+@router.post("/general", response_model=GeneralConfigForm)
+async def set_general_config(
+    request: Request, form_data: GeneralConfigForm, _=Depends(get_admin_user)
+):
+    try:
+        # 导入必要的配置对象
+        from open_webui.config import (
+            SMTP_HOST,
+            SMTP_PORT,
+            SMTP_USERNAME,
+            SMTP_PASSWORD,
+            LICENSE_KEY,
+            ORGANIZATION_NAME,
+            CUSTOM_ICO,
+            CUSTOM_PNG,
+            CUSTOM_DARK_PNG,
+            CUSTOM_SVG,
+        )
+
+        # 直接更新 PersistentConfig 对象的值并保存
+        SMTP_HOST.value = form_data.SMTP_HOST
+        SMTP_HOST.save()
+
+        SMTP_PORT.value = form_data.SMTP_PORT
+        SMTP_PORT.save()
+
+        SMTP_USERNAME.value = form_data.SMTP_USERNAME
+        SMTP_USERNAME.save()
+
+        SMTP_PASSWORD.value = form_data.SMTP_PASSWORD
+        SMTP_PASSWORD.save()
+
+        LICENSE_KEY.value = form_data.LICENSE_KEY
+        LICENSE_KEY.save()
+
+        ORGANIZATION_NAME.value = form_data.ORGANIZATION_NAME
+        ORGANIZATION_NAME.save()
+
+        CUSTOM_ICO.value = form_data.CUSTOM_ICO
+        CUSTOM_ICO.save()
+
+        CUSTOM_PNG.value = form_data.CUSTOM_PNG
+        CUSTOM_PNG.save()
+
+        CUSTOM_DARK_PNG.value = form_data.CUSTOM_DARK_PNG
+        CUSTOM_DARK_PNG.save()
+
+        CUSTOM_SVG.value = form_data.CUSTOM_SVG
+        CUSTOM_SVG.save()
+
+        # 如果有自定义网站名称，更新状态（CUSTOM_NAME是遗留字段，直接更新到WEBUI_NAME）
+        if form_data.CUSTOM_NAME:
+            request.app.state.WEBUI_NAME = form_data.CUSTOM_NAME
+
+        return form_data
+
+    except Exception as e:
+        log.exception(f"Error updating general config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update general config: {str(e)}",
+        )
+
+
+############################
 # Usage
 ############################
 
@@ -331,11 +478,13 @@ class UsageConfigForm(BaseModel):
     CREDIT_DEFAULT_CREDIT: float = Field(default=0, ge=0)
     USAGE_CALCULATE_MODEL_PREFIX_TO_REMOVE: str = Field(default="")
     USAGE_DEFAULT_ENCODING_MODEL: str = Field(default="gpt-4o")
+    USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE: float = Field(default=0, ge=0)
     USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE: float = Field(default=0, ge=0)
     USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE: float = Field(default=0, ge=0)
     USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE: float = Field(default=0, ge=0)
     USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE: float = Field(default=0, ge=0)
     USAGE_CALCULATE_MINIMUM_COST: float = Field(default=0, ge=0)
+    USAGE_CUSTOM_PRICE_CONFIG: str = Field(default="[]")
     EZFP_PAY_PRIORITY: Literal["qrcode", "link"] = Field(default="qrcode")
     EZFP_ENDPOINT: Optional[str] = None
     EZFP_PID: Optional[str] = None
@@ -345,18 +494,20 @@ class UsageConfigForm(BaseModel):
 
 
 @router.get("/usage", response_model=UsageConfigForm)
-async def get_usage_config(request: Request, user=Depends(get_admin_user)):
+async def get_usage_config(request: Request, _=Depends(get_admin_user)):
     return {
         "CREDIT_NO_CREDIT_MSG": request.app.state.config.CREDIT_NO_CREDIT_MSG,
         "CREDIT_EXCHANGE_RATIO": request.app.state.config.CREDIT_EXCHANGE_RATIO,
         "CREDIT_DEFAULT_CREDIT": request.app.state.config.CREDIT_DEFAULT_CREDIT,
         "USAGE_CALCULATE_MODEL_PREFIX_TO_REMOVE": request.app.state.config.USAGE_CALCULATE_MODEL_PREFIX_TO_REMOVE,
         "USAGE_DEFAULT_ENCODING_MODEL": request.app.state.config.USAGE_DEFAULT_ENCODING_MODEL,
+        "USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE": request.app.state.config.USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE,
         "USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE,
         "USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE,
         "USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE,
         "USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE,
         "USAGE_CALCULATE_MINIMUM_COST": request.app.state.config.USAGE_CALCULATE_MINIMUM_COST,
+        "USAGE_CUSTOM_PRICE_CONFIG": request.app.state.config.USAGE_CUSTOM_PRICE_CONFIG,
         "EZFP_PAY_PRIORITY": request.app.state.config.EZFP_PAY_PRIORITY,
         "EZFP_ENDPOINT": request.app.state.config.EZFP_ENDPOINT,
         "EZFP_PID": request.app.state.config.EZFP_PID,
@@ -368,7 +519,7 @@ async def get_usage_config(request: Request, user=Depends(get_admin_user)):
 
 @router.post("/usage", response_model=UsageConfigForm)
 async def set_usage_config(
-    request: Request, form_data: UsageConfigForm, user=Depends(get_admin_user)
+    request: Request, form_data: UsageConfigForm, _=Depends(get_admin_user)
 ):
     request.app.state.config.CREDIT_NO_CREDIT_MSG = form_data.CREDIT_NO_CREDIT_MSG
     request.app.state.config.CREDIT_EXCHANGE_RATIO = form_data.CREDIT_EXCHANGE_RATIO
@@ -378,6 +529,9 @@ async def set_usage_config(
     )
     request.app.state.config.USAGE_DEFAULT_ENCODING_MODEL = (
         form_data.USAGE_DEFAULT_ENCODING_MODEL
+    )
+    request.app.state.config.USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE = (
+        form_data.USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE
     )
     request.app.state.config.USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE = (
         form_data.USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE
@@ -394,6 +548,9 @@ async def set_usage_config(
     request.app.state.config.USAGE_CALCULATE_MINIMUM_COST = (
         form_data.USAGE_CALCULATE_MINIMUM_COST
     )
+    request.app.state.config.USAGE_CUSTOM_PRICE_CONFIG = (
+        form_data.USAGE_CUSTOM_PRICE_CONFIG
+    )
     request.app.state.config.EZFP_PAY_PRIORITY = form_data.EZFP_PAY_PRIORITY
     request.app.state.config.EZFP_ENDPOINT = form_data.EZFP_ENDPOINT
     request.app.state.config.EZFP_PID = form_data.EZFP_PID
@@ -403,13 +560,17 @@ async def set_usage_config(
 
     return {
         "CREDIT_NO_CREDIT_MSG": request.app.state.config.CREDIT_NO_CREDIT_MSG,
+        "CREDIT_EXCHANGE_RATIO": request.app.state.config.CREDIT_EXCHANGE_RATIO,
+        "CREDIT_DEFAULT_CREDIT": request.app.state.config.CREDIT_DEFAULT_CREDIT,
         "USAGE_CALCULATE_MODEL_PREFIX_TO_REMOVE": request.app.state.config.USAGE_CALCULATE_MODEL_PREFIX_TO_REMOVE,
         "USAGE_DEFAULT_ENCODING_MODEL": request.app.state.config.USAGE_DEFAULT_ENCODING_MODEL,
+        "USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE": request.app.state.config.USAGE_CALCULATE_DEFAULT_EMBEDDING_PRICE,
         "USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE,
         "USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE,
         "USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE,
         "USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE": request.app.state.config.USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE,
         "USAGE_CALCULATE_MINIMUM_COST": request.app.state.config.USAGE_CALCULATE_MINIMUM_COST,
+        "USAGE_CUSTOM_PRICE_CONFIG": request.app.state.config.USAGE_CUSTOM_PRICE_CONFIG,
         "EZFP_PAY_PRIORITY": request.app.state.config.EZFP_PAY_PRIORITY,
         "EZFP_ENDPOINT": request.app.state.config.EZFP_ENDPOINT,
         "EZFP_PID": request.app.state.config.EZFP_PID,

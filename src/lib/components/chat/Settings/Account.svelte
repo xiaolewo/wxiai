@@ -4,6 +4,7 @@
 
 	import { user, config, settings } from '$lib/stores';
 	import { updateUserProfile, createAPIKey, getAPIKey, getSessionUser } from '$lib/apis/auths';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import UpdatePassword from './Account/UpdatePassword.svelte';
 	import { getGravatarUrl } from '$lib/apis/utils';
@@ -86,7 +87,7 @@
 	});
 </script>
 
-<div class="flex flex-col h-full justify-between text-sm">
+<div id="tab-account" class="flex flex-col h-full justify-between text-sm">
 	<div class=" overflow-y-scroll max-h-[28rem] lg:max-h-full">
 		<input
 			id="profile-image-input"
@@ -208,29 +209,24 @@
 										}
 									);
 								}
-							}}
-							>{$i18n.t('Use Initials')}
-						</button>
+							}}>{$i18n.t('Use Initials')}</button
+						>
 
-						{#if false}
-							<button
-								class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-full px-4 py-0.5 bg-gray-100 dark:bg-gray-850"
-								on:click={async () => {
-									const url = await getGravatarUrl(localStorage.token, $user?.email);
+						<button
+							class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-full px-4 py-0.5 bg-gray-100 dark:bg-gray-850"
+							on:click={async () => {
+								const url = await getGravatarUrl(localStorage.token, $user?.email);
 
-									profileImageUrl = url;
-								}}
-								>{$i18n.t('Use Gravatar')}
-							</button>
-						{/if}
+								profileImageUrl = url;
+							}}>{$i18n.t('Use Gravatar')}</button
+						>
 
 						<button
 							class=" text-xs text-center text-gray-800 dark:text-gray-400 rounded-lg px-2 py-1"
 							on:click={async () => {
-								profileImageUrl = '/user.png';
-							}}
-							>{$i18n.t('Remove')}
-						</button>
+								profileImageUrl = `${WEBUI_BASE_URL}/user.png`;
+							}}>{$i18n.t('Remove')}</button
+						>
 					</div>
 				</div>
 			</div>
@@ -251,8 +247,7 @@
 				</div>
 			</div>
 
-			<!-- {#if $config?.features?.enable_user_webhooks} -->
-			{#if false}
+			{#if $config?.features?.enable_user_webhooks}
 				<div class="pt-2">
 					<div class="flex flex-col w-full">
 						<div class=" mb-1 text-xs font-medium">{$i18n.t('Notification Webhook')}</div>
@@ -277,8 +272,7 @@
 			<UpdatePassword />
 		</div>
 
-		<!-- {#if ($config?.features?.enable_api_key ?? true) || $user?.role === 'admin'} -->
-		{#if false}
+		{#if ($config?.features?.enable_api_key ?? true) || $user?.role === 'admin'}
 			<div class="flex justify-between items-center text-sm mb-2">
 				<div class="  font-medium">{$i18n.t('API keys')}</div>
 				<button
@@ -286,9 +280,8 @@
 					type="button"
 					on:click={() => {
 						showAPIKeys = !showAPIKeys;
-					}}
-					>{showAPIKeys ? $i18n.t('Hide') : $i18n.t('Show')}
-				</button>
+					}}>{showAPIKeys ? $i18n.t('Hide') : $i18n.t('Show')}</button
+				>
 			</div>
 
 			{#if showAPIKeys}
@@ -436,8 +429,8 @@
 									>
 										<Plus strokeWidth="2" className=" size-3.5" />
 
-										{$i18n.t('Create new secret key')}
-									</button>
+										{$i18n.t('Create new secret key')}</button
+									>
 								{/if}
 							</div>
 						</div>

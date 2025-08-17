@@ -1,5 +1,7 @@
 <script>
 	import { getContext, tick, onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import { config } from '$lib/stores';
@@ -10,6 +12,10 @@
 	import Pipelines from './Settings/Pipelines.svelte';
 	import Audio from './Settings/Audio.svelte';
 	import Images from './Settings/Images.svelte';
+	import Midjourney from './Settings/Midjourney.svelte';
+	import DreamWork from './Settings/DreamWork.svelte';
+	import Kling from './Settings/Kling.svelte';
+	import Jimeng from './Settings/Jimeng.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
 	import Connections from './Settings/Connections.svelte';
@@ -27,6 +33,46 @@
 
 	let selectedTab = 'general';
 
+	// Get current tab from URL pathname, default to 'general'
+	$: {
+		const pathParts = $page.url.pathname.split('/');
+		const tabFromPath = pathParts[pathParts.length - 1];
+		selectedTab = [
+			'general',
+			'credit',
+			'connections',
+			'models',
+			'evaluations',
+			'tools',
+			'documents',
+			'web',
+			'code-execution',
+			'interface',
+			'audio',
+			'images',
+			'midjourney',
+			'dreamwork',
+			'kling',
+			'jimeng',
+			'pipelines',
+			'db'
+		].includes(tabFromPath)
+			? tabFromPath
+			: 'general';
+	}
+
+	$: if (selectedTab) {
+		// scroll to selectedTab
+		scrollToTab(selectedTab);
+	}
+
+	const scrollToTab = (tabId) => {
+		const tabElement = document.getElementById(tabId);
+		if (tabElement) {
+			tabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+		}
+	};
+
 	onMount(() => {
 		const containerElement = document.getElementById('admin-settings-tabs-container');
 
@@ -38,6 +84,9 @@
 				}
 			});
 		}
+
+		// Scroll to the selected tab on mount
+		scrollToTab(selectedTab);
 	});
 </script>
 
@@ -47,12 +96,13 @@
 		class="tabs flex flex-row overflow-x-auto gap-2.5 max-w-full lg:gap-1 lg:flex-col lg:flex-none lg:w-40 dark:text-gray-200 text-sm font-medium text-left scrollbar-none"
 	>
 		<button
+			id="general"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 lg:flex-none flex text-right transition {selectedTab ===
 			'general'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'general';
+				goto('/admin/settings/general');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -78,7 +128,7 @@
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'credit';
+				goto('/admin/settings/credit');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -99,12 +149,13 @@
 		</button>
 
 		<button
+			id="connections"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'connections'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'connections';
+				goto('/admin/settings/connections');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -123,12 +174,13 @@
 		</button>
 
 		<button
+			id="models"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'models'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'models';
+				goto('/admin/settings/models');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -149,12 +201,13 @@
 		</button>
 
 		<button
+			id="evaluations"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'evaluations'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'evaluations';
+				goto('/admin/settings/evaluations');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -164,12 +217,13 @@
 		</button>
 
 		<button
+			id="tools"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'tools'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'tools';
+				goto('/admin/settings/tools');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -190,12 +244,13 @@
 		</button>
 
 		<button
+			id="documents"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'documents'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'documents';
+				goto('/admin/settings/documents');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -220,12 +275,13 @@
 		</button>
 
 		<button
+			id="web"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'web'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'web';
+				goto('/admin/settings/web');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -244,12 +300,13 @@
 		</button>
 
 		<button
+			id="code-execution"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'code-execution'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'code-execution';
+				goto('/admin/settings/code-execution');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -270,12 +327,13 @@
 		</button>
 
 		<button
+			id="interface"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'interface'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'interface';
+				goto('/admin/settings/interface');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -296,12 +354,13 @@
 		</button>
 
 		<button
+			id="audio"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'audio'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'audio';
+				goto('/admin/settings/audio');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -323,12 +382,13 @@
 		</button>
 
 		<button
+			id="images"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'images'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'images';
+				goto('/admin/settings/images');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -349,12 +409,119 @@
 		</button>
 
 		<button
+			id="midjourney"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'midjourney'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/midjourney');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="m3 16 5-7 6 6.5m6.5 2.5L16 13l-4.286 6M14 10h.01M4 19h16a1 1 0 0 0 1-1V6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1Z"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">Midjourney</div>
+		</button>
+
+		<button
+			id="dreamwork"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'dreamwork'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/dreamwork');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 18c-4.411 0-8-3.589-8-8s3.589-8 8-8 8 3.589 8 8-3.589 8-8 8zm-1-13h2v6h-2V7zm0 8h2v2h-2v-2z"
+						fill="currentColor"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">即梦 (DreamWork)</div>
+		</button>
+
+		<button
+			id="kling"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'kling'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/kling');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M3.5 6.75A.75.75 0 0 1 4.25 6h15.5a.75.75 0 0 1 0 1.5H4.25a.75.75 0 0 1-.75-.75ZM3.5 12a.75.75 0 0 1 .75-.75h15.5a.75.75 0 0 1 0 1.5H4.25A.75.75 0 0 1 3.5 12ZM4.25 16.5a.75.75 0 0 0 0 1.5h11.5a.75.75 0 0 0 0-1.5H4.25Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">可灵 (Kling)</div>
+		</button>
+
+		<button
+			id="jimeng"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'jimeng'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/jimeng');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M3.5 6.75A.75.75 0 0 1 4.25 6h15.5a.75.75 0 0 1 0 1.5H4.25a.75.75 0 0 1-.75-.75ZM3.5 12a.75.75 0 0 1 .75-.75h15.5a.75.75 0 0 1 0 1.5H4.25A.75.75 0 0 1 3.5 12ZM4.25 16.5a.75.75 0 0 0 0 1.5h11.5a.75.75 0 0 0 0-1.5H4.25Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">即梦视频 (Jimeng)</div>
+		</button>
+
+		<button
+			id="pipelines"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'pipelines'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'pipelines';
+				goto('/admin/settings/pipelines');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -379,12 +546,13 @@
 		</button>
 
 		<button
+			id="db"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'db'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'db';
+				goto('/admin/settings/db');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -479,6 +647,30 @@
 			/>
 		{:else if selectedTab === 'images'}
 			<Images
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'midjourney'}
+			<Midjourney
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'dreamwork'}
+			<DreamWork
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'kling'}
+			<Kling
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'jimeng'}
+			<Jimeng
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

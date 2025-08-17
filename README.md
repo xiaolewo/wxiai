@@ -1,3 +1,4 @@
+> 注意：此仓库的 `dev` 分支是开发分支，可能包含不稳定或未发布的功能。强烈建议用户在部署和生产环境中使用无预发布标签的正式版本。  
 > 该项目是社区驱动的开源 AI 平台 [Open WebUI](https://github.com/open-webui/open-webui) 的定制分支。此版本与 Open WebUI 官方团队没有任何关联，亦非由其维护。
 
 # Open WebUI 👋
@@ -10,6 +11,8 @@
 部署后，不能直接回退到官方镜像；如需使用官方镜像，请参考此篇 [Wiki](https://github.com/U8F69/open-webui/wiki/%E9%87%8D%E6%96%B0%E4%BD%BF%E7%94%A8%E5%AE%98%E6%96%B9%E9%95%9C%E5%83%8F) 处理
 
 部署二开版本只需要替换镜像和版本，其他的部署与官方版本没有差别，版本号请在 [Release](https://github.com/U8F69/open-webui/releases/latest) 中查看
+
+切换到本仓库镜像前请阅读此篇 [Wiki](https://github.com/U8F69/open-webui/wiki/%E4%BB%8E%E5%AE%98%E6%96%B9%E9%95%9C%E5%83%8F%E5%88%87%E6%8D%A2%E5%88%B0%E6%9C%AC%E4%BB%93%E5%BA%93%E9%95%9C%E5%83%8F)，如有疑问请提 ISSUE 获取支持
 
 ```
 ghcr.io/u8f69/open-webui:<版本号>
@@ -35,11 +38,49 @@ ghcr.io/u8f69/open-webui:<版本号>
 
 ![usage](./docs/usage.png)
 
+### 兑换码
+
+![redemption code](./docs/redemption.png)
+
 ### 支持注册邮箱验证
 
 ![email](./docs/sign_verify_user.png)
 
 ## 拓展配置
+
+### 兑换码功能
+
+需要使用 Redis 避免被多次兑换
+
+```
+REDIS_URL=redis://:<password>@<host>:6379/0
+```
+
+### 自定义价格配置
+
+可以对请求 Body 中的任何匹配的内容额外计费，例如 OpenAI 和 Gemini 原生网页搜索  
+此部分配置较为复杂，如有需要可以提 ISSUE 单获取支持，或者使用 LLM 生成，Prompt 为 "参考这个例子，生成一个 XXX 的配置"，并提供下面的例子
+
+```json
+[
+	{
+		"name": "web_search", // 计费名称，使用纯英文和下划线
+		"path": "$.tools[*].type", // python jsonpath_ng 兼容的解析路径
+		"exists": false, // 是否检测到 path 就计费，优先级高于 value 匹配
+		"value": "web_search_preview", // 匹配的值
+		"cost": 1000000 // 1M 次请求的价格
+	}
+]
+```
+
+### HTTP Client Read Buffer Size
+
+当有遇到 `Chunk too big` 报错时，可以适当调节这里的大小
+
+```
+# 默认是 64KB
+AIOHTTP_CLIENT_READ_BUFFER_SIZE=65536
+```
 
 ### 注册邮箱验证
 
@@ -67,83 +108,3 @@ SMTP_PASSWORD=password
 - 请务必确保您的实际部署满足 License 所要求的用户规模、授权条件等（详见 [官方说明#9](https://docs.openwebui.com/license#9-what-about-forks-can-i-start-one-and-remove-all-open-webui-mentions)）。
 - 未经授权的商用或大规模去除品牌属于违规，由使用者自行承担法律风险。
 - 具体自定义方法见 [docs/BRANDING.md](./docs/BRANDING.md)。
-
-## Docker 部署
-
-### 快速开始
-
-使用以下命令快速启动 Open WebUI，默认使用 SQLite 数据库：
-
-```bash
-docker run -d \
-  --name open-webui \
-  -p 3000:8080 \
-  -v open-webui:/app/backend/data \
-  ghcr.io/cnqsxdy/openwebui:latest
-```
-
-### 使用特定版本
-
-```bash
-docker run -d \
-  --name open-webui \
-  -p 3000:8080 \
-  -v open-webui:/app/backend/data \
-  ghcr.io/cnqsxdy/openwebui:<版本号>
-```
-
-### 使用 MySQL（暂未支持！需后续兼容迁移脚本） 和 Redis
-
-可以通过环境变量配置连接 MySQL 和 Redis。请根据你的实际情况修改连接字符串和密码:
-
-```bash
-docker run -d \
-  --name open-webui \
-  -p 3000:8080 \
-  -v open-webui:/app/backend/data \
-  -e DATABASE_URL="mysql+pymysql://user:password@your_mysql_host:3306/dbname" \
-  -e REDIS_URL="redis://:password@your_redis_host:6379/0" \
-  ghcr.io/cnqsxdy/openwebui:latest
-```
-
-请确保 `your_mysql_host` 和 `your_redis_host` 可以被 Docker 容器访问到。
-
-## Docker Compose 部署
-
-### 快速启动 (SQLite)
-
-在项目根目录下执行，默认使用 SQLite 数据库：
-
-```bash
-docker compose up -d
-```
-
-### 使用 MySQL（暂未支持！需后续兼容迁移脚本） 和 Redis
-
-修改 `docker-compose.yaml` 文件，取消 `mysql` 和 `redis` 服务的注释，并根据你的需求配置环境变量。然后执行：
-
-```bash
-docker compose up -d
-```
-
-请确保在 `.env` 文件或者直接在 `docker-compose.yaml` 中配置 `WEBUI_SECRET_KEY`。
-
-### 主要服务说明
-
-- `open-webui`: 主 WebUI 服务。
-- `ollama`: 大模型服务。
-- `mysql` （暂未支持！需后续兼容迁移脚本）: MySQL 数据库服务，需取消注释并配置。
-- `redis` (可选): Redis 服务，用于高级功能（如积分、邮箱验证），需取消注释并配置。
-
-### 环境变量说明
-
-- `WEBUI_SECRET_KEY`: WebUI 密钥，**必须设置为强密码**。
-- `DATABASE_URL`: 数据库连接字符串，默认使用 SQLite (`sqlite:///app/backend/data/webui.db`)。如使用 MySQL（暂未支持！需后续兼容迁移脚本），请修改为 `mysql+pymysql://user:password@mysql:3306/dbname` (如果MySQL服务也在同一个docker-compose网络中) 或 `mysql+pymysql://user:password@your_mysql_host:3306/dbname` (如果MySQL在外部)。
-- `REDIS_URL`: Redis 连接字符串，启用积分/邮箱验证等功能时需配置。如使用 Redis 服务在同一个docker-compose网络中，请修改为 `redis://:password@redis:6379/0`。如Redis在外部，请修改为 `redis://:password@your_redis_host:6379/0`。
-
-### 数据持久化
-
-- `open-webui` 卷: 持久化 WebUI 数据（包括 SQLite 数据库文件）。
-- `ollama` 卷: 持久化大模型数据。
-- `mysql_data` 卷: 持久化 MySQL 数据（如启用）。
-- `redis_data` 卷: 持久化 Redis 数据（如启用）。

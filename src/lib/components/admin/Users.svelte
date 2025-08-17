@@ -4,15 +4,37 @@
 
 	import { goto } from '$app/navigation';
 	import { user } from '$lib/stores';
+	import { page } from '$app/stores';
 
 	import UserList from './Users/UserList.svelte';
 	import Groups from './Users/Groups.svelte';
 	import Credit from './Users/Credit.svelte';
 	import CreditLog from '$lib/components/admin/Users/CreditLog.svelte';
+	import RedemptionCodes from '$lib/components/admin/Users/RedemptionCodes.svelte';
 
 	const i18n = getContext('i18n');
 
-	let selectedTab = 'overview';
+	let selectedTab;
+	$: {
+		const pathParts = $page.url.pathname.split('/');
+		const tabFromPath = pathParts[pathParts.length - 1];
+		selectedTab = ['overview', 'groups', 'credit', 'creditLog', 'redemption'].includes(tabFromPath)
+			? tabFromPath
+			: 'overview';
+	}
+
+	$: if (selectedTab) {
+		// scroll to selectedTab
+		scrollToTab(selectedTab);
+	}
+
+	const scrollToTab = (tabId) => {
+		const tabElement = document.getElementById(tabId);
+		if (tabElement) {
+			tabElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+		}
+	};
+
 	let loaded = false;
 
 	onMount(async () => {
@@ -32,6 +54,9 @@
 				}
 			});
 		}
+
+		// Scroll to the selected tab on mount
+		scrollToTab(selectedTab);
 	});
 </script>
 
@@ -41,12 +66,13 @@
 		class=" flex flex-row overflow-x-auto gap-2.5 max-w-full lg:gap-1 lg:flex-col lg:flex-none lg:w-40 dark:text-gray-200 text-sm font-medium text-left scrollbar-none"
 	>
 		<button
+			id="overview"
 			class="px-0.5 py-1 min-w-fit rounded-lg lg:flex-none flex text-right transition {selectedTab ===
 			'overview'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'overview';
+				goto('/admin/users/overview');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -65,12 +91,13 @@
 		</button>
 
 		<button
+			id="groups"
 			class="px-0.5 py-1 min-w-fit rounded-lg lg:flex-none flex text-right transition {selectedTab ===
 			'groups'
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'groups';
+				goto('/admin/users/groups');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -94,7 +121,7 @@
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'credit';
+				goto('/admin/users/credit');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -120,7 +147,7 @@
 				? ''
 				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
 			on:click={() => {
-				selectedTab = 'creditLog';
+				goto('/admin/users/creditLog');
 			}}
 		>
 			<div class=" self-center mr-2">
@@ -139,6 +166,32 @@
 			</div>
 			<div class=" self-center">{$i18n.t('Credit Log')}</div>
 		</button>
+
+		<button
+			class="px-0.5 py-1 min-w-fit rounded-lg lg:flex-none flex text-right transition {selectedTab ===
+			'redemption'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/users/redemption');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 16 16"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M2 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1h1a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4zm10 0H4v8h8V4zm2 2h-1v4h1V6zm-3 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">{$i18n.t('Redemption Code')}</div>
+		</button>
 	</div>
 
 	<div class="flex-1 mt-1 lg:mt-0 overflow-y-scroll">
@@ -150,6 +203,8 @@
 			<Credit />
 		{:else if selectedTab === 'creditLog'}
 			<CreditLog />
+		{:else if selectedTab === 'redemption'}
+			<RedemptionCodes />
 		{/if}
 	</div>
 </div>

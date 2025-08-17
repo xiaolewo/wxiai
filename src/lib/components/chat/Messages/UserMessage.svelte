@@ -6,6 +6,7 @@
 	import { models, settings } from '$lib/stores';
 	import { user as _user } from '$lib/stores';
 	import { copyToClipboard as _copyToClipboard, formatDate } from '$lib/utils';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -22,6 +23,7 @@
 
 	export let user;
 
+	export let chatId;
 	export let history;
 	export let messageId;
 
@@ -36,6 +38,7 @@
 
 	export let isFirstMessage: boolean;
 	export let readOnly: boolean;
+	export let topPadding = false;
 
 	let showDeleteConfirm = false;
 
@@ -107,15 +110,19 @@
 	}}
 />
 
-<div class=" flex w-full user-message" dir={$settings.chatDirection} id="message-{message.id}">
+<div
+	class=" flex w-full user-message group"
+	dir={$settings.chatDirection}
+	id="message-{message.id}"
+>
 	{#if !($settings?.chatBubble ?? true)}
-		<div class={`shrink-0 ltr:mr-3 rtl:ml-3`}>
+		<div class={`shrink-0 ltr:mr-3 rtl:ml-3 mt-1`}>
 			<ProfileImage
 				src={message.user
 					? ($models.find((m) => m.id === message.user)?.info?.meta?.profile_image_url ??
-						'/user.png')
-					: (user?.profile_image_url ?? '/user.png')}
-				className={'size-8'}
+						`${WEBUI_BASE_URL}/user.png`)
+					: (user?.profile_image_url ?? `${WEBUI_BASE_URL}/user.png`)}
+				className={'size-8 user-message-profile-image'}
 			/>
 		</div>
 	{/if}
@@ -143,12 +150,22 @@
 					{/if}
 				</Name>
 			</div>
+		{:else if message.timestamp}
+			<div class="flex justify-end pr-2 text-xs">
+				<div
+					class="text-[0.65rem] invisible group-hover:visible text-gray-400 font-medium first-letter:capitalize mb-0.5"
+				>
+					<Tooltip content={dayjs(message.timestamp * 1000).format('LLLL')}>
+						<span class="line-clamp-1">{formatDate(message.timestamp * 1000)}</span>
+					</Tooltip>
+				</div>
+			</div>
 		{/if}
 
 		<div class="chat-{message.role} w-full min-w-full markdown-prose">
 			{#if edit !== true}
 				{#if message.files}
-					<div class="mt-2.5 mb-1 w-full flex flex-col justify-end overflow-x-auto gap-1 flex-wrap">
+					<div class="mb-1 w-full flex flex-col justify-end overflow-x-auto gap-1 flex-wrap">
 						{#each message.files as file}
 							<div class={($settings?.chatBubble ?? true) ? 'self-end' : ''}>
 								{#if file.type === 'image'}
@@ -302,7 +319,7 @@
 									: ' w-full'}"
 							>
 								{#if message.content}
-									<Markdown id={message.id} content={message.content} />
+									<Markdown id={`${chatId}-${message.id}`} content={message.content} {topPadding} />
 								{/if}
 							</div>
 						</div>

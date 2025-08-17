@@ -9,9 +9,8 @@ from open_webui.models.groups import (
     GroupForm,
     GroupUpdateForm,
     GroupResponse,
-    GroupAdminForm,
+    UserIdsForm,
 )
-from open_webui.models.credits import Credits
 
 from open_webui.config import CACHE_DIR
 from open_webui.constants import ERROR_MESSAGES
@@ -81,91 +80,7 @@ async def get_group_by_id(id: str, user=Depends(get_admin_user)):
 
 
 ############################
-# SetGroupAdmin
-############################
-
-
-@router.post("/id/{id}/set-admin", response_model=Optional[GroupResponse])
-async def set_group_admin(
-    id: str, form_data: GroupAdminForm, user=Depends(get_admin_user)
-):
-    """设置权限组管理员"""
-    try:
-        # 验证管理员ID是否有效
-        admin_user = Users.get_user_by_id(form_data.admin_id)
-        if not admin_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT("Invalid admin user ID"),
-            )
-
-        # 设置管理员并确保该用户只在这一个组内
-        group = Groups.set_group_admin_by_id(id, form_data.admin_id)
-        Groups.ensure_user_in_single_group(form_data.admin_id, id)
-
-        if group:
-            return group
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT("Error setting group admin"),
-            )
-    except Exception as e:
-        log.exception(f"Error setting group admin for group {id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(e),
-        )
-
-
-############################
-# GetGroupAdminCredit
-############################
-
-
-@router.get("/admin-credit", response_model=dict)
-async def get_group_admin_credit(user=Depends(get_verified_user)):
-    """获取用户所在权限组管理员的积分"""
-    try:
-        # 获取用户所在的权限组
-        group = Groups.get_user_group(user.id)
-
-        # 如果用户不在任何组内或组内没有设置管理员
-        if not group or not group.admin_id:
-            # 返回用户自己的积分
-            user_credit = Credits.get_credit_by_user_id(user.id)
-            return {
-                "user_credit": user_credit.credit if user_credit else 0,
-                "admin_credit": None,
-                "admin_id": None,
-                "admin_name": None,
-                "group_id": None,
-                "group_name": None,
-            }
-
-        # 获取管理员信息
-        admin_user = Users.get_user_by_id(group.admin_id)
-        admin_credit = Credits.get_credit_by_user_id(group.admin_id)
-        user_credit = Credits.get_credit_by_user_id(user.id)
-
-        return {
-            "user_credit": user_credit.credit if user_credit else 0,
-            "admin_credit": admin_credit.credit if admin_credit else 0,
-            "admin_id": admin_user.id,
-            "admin_name": admin_user.name,
-            "group_id": group.id,
-            "group_name": group.name,
-        }
-    except Exception as e:
-        log.exception(f"Error getting group admin credit: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(e),
-        )
-
-
-############################
-# UpdateGroupById - 修改现有方法确保用户只在一个组内
+# UpdateGroupById
 ############################
 
 
@@ -177,10 +92,6 @@ async def update_group_by_id(
         if form_data.user_ids:
             form_data.user_ids = Users.get_valid_user_ids(form_data.user_ids)
 
-            # 确保每个用户只在这一个组内
-            for user_id in form_data.user_ids:
-                Groups.ensure_user_in_single_group(user_id, id)
-
         group = Groups.update_group_by_id(id, form_data)
         if group:
             return group
@@ -191,6 +102,56 @@ async def update_group_by_id(
             )
     except Exception as e:
         log.exception(f"Error updating group {id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT(e),
+        )
+
+
+############################
+# AddUserToGroupByUserIdAndGroupId
+############################
+
+
+@router.post("/id/{id}/users/add", response_model=Optional[GroupResponse])
+async def add_user_to_group(
+    id: str, form_data: UserIdsForm, user=Depends(get_admin_user)
+):
+    try:
+        if form_data.user_ids:
+            form_data.user_ids = Users.get_valid_user_ids(form_data.user_ids)
+
+        group = Groups.add_users_to_group(id, form_data.user_ids)
+        if group:
+            return group
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ERROR_MESSAGES.DEFAULT("Error adding users to group"),
+            )
+    except Exception as e:
+        log.exception(f"Error adding users to group {id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ERROR_MESSAGES.DEFAULT(e),
+        )
+
+
+@router.post("/id/{id}/users/remove", response_model=Optional[GroupResponse])
+async def remove_users_from_group(
+    id: str, form_data: UserIdsForm, user=Depends(get_admin_user)
+):
+    try:
+        group = Groups.remove_users_from_group(id, form_data.user_ids)
+        if group:
+            return group
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=ERROR_MESSAGES.DEFAULT("Error removing users from group"),
+            )
+    except Exception as e:
+        log.exception(f"Error removing users from group {id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=ERROR_MESSAGES.DEFAULT(e),

@@ -390,50 +390,6 @@ html.dark .markdown-edit-btn:hover {
     }
 }
 
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 8px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 8px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-}
-
-@media (prefers-color-scheme: dark) {
-    ::-webkit-scrollbar-track {
-        background: #1a202c;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: #4a5568;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #718096;
-    }
-}
-
-* {
-    scrollbar-width: thin;
-    scrollbar-color: #c1c1c1 #f1f1f1;
-}
-
-@media (prefers-color-scheme: dark) {
-    * {
-        scrollbar-color: #4a5568 #1a202c;
-    }
-}
-
 .hljs {
     display: block;
     overflow-x: auto;

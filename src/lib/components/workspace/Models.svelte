@@ -12,6 +12,7 @@
 	const i18n = getContext('i18n');
 
 	import { WEBUI_NAME, config, mobile, models as _models, settings, user } from '$lib/stores';
+	import { WEBUI_BASE_URL } from '$lib/constants';
 	import {
 		createNewModel,
 		deleteModelById,
@@ -33,15 +34,22 @@
 	import ChevronRight from '../icons/ChevronRight.svelte';
 	import Switch from '../common/Switch.svelte';
 	import Spinner from '../common/Spinner.svelte';
-	import { capitalizeFirstLetter } from '$lib/utils';
+	import { capitalizeFirstLetter, copyToClipboard } from '$lib/utils';
+	import XMark from '../icons/XMark.svelte';
+	import EyeSlash from '../icons/EyeSlash.svelte';
+	import Eye from '../icons/Eye.svelte';
 
 	let shiftKey = false;
 
 	let importFiles;
 	let modelsImportInputElement: HTMLInputElement;
+	let tagsContainerElement: HTMLDivElement;
+
 	let loaded = false;
 
 	let models = [];
+	let tags = [];
+	let selectedTag = '';
 
 	let filteredModels = [];
 	let selectedModel = null;
@@ -51,12 +59,20 @@
 	let group_ids = [];
 
 	$: if (models) {
-		filteredModels = models.filter(
-			(m) => searchValue === '' || m.name.toLowerCase().includes(searchValue.toLowerCase())
-		);
+		filteredModels = models.filter((m) => {
+			if (query === '' && selectedTag === '') return true;
+			const lowerQuery = query.toLowerCase();
+			return (
+				((m.name || '').toLowerCase().includes(lowerQuery) ||
+					(m.user?.name || '').toLowerCase().includes(lowerQuery) || // Search by user name
+					(m.user?.email || '').toLowerCase().includes(lowerQuery)) && // Search by user email
+				(selectedTag === '' ||
+					m?.meta?.tags?.some((tag) => tag.name.toLowerCase() === selectedTag.toLowerCase()))
+			);
+		});
 	}
 
-	let searchValue = '';
+	let query = '';
 
 	const deleteModelHandler = async (model) => {
 		const res = await deleteModelById(localStorage.token, model.id).catch((e) => {
@@ -83,7 +99,7 @@
 			id: `${model.id}-clone`,
 			name: `${model.name} (Clone)`
 		});
-		goto('/workspace/models/create');
+		goto('/models/create');
 	};
 
 	const shareModelHandler = async (model) => {
@@ -105,33 +121,20 @@
 	};
 
 	const hideModelHandler = async (model) => {
-		let info = model.info;
-
-		if (!info) {
-			info = {
-				id: model.id,
-				name: model.name,
-				meta: {
-					suggestion_prompts: null
-				},
-				params: {}
-			};
-		}
-
-		info.meta = {
-			...info.meta,
-			hidden: !(info?.meta?.hidden ?? false)
+		model.meta = {
+			...model.meta,
+			hidden: !(model?.meta?.hidden ?? false)
 		};
 
-		console.log(info);
+		console.log(model);
 
-		const res = await updateModelById(localStorage.token, info.id, info);
+		const res = await updateModelById(localStorage.token, model.id, model);
 
 		if (res) {
 			toast.success(
 				$i18n.t(`Model {{name}} is now {{status}}`, {
-					name: info.id,
-					status: info.meta.hidden ? 'hidden' : 'visible'
+					name: model.id,
+					status: model.meta.hidden ? 'hidden' : 'visible'
 				})
 			);
 		}
@@ -143,6 +146,17 @@
 			)
 		);
 		models = await getWorkspaceModels(localStorage.token);
+	};
+
+	const copyLinkHandler = async (model) => {
+		const baseUrl = window.location.origin;
+		const res = await copyToClipboard(`${baseUrl}/?model=${encodeURIComponent(model.id)}`);
+
+		if (res) {
+			toast.success($i18n.t('Copied link to clipboard'));
+		} else {
+			toast.error($i18n.t('Failed to copy link'));
+		}
 	};
 
 	const downloadModels = async (models) => {
@@ -163,6 +177,16 @@
 		models = await getWorkspaceModels(localStorage.token);
 		let groups = await getGroups(localStorage.token);
 		group_ids = groups.map((group) => group.id);
+
+		if (models) {
+			tags = models
+				.filter((model) => !(model?.meta?.hidden ?? false))
+				.flatMap((model) => model?.meta?.tags ?? [])
+				.map((tag) => tag.name);
+
+			// Remove duplicates and sort
+			tags = Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b));
+		}
 
 		loaded = true;
 
@@ -208,7 +232,7 @@
 		}}
 	/>
 
-	<div class="flex flex-col gap-1 my-1.5">
+	<div class="flex flex-col gap-1 mt-1.5">
 		<div class="flex justify-between items-center">
 			<div class="flex items-center md:self-center text-xl font-medium px-0.5">
 				{$i18n.t('Models')}
@@ -226,15 +250,28 @@
 				</div>
 				<input
 					class=" w-full text-sm py-1 rounded-r-xl outline-hidden bg-transparent"
-					bind:value={searchValue}
+					bind:value={query}
 					placeholder={$i18n.t('Search Models')}
 				/>
+
+				{#if query}
+					<div class="self-center pl-1.5 translate-y-[0.5px] rounded-l-xl bg-transparent">
+						<button
+							class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+							on:click={() => {
+								query = '';
+							}}
+						>
+							<XMark className="size-3" strokeWidth="2" />
+						</button>
+					</div>
+				{/if}
 			</div>
 
 			<div>
 				<a
 					class=" px-2 py-2 rounded-xl hover:bg-gray-700/10 dark:hover:bg-gray-100/10 dark:text-gray-300 dark:hover:text-white transition font-medium text-sm flex items-center space-x-1"
-					href="/workspace/models/create"
+					href="/models/create"
 				>
 					<Plus className="size-3.5" />
 				</a>
@@ -242,21 +279,61 @@
 		</div>
 	</div>
 
-	<div class=" my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="model-list">
-		{#each filteredModels as model}
+	{#if tags.length > 0}
+		<div
+			class=" flex w-full bg-transparent overflow-x-auto scrollbar-none"
+			on:wheel={(e) => {
+				if (e.deltaY !== 0) {
+					e.preventDefault();
+					e.currentTarget.scrollLeft += e.deltaY;
+				}
+			}}
+		>
 			<div
-				class=" flex flex-col cursor-pointer w-full px-3 py-2 dark:hover:bg-white/5 hover:bg-black/5 rounded-xl transition"
+				class="flex gap-1 w-fit text-center text-sm font-medium rounded-full"
+				bind:this={tagsContainerElement}
+			>
+				<button
+					class="min-w-fit outline-none p-1.5 {selectedTag === ''
+						? ''
+						: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+					on:click={() => {
+						selectedTag = '';
+					}}
+				>
+					{$i18n.t('All')}
+				</button>
+
+				{#each tags as tag}
+					<button
+						class="min-w-fit outline-none p-1.5 {selectedTag === tag
+							? ''
+							: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+						on:click={() => {
+							selectedTag = tag;
+						}}
+					>
+						{tag}
+					</button>
+				{/each}
+			</div>
+		</div>
+	{/if}
+	<div class=" my-2 mb-5 gap-2 grid lg:grid-cols-2 xl:grid-cols-3" id="model-list">
+		{#each filteredModels as model (model.id)}
+			<div
+				class=" flex flex-col cursor-pointer w-full px-4 py-3 border border-gray-50 dark:border-gray-850 dark:hover:bg-white/5 hover:bg-black/5 rounded-2xl transition"
 				id="model-item-{model.id}"
 			>
-				<div class="flex gap-4 mt-0.5 mb-0.5">
-					<div class=" w-[44px]">
+				<div class="flex gap-4 mt-1 mb-0.5">
+					<div class=" w-10">
 						<div
 							class=" rounded-full object-cover {model.is_active
 								? ''
 								: 'opacity-50 dark:opacity-50'} "
 						>
 							<img
-								src={model?.meta?.profile_image_url ?? '/static/favicon.png'}
+								src={model?.meta?.profile_image_url ?? `${WEBUI_BASE_URL}/static/favicon.png`}
 								alt="modelfile profile"
 								class=" rounded-full w-full h-auto object-cover"
 							/>
@@ -289,7 +366,7 @@
 					</a>
 				</div>
 
-				<div class="flex justify-between items-center -mb-0.5 px-0.5">
+				<div class="flex justify-between items-center -mb-0.5 px-0.5 mt-1.5">
 					<div class=" text-xs mt-0.5">
 						<Tooltip
 							content={model?.user?.email ?? $i18n.t('Deleted User')}
@@ -308,6 +385,22 @@
 
 					<div class="flex flex-row gap-0.5 items-center">
 						{#if shiftKey}
+							<Tooltip content={model?.meta?.hidden ? $i18n.t('Show') : $i18n.t('Hide')}>
+								<button
+									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
+									type="button"
+									on:click={() => {
+										hideModelHandler(model);
+									}}
+								>
+									{#if model?.meta?.hidden}
+										<EyeSlash />
+									{:else}
+										<Eye />
+									{/if}
+								</button>
+							</Tooltip>
+
 							<Tooltip content={$i18n.t('Delete')}>
 								<button
 									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
@@ -324,7 +417,7 @@
 								<a
 									class="self-center w-fit text-sm px-2 py-2 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 									type="button"
-									href={`/workspace/models/edit?id=${encodeURIComponent(model.id)}`}
+									href={`/models/edit?id=${encodeURIComponent(model.id)}`}
 								>
 									<svg
 										xmlns="http://www.w3.org/2000/svg"
@@ -357,6 +450,9 @@
 								}}
 								hideHandler={() => {
 									hideModelHandler(model);
+								}}
+								copyLinkHandler={() => {
+									copyLinkHandler(model);
 								}}
 								deleteHandler={() => {
 									selectedModel = model;
@@ -482,7 +578,7 @@
 						}}
 					>
 						<div class=" self-center mr-2 font-medium line-clamp-1">
-							{$i18n.t('Export Models')}
+							{$i18n.t('Export Models')} ({models.length})
 						</div>
 
 						<div class=" self-center">
@@ -505,36 +601,34 @@
 		</div>
 	{/if}
 
-	{#if $config?.features.enable_community_sharing}
-		{#if false}
-			<div class=" my-16">
-				<div class=" text-xl font-medium mb-1 line-clamp-1">
-					{$i18n.t('Made by Open WebUI Community')}
+	{#if false}
+		<div class=" my-16">
+			<div class=" text-xl font-medium mb-1 line-clamp-1">
+				{$i18n.t('Made by Open WebUI Community')}
+			</div>
+
+			<a
+				class=" flex cursor-pointer items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-850 w-full mb-2 px-3.5 py-1.5 rounded-xl transition"
+				href="https://openwebui.com/models"
+				target="_blank"
+			>
+				<div class=" self-center">
+					<div class=" font-semibold line-clamp-1">{$i18n.t('Discover a model')}</div>
+					<div class=" text-sm line-clamp-1">
+						{$i18n.t('Discover, download, and explore model presets')}
+					</div>
 				</div>
 
-				<a
-					class=" flex cursor-pointer items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-850 w-full mb-2 px-3.5 py-1.5 rounded-xl transition"
-					href="https://openwebui.com/#open-webui-community"
-					target="_blank"
-				>
-					<div class=" self-center">
-						<div class=" font-semibold line-clamp-1">{$i18n.t('Discover a model')}</div>
-						<div class=" text-sm line-clamp-1">
-							{$i18n.t('Discover, download, and explore model presets')}
-						</div>
-					</div>
-
+				<div>
 					<div>
-						<div>
-							<ChevronRight />
-						</div>
+						<ChevronRight />
 					</div>
-				</a>
-			</div>
-		{/if}
+				</div>
+			</a>
+		</div>
 	{/if}
 {:else}
 	<div class="w-full h-full flex justify-center items-center">
-		<Spinner />
+		<Spinner className="size-5" />
 	</div>
 {/if}

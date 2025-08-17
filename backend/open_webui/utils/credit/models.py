@@ -4,15 +4,11 @@ from typing import List, Union, Optional
 
 class CompletionTokensDetails(BaseModel):
     model_config = ConfigDict(extra="allow")
-    accepted_prediction_tokens: Optional[int] = None
-    audio_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
-    rejected_prediction_tokens: Optional[int] = None
 
 
 class PromptTokensDetails(BaseModel):
     model_config = ConfigDict(extra="allow")
-    audio_tokens: Optional[int] = None
     cached_tokens: Optional[int] = None
 
 
@@ -21,8 +17,10 @@ class CompletionUsage(BaseModel):
     total_tokens: int
     prompt_tokens: int
     completion_tokens: int
-    completion_tokens_details: Optional[CompletionTokensDetails] = None
     prompt_tokens_details: Optional[PromptTokensDetails] = None
+    completion_tokens_details: Optional[CompletionTokensDetails] = None
+    input_tokens_details: Optional[PromptTokensDetails] = None
+    output_tokens_details: Optional[CompletionTokensDetails] = None
 
     @model_validator(mode="before")
     @classmethod
