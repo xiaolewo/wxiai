@@ -66,16 +66,15 @@ def upgrade() -> None:
         sa.Column("guidance_scale", sa.Float(), nullable=True),
         sa.Column("seed", sa.Integer(), nullable=True),
         sa.Column("watermark", sa.Boolean(), nullable=True, default=True),
-        sa.Column("image_base64", sa.Text(), nullable=True),  # 输入图片(图生图)
+        sa.Column("input_image", sa.Text(), nullable=True),  # 输入图片(图生图)
         sa.Column("credits_cost", sa.Integer(), nullable=True, default=0),
         sa.Column("submit_time", sa.DateTime(), nullable=True),
         sa.Column("start_time", sa.DateTime(), nullable=True),
         sa.Column("finish_time", sa.DateTime(), nullable=True),
+        sa.Column("progress", sa.String(20), nullable=True, default="0%"),
         sa.Column("image_url", sa.Text(), nullable=True),
-        sa.Column("image_data", sa.Text(), nullable=True),  # base64格式的生成图片
         sa.Column("fail_reason", sa.Text(), nullable=True),
-        sa.Column("request_data", sa.JSON(), nullable=True),
-        sa.Column("response_data", sa.JSON(), nullable=True),
+        sa.Column("properties", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=True),
         sa.Column("updated_at", sa.DateTime(), nullable=True),
         sa.PrimaryKeyConstraint("id"),

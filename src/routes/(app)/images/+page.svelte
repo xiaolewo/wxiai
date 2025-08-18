@@ -2185,7 +2185,7 @@
 									class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
 								>
 									<!-- 版本标签 -->
-									<div class="absolute top-2 left-2 z-10">
+									<!-- <div class="absolute top-2 left-2 z-10">
 										<span
 											class="px-2 py-1 text-xs font-medium text-white rounded {task.properties
 												?.serviceType === 'dreamwork'
@@ -2198,7 +2198,7 @@
 												{task.properties?.botType === 'NIJI_JOURNEY' ? 'Niji3.0' : 'MidJourney'}
 											{/if}
 										</span>
-									</div>
+									</div> -->
 
 									<!-- 图片 -->
 									{#if task.imageUrl}

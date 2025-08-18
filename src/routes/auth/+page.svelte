@@ -4,12 +4,21 @@
 
 	import { toast } from 'svelte-sonner';
 
-	import { onMount, getContext, tick } from 'svelte';
+	import { onMount, onDestroy, getContext, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
 	import { getBackendConfig } from '$lib/apis';
-	import { ldapUserSignIn, getSessionUser, userSignIn, userSignUp } from '$lib/apis/auths';
+	import {
+		ldapUserSignIn,
+		getSessionUser,
+		userSignIn,
+		userSignUp,
+		sendSmsCode,
+		verifySmsCode,
+		phoneSignIn,
+		phoneSignUp
+	} from '$lib/apis/auths';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import { WEBUI_NAME, config, user, socket } from '$lib/stores';
@@ -33,10 +42,69 @@
 
 	let ldapUsername = '';
 
+	// SMS和手机号相关变量
+	let smsCode = '';
+	let smsCountdown = 0;
+	let smsCountdownInterval = null;
+	let isPhoneMode = false; // 是否为手机号模式
+
 	const querystringValue = (key) => {
 		const querystring = window.location.search;
 		const urlParams = new URLSearchParams(querystring);
 		return urlParams.get(key);
+	};
+
+	// 判断输入是否为手机号
+	const isPhoneNumber = (input) => {
+		return /^1[3-9]\d{9}$/.test(input);
+	};
+
+	// 判断输入是否为邮箱
+	const isEmailAddress = (input) => {
+		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+	};
+
+	// 自动识别输入类型
+	const handleInputChange = () => {
+		if (mode === 'ldap') return; // LDAP模式不处理
+
+		const input = email.trim();
+		if (input) {
+			if (isPhoneNumber(input)) {
+				isPhoneMode = true;
+			} else if (isEmailAddress(input)) {
+				isPhoneMode = false;
+			} else {
+				// 输入不完整时不确定类型
+				isPhoneMode = false;
+			}
+		}
+	};
+
+	// 发送验证码
+	const sendVerificationCode = async () => {
+		if (!isPhoneNumber(email)) {
+			toast.error('请输入正确的手机号');
+			return;
+		}
+
+		try {
+			const purpose = mode === 'signup' ? 'register' : 'login';
+			await sendSmsCode(email, purpose);
+			toast.success('验证码已发送');
+
+			// 开始倒计时
+			smsCountdown = 60;
+			smsCountdownInterval = setInterval(() => {
+				smsCountdown--;
+				if (smsCountdown <= 0) {
+					clearInterval(smsCountdownInterval);
+					smsCountdownInterval = null;
+				}
+			}, 1000);
+		} catch (error) {
+			toast.error(`发送失败：${error}`);
+		}
 	};
 
 	const setSessionUser = async (sessionUser) => {
@@ -56,12 +124,25 @@
 	};
 
 	const signInHandler = async () => {
-		const sessionUser = await userSignIn(email, password).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		await setSessionUser(sessionUser);
+		if (isPhoneMode) {
+			// 手机号验证码登录
+			if (!smsCode) {
+				toast.error('请输入验证码');
+				return;
+			}
+			const sessionUser = await phoneSignIn(email, smsCode).catch((error) => {
+				toast.error(`${error}`);
+				return null;
+			});
+			await setSessionUser(sessionUser);
+		} else {
+			// 邮箱密码登录
+			const sessionUser = await userSignIn(email, password).catch((error) => {
+				toast.error(`${error}`);
+				return null;
+			});
+			await setSessionUser(sessionUser);
+		}
 	};
 
 	const signUpHandler = async () => {
@@ -72,14 +153,36 @@
 			}
 		}
 
-		const sessionUser = await userSignUp(name, email, password, generateInitialsImage(name)).catch(
-			(error) => {
+		if (isPhoneMode) {
+			// 手机号注册
+			if (!smsCode) {
+				toast.error('请输入验证码');
+				return;
+			}
+			const sessionUser = await phoneSignUp(
+				email,
+				smsCode,
+				name,
+				password,
+				generateInitialsImage(name)
+			).catch((error) => {
 				toast.error(`${error}`);
 				return null;
-			}
-		);
-
-		await setSessionUser(sessionUser);
+			});
+			await setSessionUser(sessionUser);
+		} else {
+			// 邮箱注册
+			const sessionUser = await userSignUp(
+				name,
+				email,
+				password,
+				generateInitialsImage(name)
+			).catch((error) => {
+				toast.error(`${error}`);
+				return null;
+			});
+			await setSessionUser(sessionUser);
+		}
 	};
 
 	const ldapSignInHandler = async () => {
@@ -165,6 +268,13 @@
 			await signInHandler();
 		} else {
 			onboarding = $config?.onboarding ?? false;
+		}
+	});
+
+	onDestroy(() => {
+		// 清理倒计时定时器
+		if (smsCountdownInterval) {
+			clearInterval(smsCountdownInterval);
 		}
 	});
 </script>
@@ -290,36 +400,80 @@
 										{:else}
 											<div class="mb-2">
 												<label for="email" class="text-sm font-medium text-left mb-1 block"
-													>{$i18n.t('Email')}</label
+													>{isPhoneMode ? '手机号' : $i18n.t('Email')}</label
 												>
-												<input
-													bind:value={email}
-													type="email"
-													id="email"
+												{#if isPhoneMode}
+													<input
+														bind:value={email}
+														type="tel"
+														id="email"
+														class="my-0.5 w-full text-sm outline-hidden bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-600"
+														autocomplete="tel"
+														name="email"
+														placeholder="请输入手机号"
+														on:input={handleInputChange}
+														required
+													/>
+												{:else}
+													<input
+														bind:value={email}
+														type="email"
+														id="email"
+														class="my-0.5 w-full text-sm outline-hidden bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-600"
+														autocomplete="email"
+														name="email"
+														placeholder={$i18n.t('Enter Your Email')}
+														on:input={handleInputChange}
+														required
+													/>
+												{/if}
+											</div>
+
+											{#if isPhoneMode}
+												<div class="mb-2">
+													<label for="sms-code" class="text-sm font-medium text-left mb-1 block"
+														>验证码</label
+													>
+													<div class="flex gap-2">
+														<input
+															bind:value={smsCode}
+															type="text"
+															id="sms-code"
+															class="my-0.5 flex-1 text-sm outline-hidden bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-600"
+															placeholder="请输入验证码"
+															maxlength="6"
+															required
+														/>
+														<button
+															type="button"
+															class="px-3 py-1 text-xs bg-gray-700/5 hover:bg-gray-700/10 dark:bg-gray-100/5 dark:hover:bg-gray-100/10 rounded transition disabled:opacity-50"
+															disabled={smsCountdown > 0 || !isPhoneNumber(email)}
+															on:click={sendVerificationCode}
+														>
+															{smsCountdown > 0 ? `${smsCountdown}s` : '获取验证码'}
+														</button>
+													</div>
+												</div>
+											{/if}
+										{/if}
+
+										{#if !isPhoneMode || mode === 'signup'}
+											<div>
+												<label for="password" class="text-sm font-medium text-left mb-1 block"
+													>{$i18n.t('Password')}</label
+												>
+												<SensitiveInput
+													bind:value={password}
+													type="password"
+													id="password"
 													class="my-0.5 w-full text-sm outline-hidden bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-600"
-													autocomplete="email"
-													name="email"
-													placeholder={$i18n.t('Enter Your Email')}
+													placeholder={$i18n.t('Enter Your Password')}
+													autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
+													name="password"
 													required
 												/>
 											</div>
 										{/if}
-
-										<div>
-											<label for="password" class="text-sm font-medium text-left mb-1 block"
-												>{$i18n.t('Password')}</label
-											>
-											<SensitiveInput
-												bind:value={password}
-												type="password"
-												id="password"
-												class="my-0.5 w-full text-sm outline-hidden bg-transparent placeholder:text-gray-300 dark:placeholder:text-gray-600"
-												placeholder={$i18n.t('Enter Your Password')}
-												autocomplete={mode === 'signup' ? 'new-password' : 'current-password'}
-												name="password"
-												required
-											/>
-										</div>
 
 										{#if mode === 'signup' && $config?.features?.enable_signup_password_confirmation}
 											<div class="mt-2">

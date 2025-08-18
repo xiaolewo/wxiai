@@ -54,6 +54,9 @@ logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 def run_migrations():
     log.info("Running migrations")
     try:
+        # Import models here to avoid circular imports
+        from open_webui.models import auths, kling, jimeng
+
         from alembic import command
         from alembic.config import Config
 
@@ -64,11 +67,37 @@ def run_migrations():
         alembic_cfg.set_main_option("script_location", str(migrations_path))
 
         command.upgrade(alembic_cfg, "head")
+        log.info("Migrations completed successfully")
     except Exception as e:
         log.exception(f"Error running migrations: {e}")
+        # Create tables directly if migration fails
+        try:
+            log.info("Attempting to create tables directly")
+            from open_webui.internal.db import engine, Base
+
+            Base.metadata.create_all(bind=engine)
+            log.info("Tables created successfully")
+        except Exception as create_error:
+            log.exception(f"Error creating tables directly: {create_error}")
 
 
-run_migrations()
+# Delay migration execution to avoid circular imports
+def delayed_migration_execution():
+    import threading
+    import time
+
+    def run_delayed():
+        time.sleep(1)  # Short delay to let imports settle
+        try:
+            run_migrations()
+        except Exception as e:
+            log.error(f"Failed to run delayed migrations: {e}")
+
+    migration_thread = threading.Thread(target=run_delayed, daemon=True)
+    migration_thread.start()
+
+
+delayed_migration_execution()
 
 
 class Config(Base):
@@ -87,16 +116,19 @@ def load_json_config():
 
 
 def save_to_db(data):
-    with get_db() as db:
-        existing_config = db.query(Config).first()
-        if not existing_config:
-            new_config = Config(data=data, version=0)
-            db.add(new_config)
-        else:
-            existing_config.data = data
-            existing_config.updated_at = datetime.now()
-            db.add(existing_config)
-        db.commit()
+    try:
+        with get_db() as db:
+            existing_config = db.query(Config).first()
+            if not existing_config:
+                new_config = Config(data=data, version=0)
+                db.add(new_config)
+            else:
+                existing_config.data = data
+                existing_config.updated_at = datetime.now()
+                db.add(existing_config)
+            db.commit()
+    except Exception as e:
+        log.warning(f"Could not save config to database (table may not exist yet): {e}")
 
 
 def reset_config():
@@ -106,10 +138,32 @@ def reset_config():
 
 
 # When initializing, check if config.json exists and migrate it to the database
-if os.path.exists(f"{DATA_DIR}/config.json"):
-    data = load_json_config()
-    save_to_db(data)
-    os.rename(f"{DATA_DIR}/config.json", f"{DATA_DIR}/old_config.json")
+# This will be done after migrations complete
+def migrate_config_json():
+    if os.path.exists(f"{DATA_DIR}/config.json"):
+        try:
+            data = load_json_config()
+            save_to_db(data)
+            os.rename(f"{DATA_DIR}/config.json", f"{DATA_DIR}/old_config.json")
+            log.info("Migrated config.json to database")
+        except Exception as e:
+            log.warning(f"Could not migrate config.json: {e}")
+
+
+# Delay config migration until after migrations complete
+def delayed_config_migration():
+    import threading
+    import time
+
+    def run_delayed():
+        time.sleep(2)  # Wait for migrations to complete
+        migrate_config_json()
+
+    migration_thread = threading.Thread(target=run_delayed, daemon=True)
+    migration_thread.start()
+
+
+delayed_config_migration()
 
 DEFAULT_CONFIG = {
     "version": 0,
@@ -118,12 +172,23 @@ DEFAULT_CONFIG = {
 
 
 def get_config():
-    with get_db() as db:
-        config_entry = db.query(Config).order_by(Config.id.desc()).first()
-        return config_entry.data if config_entry else DEFAULT_CONFIG
+    try:
+        with get_db() as db:
+            config_entry = db.query(Config).order_by(Config.id.desc()).first()
+            return config_entry.data if config_entry else DEFAULT_CONFIG
+    except Exception as e:
+        log.warning(
+            f"Could not load config from database (table may not exist yet): {e}"
+        )
+        return DEFAULT_CONFIG
 
 
-CONFIG_DATA = get_config()
+# Initialize CONFIG_DATA with error handling
+try:
+    CONFIG_DATA = get_config()
+except Exception as e:
+    log.warning(f"Failed to initialize CONFIG_DATA, using defaults: {e}")
+    CONFIG_DATA = DEFAULT_CONFIG
 
 
 def get_config_value(config_path: str):

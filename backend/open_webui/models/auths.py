@@ -93,6 +93,34 @@ class AddUserForm(SignupForm):
     role: Optional[str] = "pending"
 
 
+class SendSmsCodeForm(BaseModel):
+    phone: str
+    purpose: str  # 'register', 'login', 'bind'
+
+
+class PhoneSignupForm(BaseModel):
+    phone: str
+    code: str
+    name: str
+    password: str
+    profile_image_url: Optional[str] = "/user.png"
+
+
+class PhoneSigninForm(BaseModel):
+    phone: str
+    code: str
+
+
+class BindPhoneForm(BaseModel):
+    phone: str
+    code: str
+
+
+class BindEmailForm(BaseModel):
+    email: str
+    password: str  # 当前密码用于验证身份
+
+
 class AuthsTable:
     def insert_new_auth(
         self,
@@ -191,6 +219,63 @@ class AuthsTable:
                 return True if result == 1 else False
         except Exception:
             return False
+
+    def insert_new_auth_with_phone(
+        self,
+        phone: str,
+        password: str,
+        name: str,
+        profile_image_url: str = "/user.png",
+        role: str = "pending",
+    ) -> Optional[UserModel]:
+        """使用手机号创建新用户"""
+        with get_db() as db:
+            log.info(f"insert_new_auth_with_phone: {phone}")
+
+            id = str(uuid.uuid4())
+
+            # 使用手机号作为email字段（临时方案，保持兼容性）
+            # 在实际使用中会通过phone字段来识别
+            auth = AuthModel(
+                **{"id": id, "email": phone, "password": password, "active": True}
+            )
+            result = Auth(**auth.model_dump())
+            db.add(result)
+
+            # 创建用户记录，将手机号设置到phone字段
+            user = Users.insert_new_user(id, name, phone, profile_image_url, role, None)
+
+            # 更新用户的phone字段
+            if user:
+                Users.update_user_phone_by_id(id, phone)
+
+            db.commit()
+            db.refresh(result)
+
+            if result and user:
+                # 重新获取更新后的用户信息
+                return Users.get_user_by_id(id)
+            else:
+                return None
+
+    def authenticate_user_by_phone(self, phone: str) -> Optional[UserModel]:
+        """通过手机号认证用户（用于验证码登录）"""
+        log.info(f"authenticate_user_by_phone: {phone}")
+        try:
+            user = Users.get_user_by_phone(phone)
+            return user if user else None
+        except Exception:
+            return None
+
+    def get_user_identifier(self, identifier: str) -> Optional[UserModel]:
+        """通过邮箱或手机号获取用户"""
+        # 判断是否是手机号格式
+        import re
+
+        if re.match(r"^1[3-9]\d{9}$", identifier):
+            return Users.get_user_by_phone(identifier)
+        else:
+            return Users.get_user_by_email(identifier)
 
     def delete_auth_by_id(self, id: str) -> bool:
         try:

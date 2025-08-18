@@ -131,9 +131,8 @@ class JimengApiClient:
                 print(f"❌ 【即梦API】处理base64图片数据失败: {e}")
                 raise ValueError(f"无法处理图片数据: {e}")
         else:
-            # 图生视频但没有提供图片，这是错误
-            print("❌ 【即梦API】图生视频需要提供图片数据")
-            raise ValueError("图生视频需要提供图片数据")
+            # 没有提供图片，这是正常的文生视频模式
+            print("🎬 【即梦API】文生视频模式，不需要图片数据")
 
         print(f"🎬 【即梦API】视频生成请求URL: {url}")
         print(

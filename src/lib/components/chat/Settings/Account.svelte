@@ -7,6 +7,7 @@
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import UpdatePassword from './Account/UpdatePassword.svelte';
+	import BindingManagement from './Account/BindingManagement.svelte';
 	import { getGravatarUrl } from '$lib/apis/utils';
 	import { generateInitialsImage, canvasPixelTest } from '$lib/utils';
 	import { copyToClipboard } from '$lib/utils';
@@ -270,6 +271,12 @@
 
 		<div class="my-2">
 			<UpdatePassword />
+		</div>
+
+		<hr class="border-gray-50 dark:border-gray-850 my-2" />
+
+		<div class="my-2">
+			<BindingManagement />
 		</div>
 
 		{#if ($config?.features?.enable_api_key ?? true) || $user?.role === 'admin'}

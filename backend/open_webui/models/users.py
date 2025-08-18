@@ -10,7 +10,7 @@ from open_webui.models.groups import Groups
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 
 
 ####################
@@ -36,6 +36,7 @@ class User(Base):
     info = Column(JSONField, nullable=True)
 
     oauth_sub = Column(Text, unique=True)
+    phone = Column(String, nullable=True, unique=True)
 
 
 class UserSettings(BaseModel):
@@ -60,6 +61,7 @@ class UserModel(BaseModel):
     info: Optional[dict] = None
 
     oauth_sub: Optional[str] = None
+    phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True, extra="allow")
 
@@ -413,6 +415,84 @@ class UsersTable:
         with get_db() as db:
             users = db.query(User).filter(User.id.in_(user_ids)).all()
             return [user.id for user in users]
+
+    def get_user_by_phone(self, phone: str) -> Optional[UserModel]:
+        """根据手机号获取用户"""
+        try:
+            with get_db() as db:
+                user = db.query(User).filter_by(phone=phone).first()
+                if user:
+                    return UserModel.model_validate(user)
+                return None
+        except Exception:
+            return None
+
+    def update_user_phone_by_id(self, id: str, phone: str) -> Optional[UserModel]:
+        """更新用户手机号"""
+        try:
+            with get_db() as db:
+                # 检查手机号是否已被其他用户使用
+                existing_user = (
+                    db.query(User)
+                    .filter(and_(User.phone == phone, User.id != id))
+                    .first()
+                )
+                if existing_user:
+                    return None
+
+                db.query(User).filter_by(id=id).update({"phone": phone})
+                db.commit()
+
+                user = db.query(User).filter_by(id=id).first()
+                return UserModel.model_validate(user)
+        except Exception:
+            return None
+
+    def bind_phone_to_user(
+        self, user_id: str, phone: str
+    ) -> tuple[bool, Optional[str]]:
+        """绑定手机号到用户"""
+        try:
+            with get_db() as db:
+                # 检查手机号是否已被使用
+                existing_user = db.query(User).filter_by(phone=phone).first()
+                if existing_user:
+                    return False, "Phone number already bound to another account"
+
+                # 检查用户是否存在
+                user = db.query(User).filter_by(id=user_id).first()
+                if not user:
+                    return False, "User not found"
+
+                # 更新用户手机号
+                user.phone = phone
+                user.updated_at = int(time.time())
+                db.commit()
+
+                return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def unbind_phone_from_user(self, user_id: str) -> tuple[bool, Optional[str]]:
+        """解绑用户手机号"""
+        try:
+            with get_db() as db:
+                user = db.query(User).filter_by(id=user_id).first()
+                if not user:
+                    return False, "User not found"
+
+                # 检查用户是否至少有一种登录方式（邮箱或手机号）
+                if not user.email and user.phone:
+                    return False, "Cannot unbind phone when no email is set"
+
+                # 解绑手机号
+                user.phone = None
+                user.updated_at = int(time.time())
+                db.commit()
+
+                return True, None
+        except Exception as e:
+            return False, str(e)
 
     def get_super_admin_user(self) -> Optional[UserModel]:
         with get_db() as db:

@@ -19,10 +19,21 @@ from open_webui.models.auths import (
     UpdatePasswordForm,
     UpdateProfileForm,
     UserResponse,
+    SendSmsCodeForm,
+    PhoneSignupForm,
+    PhoneSigninForm,
+    BindPhoneForm,
+    BindEmailForm,
 )
 from open_webui.models.users import Users, UserModel
 from open_webui.models.groups import Groups
 from open_webui.models.credits import Credits
+from open_webui.models.phone_verification import VerificationPurpose
+from open_webui.utils.sms import (
+    send_verification_code,
+    verify_verification_code,
+    get_sms_config_status,
+)
 
 from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from open_webui.env import (
@@ -1116,3 +1127,476 @@ async def get_api_key(user=Depends(get_current_user)):
         }
     else:
         raise HTTPException(404, detail=ERROR_MESSAGES.API_KEY_NOT_FOUND)
+
+
+############################
+# SMS Verification Code APIs
+############################
+
+
+@router.post("/send-sms-code")
+async def send_sms_code(form_data: SendSmsCodeForm):
+    """发送短信验证码"""
+    try:
+        # 验证手机号格式
+        import re
+
+        if not re.match(r"^1[3-9]\d{9}$", form_data.phone):
+            raise HTTPException(400, detail="Invalid phone number format")
+
+        # 检查短信服务配置
+        sms_status = get_sms_config_status()
+        if not sms_status.get("configured", False):
+            raise HTTPException(400, detail="SMS service not configured")
+
+        # 验证purpose参数
+        valid_purposes = ["register", "login", "bind"]
+        if form_data.purpose not in valid_purposes:
+            raise HTTPException(400, detail="Invalid purpose")
+
+        # 对于注册，检查手机号是否已存在
+        if form_data.purpose == "register":
+            existing_user = Users.get_user_by_phone(form_data.phone)
+            if existing_user:
+                raise HTTPException(400, detail="Phone number already registered")
+
+        # 对于登录，检查手机号是否存在
+        if form_data.purpose == "login":
+            existing_user = Users.get_user_by_phone(form_data.phone)
+            if not existing_user:
+                raise HTTPException(400, detail="Phone number not registered")
+
+        # 发送验证码
+        purpose_enum = VerificationPurpose(form_data.purpose)
+        success, message = send_verification_code(form_data.phone, purpose_enum)
+
+        if success:
+            return {"success": True, "message": "Verification code sent successfully"}
+        else:
+            raise HTTPException(400, detail=message)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Send SMS code error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.post("/verify-sms-code")
+async def verify_sms_code(phone: str, code: str, purpose: str):
+    """验证短信验证码"""
+    try:
+        # 验证手机号格式
+        import re
+
+        if not re.match(r"^1[3-9]\d{9}$", phone):
+            raise HTTPException(400, detail="Invalid phone number format")
+
+        # 验证purpose参数
+        valid_purposes = ["register", "login", "bind"]
+        if purpose not in valid_purposes:
+            raise HTTPException(400, detail="Invalid purpose")
+
+        # 验证验证码
+        purpose_enum = VerificationPurpose(purpose)
+        success, message = verify_verification_code(phone, code, purpose_enum)
+
+        if success:
+            return {
+                "success": True,
+                "message": "Verification code verified successfully",
+            }
+        else:
+            raise HTTPException(400, detail=message)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Verify SMS code error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+############################
+# Phone-based Authentication
+############################
+
+
+@router.post("/signup-phone", response_model=SessionUserResponse)
+async def signup_phone(
+    request: Request, response: Response, form_data: PhoneSignupForm
+):
+    """手机号注册"""
+    if not WEBUI_AUTH:
+        raise HTTPException(400, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+
+    try:
+        # 验证手机号格式
+        import re
+
+        if not re.match(r"^1[3-9]\d{9}$", form_data.phone):
+            raise HTTPException(400, detail="Invalid phone number format")
+
+        # 检查手机号是否已注册
+        if Users.get_user_by_phone(form_data.phone):
+            raise HTTPException(400, detail="Phone number already registered")
+
+        # 验证验证码
+        success, message = verify_verification_code(
+            form_data.phone, form_data.code, VerificationPurpose.REGISTER
+        )
+        if not success:
+            raise HTTPException(400, detail=f"Verification failed: {message}")
+
+        # 加密密码
+        hashed = get_password_hash(form_data.password)
+
+        # 创建用户
+        role = "admin" if not Users.has_users() else "pending"
+        user = Auths.insert_new_auth_with_phone(
+            form_data.phone,
+            hashed,
+            form_data.name,
+            form_data.profile_image_url,
+            role,
+        )
+
+        if user:
+            expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
+            expires_at = None
+            if expires_delta:
+                expires_at = int(time.time()) + int(expires_delta.total_seconds())
+
+            token = create_token(
+                data={"id": user.id},
+                expires_delta=expires_delta,
+            )
+
+            # Set the cookie token
+            response.set_cookie(
+                key="token",
+                value=token,
+                expires=(
+                    datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+                    if expires_at
+                    else None
+                ),
+                httponly=True,
+                samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+                secure=WEBUI_AUTH_COOKIE_SECURE,
+            )
+
+            user_permissions = get_permissions(
+                user.id, request.app.state.config.USER_PERMISSIONS
+            )
+
+            credit = Credits.init_credit_by_user_id(user.id)
+
+            return {
+                "token": token,
+                "token_type": "Bearer",
+                "expires_at": expires_at,
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "role": user.role,
+                "profile_image_url": user.profile_image_url,
+                "permissions": user_permissions,
+                "credit": credit.credit,
+            }
+        else:
+            raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Phone signup error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.post("/signin-phone", response_model=SessionUserResponse)
+async def signin_phone(
+    request: Request, response: Response, form_data: PhoneSigninForm
+):
+    """手机号验证码登录"""
+    if not WEBUI_AUTH:
+        raise HTTPException(400, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
+
+    try:
+        # 验证手机号格式
+        import re
+
+        if not re.match(r"^1[3-9]\d{9}$", form_data.phone):
+            raise HTTPException(400, detail="Invalid phone number format")
+
+        # 验证验证码
+        success, message = verify_verification_code(
+            form_data.phone, form_data.code, VerificationPurpose.LOGIN
+        )
+        if not success:
+            raise HTTPException(400, detail=f"Verification failed: {message}")
+
+        # 通过手机号认证用户
+        user = Auths.authenticate_user_by_phone(form_data.phone)
+        if not user:
+            raise HTTPException(400, detail="Phone number not registered")
+
+        expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
+        expires_at = None
+        if expires_delta:
+            expires_at = int(time.time()) + int(expires_delta.total_seconds())
+
+        token = create_token(
+            data={"id": user.id},
+            expires_delta=expires_delta,
+        )
+
+        # Set the cookie token
+        response.set_cookie(
+            key="token",
+            value=token,
+            expires=(
+                datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+                if expires_at
+                else None
+            ),
+            httponly=True,
+            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+            secure=WEBUI_AUTH_COOKIE_SECURE,
+        )
+
+        user_permissions = get_permissions(
+            user.id, request.app.state.config.USER_PERMISSIONS
+        )
+
+        credit = Credits.init_credit_by_user_id(user.id)
+
+        return {
+            "token": token,
+            "token_type": "Bearer",
+            "expires_at": expires_at,
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role,
+            "profile_image_url": user.profile_image_url,
+            "permissions": user_permissions,
+            "credit": credit.credit,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Phone signin error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+############################
+# Binding Management APIs
+############################
+
+
+@router.post("/bind-phone")
+async def bind_phone(form_data: BindPhoneForm, user=Depends(get_current_user)):
+    """绑定手机号到当前用户"""
+    try:
+        # 验证手机号格式
+        import re
+
+        if not re.match(r"^1[3-9]\d{9}$", form_data.phone):
+            raise HTTPException(400, detail="Invalid phone number format")
+
+        # 检查手机号是否已被其他用户使用
+        existing_user = Users.get_user_by_phone(form_data.phone)
+        if existing_user and existing_user.id != user.id:
+            raise HTTPException(
+                400, detail="Phone number already bound to another account"
+            )
+
+        # 验证验证码
+        success, message = verify_verification_code(
+            form_data.phone, form_data.code, VerificationPurpose.BIND, user.id
+        )
+        if not success:
+            raise HTTPException(400, detail=f"Verification failed: {message}")
+
+        # 绑定手机号
+        bind_success, error_msg = Users.bind_phone_to_user(user.id, form_data.phone)
+        if not bind_success:
+            raise HTTPException(400, detail=error_msg or "Failed to bind phone number")
+
+        return {"success": True, "message": "Phone number bound successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Bind phone error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.post("/bind-email")
+async def bind_email(form_data: BindEmailForm, user=Depends(get_current_user)):
+    """绑定邮箱到当前用户"""
+    try:
+        # 验证邮箱格式
+        if not validate_email_format(form_data.email.lower()):
+            raise HTTPException(400, detail="Invalid email format")
+
+        # 检查邮箱是否已被其他用户使用
+        existing_user = Users.get_user_by_email(form_data.email.lower())
+        if existing_user and existing_user.id != user.id:
+            raise HTTPException(400, detail="Email already bound to another account")
+
+        # 验证当前用户密码（确保是本人操作）
+        current_user_auth = Auths.authenticate_user(user.email, form_data.password)
+        if not current_user_auth or current_user_auth.id != user.id:
+            raise HTTPException(400, detail="Invalid password")
+
+        # 更新用户邮箱
+        updated_user = Users.update_user_by_id(
+            user.id, {"email": form_data.email.lower()}
+        )
+        if not updated_user:
+            raise HTTPException(400, detail="Failed to bind email")
+
+        # 同时更新auth表中的邮箱
+        Auths.update_email_by_id(user.id, form_data.email.lower())
+
+        return {"success": True, "message": "Email bound successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Bind email error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.delete("/unbind-phone")
+async def unbind_phone(user=Depends(get_current_user)):
+    """解绑当前用户的手机号"""
+    try:
+        # 检查用户是否有手机号
+        if not user.phone:
+            raise HTTPException(400, detail="No phone number to unbind")
+
+        # 解绑手机号
+        unbind_success, error_msg = Users.unbind_phone_from_user(user.id)
+        if not unbind_success:
+            raise HTTPException(
+                400, detail=error_msg or "Failed to unbind phone number"
+            )
+
+        return {"success": True, "message": "Phone number unbound successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unbind phone error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.delete("/unbind-email")
+async def unbind_email(password: str, user=Depends(get_current_user)):
+    """解绑当前用户的邮箱"""
+    try:
+        # 检查用户是否有邮箱
+        if not user.email:
+            raise HTTPException(400, detail="No email to unbind")
+
+        # 检查用户是否至少有一种登录方式（手机号或邮箱）
+        if not user.phone:
+            raise HTTPException(
+                400, detail="Cannot unbind email when no phone number is set"
+            )
+
+        # 验证当前用户密码（确保是本人操作）
+        current_user_auth = Auths.authenticate_user(user.email, password)
+        if not current_user_auth or current_user_auth.id != user.id:
+            raise HTTPException(400, detail="Invalid password")
+
+        # 解绑邮箱（设置为空）
+        updated_user = Users.update_user_by_id(user.id, {"email": None})
+        if not updated_user:
+            raise HTTPException(400, detail="Failed to unbind email")
+
+        # 同时更新auth表中的邮箱（使用手机号替代）
+        if user.phone:
+            Auths.update_email_by_id(user.id, user.phone)
+
+        return {"success": True, "message": "Email unbound successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Unbind email error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.get("/binding-status")
+async def get_binding_status(user=Depends(get_current_user)):
+    """获取当前用户的绑定状态"""
+    try:
+        return {
+            "email": user.email,
+            "phone": user.phone,
+            "has_email": bool(user.email),
+            "has_phone": bool(user.phone),
+            "can_unbind_email": bool(user.phone),  # 有手机号才能解绑邮箱
+            "can_unbind_phone": bool(user.email),  # 有邮箱才能解绑手机号
+        }
+
+    except Exception as e:
+        log.error(f"Get binding status error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+############################
+# SMS Configuration APIs (Admin Only)
+############################
+
+
+@router.get("/sms/config")
+async def get_sms_config(user=Depends(get_admin_user)):
+    """获取短信配置状态（仅管理员）"""
+    try:
+        config_status = get_sms_config_status()
+        # 不返回敏感信息如密码
+        return {
+            "enabled": config_status.get("enabled", False),
+            "configured": config_status.get("configured", False),
+            "provider": config_status.get("provider", "smsbao"),
+            "username": config_status.get("username", ""),
+            "signature": config_status.get("signature", "【验证码】"),
+        }
+    except Exception as e:
+        log.error(f"Get SMS config error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")
+
+
+@router.post("/sms/config")
+async def update_sms_config(config_data: dict, user=Depends(get_admin_user)):
+    """更新短信配置（仅管理员）"""
+    try:
+        from open_webui.utils.sms import update_sms_config
+
+        # 验证必需字段
+        required_fields = ["enabled", "username", "signature"]
+        for field in required_fields:
+            if field not in config_data:
+                raise HTTPException(400, detail=f"Missing required field: {field}")
+
+        # 如果启用短信服务，需要验证密码
+        if config_data.get("enabled", False) and not config_data.get("password"):
+            raise HTTPException(
+                400, detail="Password is required when SMS service is enabled"
+            )
+
+        # 更新配置
+        update_sms_config(config_data)
+
+        return {"success": True, "message": "SMS configuration updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Update SMS config error: {str(e)}")
+        raise HTTPException(500, detail="Internal server error")

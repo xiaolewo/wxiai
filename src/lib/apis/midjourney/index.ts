@@ -305,53 +305,9 @@ export const testMJConnection = async (token: string = '') => {
 export const submitImagineTask = async (token: string = '', request: MJGenerateRequest) => {
 	let error = null;
 
-	// 构建最终的prompt，包含所有参数
-	let finalPrompt = request.prompt;
-	const params = request.advancedParams;
-
-	// 添加高级参数到prompt
-	if (params) {
-		if (params.aspectRatio && params.aspectRatio !== 'custom') {
-			finalPrompt += ` --ar ${params.aspectRatio}`;
-		} else if (params.customAspectRatio) {
-			finalPrompt += ` --ar ${params.customAspectRatio.width}:${params.customAspectRatio.height}`;
-		}
-
-		if (params.chaos !== undefined) {
-			finalPrompt += ` --chaos ${params.chaos}`;
-		}
-
-		if (params.stylize !== undefined) {
-			finalPrompt += ` --stylize ${params.stylize}`;
-		}
-
-		if (params.seed !== undefined) {
-			finalPrompt += ` --seed ${params.seed}`;
-		}
-
-		if (params.weird !== undefined) {
-			finalPrompt += ` --weird ${params.weird}`;
-		}
-
-		if (params.quality !== undefined) {
-			finalPrompt += ` --q ${params.quality}`;
-		}
-
-		if (params.version) {
-			// 去掉 'v' 前缀，因为 --v 参数不需要 'v' 前缀
-			const versionNumber = params.version.replace('v', '');
-			finalPrompt += ` --v ${versionNumber}`;
-		}
-
-		if (params.tile) {
-			finalPrompt += ` --tile`;
-		}
-	}
-
-	// 添加负面提示词
-	if (request.negativePrompt) {
-		finalPrompt += ` --no ${request.negativePrompt}`;
-	}
+	// 不在前端构建参数，让后端统一处理
+	// 这样避免重复添加参数的问题
+	const finalPrompt = request.prompt;
 
 	// 准备参考图片数据
 	const base64Array = request.referenceImages?.map((img) => img.base64) || [];
@@ -379,6 +335,7 @@ export const submitImagineTask = async (token: string = '', request: MJGenerateR
 		},
 		body: JSON.stringify({
 			prompt: finalPrompt,
+			negative_prompt: request.negativePrompt,
 			mode: request.mode,
 			base64Array,
 			imageWeights,

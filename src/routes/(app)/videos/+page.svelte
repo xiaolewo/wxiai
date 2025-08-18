@@ -79,6 +79,22 @@
 	let dynamicMasks: Array<{ mask: string; trajectories: Array<{ x: number; y: number }> }> = []; // 动态笔刷
 	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' = 'basic'; // 图生视频模式
 
+	// 摄像机控制参数
+	let cameraControlType:
+		| 'simple'
+		| 'down_back'
+		| 'forward_up'
+		| 'right_turn_forward'
+		| 'left_turn_forward' = 'simple';
+	let cameraControlConfig = {
+		horizontal: 0,
+		vertical: 0,
+		pan: 0,
+		tilt: 0,
+		roll: 0,
+		zoom: 0
+	};
+
 	// 搜索和筛选
 	let searchQuery = '';
 	let selectedStatusFilter = 'all';
@@ -477,8 +493,69 @@
 								trajectories: dm.trajectories
 							}));
 						}
+					} else if (selectedImageVideoMode === 'camera') {
+						// 摄像机控制模式
+						if (cameraControlType !== 'simple') {
+							// 预定义运镜类型
+							klingRequest.cameraControl = {
+								type: cameraControlType
+							};
+						} else {
+							// 简单运镜模式 - 检查是否有非零参数
+							const hasValidConfig = Object.values(cameraControlConfig).some(
+								(value) => value !== 0
+							);
+							if (hasValidConfig) {
+								// 确保只有一个参数不为0（根据API文档要求）
+								const nonZeroParams = Object.entries(cameraControlConfig).filter(
+									([key, value]) => value !== 0
+								);
+								if (nonZeroParams.length === 1) {
+									klingRequest.cameraControl = {
+										type: 'simple',
+										config: cameraControlConfig
+									};
+								} else if (nonZeroParams.length > 1) {
+									toast.error('简单运镜模式只能设置一个非零参数');
+									isGenerating = false;
+									return;
+								}
+							}
+						}
 					}
-					// camera_control 会在后续统一处理
+				}
+			}
+
+			// 为所有可灵视频生成添加摄像机控制支持（文生视频和图生视频）
+			if (selectedService === 'kling') {
+				const klingRequest = request as KlingGenerateRequest;
+
+				// 如果图生视频没有设置摄像机控制，或者是文生视频，则应用通用摄像机控制
+				if (!klingRequest.cameraControl) {
+					if (cameraControlType !== 'simple') {
+						// 预定义运镜类型
+						klingRequest.cameraControl = {
+							type: cameraControlType
+						};
+					} else {
+						// 简单运镜模式 - 检查是否有非零参数
+						const hasValidConfig = Object.values(cameraControlConfig).some((value) => value !== 0);
+						if (hasValidConfig) {
+							const nonZeroParams = Object.entries(cameraControlConfig).filter(
+								([key, value]) => value !== 0
+							);
+							if (nonZeroParams.length === 1) {
+								klingRequest.cameraControl = {
+									type: 'simple',
+									config: cameraControlConfig
+								};
+							} else if (nonZeroParams.length > 1) {
+								toast.error('简单运镜模式只能设置一个非零参数');
+								isGenerating = false;
+								return;
+							}
+						}
+					}
 				}
 			}
 
@@ -1255,6 +1332,308 @@
 								</div>
 							</div>
 						{/if}
+
+						<!-- 可灵特有的摄像机控制 (摄像机控制模式) -->
+						{#if selectedService === 'kling' && selectedImageVideoMode === 'camera'}
+							<div class="space-y-4">
+								<div>
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+										>运镜类型</label
+									>
+									<select
+										bind:value={cameraControlType}
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									>
+										<option value="simple">简单运镜 (自定义参数)</option>
+										<option value="down_back">下移拉远 (镜头下压并后退)</option>
+										<option value="forward_up">推进上移 (镜头前进并上仰)</option>
+										<option value="right_turn_forward">右旋推进 (先右旋转后前进)</option>
+										<option value="left_turn_forward">左旋推进 (先左旋并前进)</option>
+									</select>
+								</div>
+
+								<!-- 简单运镜参数配置 -->
+								{#if cameraControlType === 'simple'}
+									<div
+										class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4"
+									>
+										<div class="text-sm font-medium text-blue-700 dark:text-blue-300 mb-3">
+											摄像机运动参数 (6选1，只能有一个参数不为0)
+										</div>
+										<div class="grid grid-cols-2 gap-3">
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													水平运镜 (沿X轴)
+													<Tooltip content="负值向左平移，正值向右平移 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.horizontal}
+													on:input={() => {
+														// 当选择此参数时，重置其他参数
+														if (cameraControlConfig.horizontal !== 0) {
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													垂直运镜 (沿Y轴)
+													<Tooltip content="负值向下平移，正值向上平移 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.vertical}
+													on:input={() => {
+														if (cameraControlConfig.vertical !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													水平摇镜 (绕Y轴)
+													<Tooltip content="负值向左旋转，正值向右旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.pan}
+													on:input={() => {
+														if (cameraControlConfig.pan !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													垂直摇镜 (绕X轴)
+													<Tooltip content="负值向下旋转，正值向上旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.tilt}
+													on:input={() => {
+														if (cameraControlConfig.tilt !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													旋转运镜 (绕Z轴)
+													<Tooltip content="负值逆时针旋转，正值顺时针旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.roll}
+													on:input={() => {
+														if (cameraControlConfig.roll !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													变焦控制
+													<Tooltip
+														content="负值焦距变长(视野变小)，正值焦距变短(视野变大) [-10, 10]"
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.zoom}
+													on:input={() => {
+														if (cameraControlConfig.zoom !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+										</div>
+
+										<!-- 参数重置按钮 -->
+										<div class="mt-3 text-center">
+											<button
+												type="button"
+												on:click={() => {
+													cameraControlConfig = {
+														horizontal: 0,
+														vertical: 0,
+														pan: 0,
+														tilt: 0,
+														roll: 0,
+														zoom: 0
+													};
+												}}
+												class="px-3 py-1.5 text-xs bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+											>
+												重置所有参数
+											</button>
+										</div>
+									</div>
+								{:else}
+									<!-- 预定义运镜类型说明 -->
+									<div
+										class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
+									>
+										<div class="text-sm text-green-700 dark:text-green-300">
+											{#if cameraControlType === 'down_back'}
+												📹 下移拉远：镜头下压并后退，适合展现场景全貌
+											{:else if cameraControlType === 'forward_up'}
+												📹 推进上移：镜头前进并上仰，适合突出主体对象
+											{:else if cameraControlType === 'right_turn_forward'}
+												📹 右旋推进：先右旋转后前进，适合动态展示
+											{:else if cameraControlType === 'left_turn_forward'}
+												📹 左旋推进：先左旋并前进，适合创意运镜
+											{/if}
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
 					{/if}
 
 					<!-- 视频参数 -->
@@ -1362,6 +1741,326 @@
 								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white resize-none"
 								rows="2"
 							></textarea>
+						</div>
+					{/if}
+
+					<!-- 可灵摄像机控制 (通用于文生视频和图生视频) -->
+					{#if selectedService === 'kling'}
+						<div class="space-y-3">
+							<div class="flex justify-between items-center">
+								<div class="text-sm font-medium text-gray-700 dark:text-gray-300">摄像机控制</div>
+								<button
+									type="button"
+									on:click={() => {
+										// 切换摄像机控制折叠状态
+										const section = document.getElementById('camera-control-section');
+										if (section) {
+											section.style.display = section.style.display === 'none' ? 'block' : 'none';
+										}
+									}}
+									class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+								>
+									展开/收起
+								</button>
+							</div>
+
+							<div id="camera-control-section" style="display: none;" class="space-y-4">
+								<div>
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+										>运镜类型</label
+									>
+									<select
+										bind:value={cameraControlType}
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									>
+										<option value="simple">简单运镜 (自定义参数)</option>
+										<option value="down_back">下移拉远 (镜头下压并后退)</option>
+										<option value="forward_up">推进上移 (镜头前进并上仰)</option>
+										<option value="right_turn_forward">右旋推进 (先右旋转后前进)</option>
+										<option value="left_turn_forward">左旋推进 (先左旋并前进)</option>
+									</select>
+								</div>
+
+								<!-- 简单运镜参数配置 -->
+								{#if cameraControlType === 'simple'}
+									<div
+										class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4"
+									>
+										<div class="text-sm font-medium text-blue-700 dark:text-blue-300 mb-3">
+											摄像机运动参数 (6选1，只能有一个参数不为0)
+										</div>
+										<div class="grid grid-cols-2 gap-3">
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													水平运镜 (沿X轴)
+													<Tooltip content="负值向左平移，正值向右平移 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.horizontal}
+													on:input={() => {
+														if (cameraControlConfig.horizontal !== 0) {
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													垂直运镜 (沿Y轴)
+													<Tooltip content="负值向下平移，正值向上平移 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.vertical}
+													on:input={() => {
+														if (cameraControlConfig.vertical !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													水平摇镜 (绕Y轴)
+													<Tooltip content="负值向左旋转，正值向右旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l-.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.pan}
+													on:input={() => {
+														if (cameraControlConfig.pan !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													垂直摇镜 (绕X轴)
+													<Tooltip content="负值向下旋转，正值向上旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l-.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.tilt}
+													on:input={() => {
+														if (cameraControlConfig.tilt !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.roll = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													旋转运镜 (绕Z轴)
+													<Tooltip content="负值逆时针旋转，正值顺时针旋转 [-10, 10]">
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l-.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.roll}
+													on:input={() => {
+														if (cameraControlConfig.roll !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.zoom = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+											<div>
+												<label class="text-xs text-gray-600 dark:text-gray-400 mb-1 block">
+													变焦控制
+													<Tooltip
+														content="负值焦距变长(视野变小)，正值焦距变短(视野变大) [-10, 10]"
+													>
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															fill="none"
+															viewBox="0 0 24 24"
+															stroke-width="1.5"
+															stroke="currentColor"
+															class="w-3 h-3 inline ml-1"
+														>
+															<path
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l-.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+															/>
+														</svg>
+													</Tooltip>
+												</label>
+												<input
+													type="number"
+													min="-10"
+													max="10"
+													step="0.5"
+													bind:value={cameraControlConfig.zoom}
+													on:input={() => {
+														if (cameraControlConfig.zoom !== 0) {
+															cameraControlConfig.horizontal = 0;
+															cameraControlConfig.vertical = 0;
+															cameraControlConfig.pan = 0;
+															cameraControlConfig.tilt = 0;
+															cameraControlConfig.roll = 0;
+														}
+													}}
+													class="w-full rounded py-1.5 px-2 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+												/>
+											</div>
+										</div>
+
+										<!-- 参数重置按钮 -->
+										<div class="mt-3 text-center">
+											<button
+												type="button"
+												on:click={() => {
+													cameraControlConfig = {
+														horizontal: 0,
+														vertical: 0,
+														pan: 0,
+														tilt: 0,
+														roll: 0,
+														zoom: 0
+													};
+												}}
+												class="px-3 py-1.5 text-xs bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+											>
+												重置所有参数
+											</button>
+										</div>
+									</div>
+								{:else}
+									<!-- 预定义运镜类型说明 -->
+									<div
+										class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
+									>
+										<div class="text-sm text-green-700 dark:text-green-300">
+											{#if cameraControlType === 'down_back'}
+												📹 下移拉远：镜头下压并后退，适合展现场景全貌
+											{:else if cameraControlType === 'forward_up'}
+												📹 推进上移：镜头前进并上仰，适合突出主体对象
+											{:else if cameraControlType === 'right_turn_forward'}
+												📹 右旋推进：先右旋转后前进，适合动态展示
+											{:else if cameraControlType === 'left_turn_forward'}
+												📹 左旋推进：先左旋并前进，适合创意运镜
+											{/if}
+										</div>
+									</div>
+								{/if}
+							</div>
 						</div>
 					{/if}
 
@@ -1518,7 +2217,7 @@
 									class="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg overflow-hidden hover:shadow-md transition-shadow"
 								>
 									<!-- 服务标签 -->
-									<div class="absolute top-2 left-2 z-10">
+									<!-- <div class="absolute top-2 left-2 z-10">
 										{#if task.serviceType === 'jimeng'}
 											<span
 												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-green-500 to-emerald-500"
@@ -1532,7 +2231,7 @@
 												可灵 AI
 											</span>
 										{/if}
-									</div>
+									</div> -->
 
 									<!-- 视频 -->
 									{#if task.videoUrl}
