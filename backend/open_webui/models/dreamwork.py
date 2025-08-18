@@ -175,7 +175,7 @@ class DreamWorkTask(Base):
     submit_time = Column(DateTime, default=func.now())
     start_time = Column(DateTime)
     finish_time = Column(DateTime)
-    progress = Column(String(20), default="0%")
+    progress = Column(String(20), default="0%", nullable=True)
 
     # 结果字段
     image_url = Column(Text)
@@ -279,7 +279,11 @@ class DreamWorkTask(Base):
                 self.start_time = datetime.utcnow()
             elif status in ["SUCCESS", "FAILURE"]:
                 self.finish_time = datetime.utcnow()
-                self.progress = "100%" if status == "SUCCESS" else "0%"
+                # 安全设置progress，如果列不存在则跳过
+                try:
+                    self.progress = "100%" if status == "SUCCESS" else "0%"
+                except Exception:
+                    pass
             db.commit()
 
     def update_from_api_response(self, api_response: dict):
@@ -294,11 +298,19 @@ class DreamWorkTask(Base):
                     self.fail_reason = api_response.get("error", {}).get(
                         "message", "生成失败"
                     )
-                    self.progress = "0%"
+                    # 安全设置progress，如果列不存在则跳过
+                    try:
+                        self.progress = "0%"
+                    except Exception:
+                        pass
                 elif "data" in api_response and api_response["data"]:
                     # 成功生成
                     self.status = "SUCCESS"
-                    self.progress = "100%"
+                    # 安全设置progress，如果列不存在则跳过
+                    try:
+                        self.progress = "100%"
+                    except Exception:
+                        pass
                     # 获取图片URL
                     image_data = (
                         api_response["data"][0]
@@ -344,7 +356,7 @@ class DreamWorkTask(Base):
             "finishTime": (
                 int(self.finish_time.timestamp() * 1000) if self.finish_time else 0
             ),
-            "progress": self.progress,
+            "progress": getattr(self, "progress", "0%"),
             "imageUrl": self.image_url,
             "failReason": self.fail_reason,
             "inputImage": self.input_image,
