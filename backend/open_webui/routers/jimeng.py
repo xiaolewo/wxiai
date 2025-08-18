@@ -3,7 +3,7 @@
 实现完整的即梦视频生成功能，包括文生视频、图生视频等
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -375,27 +375,159 @@ async def test_jimeng_connection(user=Depends(get_admin_user)):
 # ======================== 任务提交 ========================
 
 
+def parse_content_for_jimeng(content, http_request=None) -> tuple[str, str]:
+    """
+    解析content数组，提取文本prompt和图片URL
+    支持OpenAI格式的content数组: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}]
+    支持base64图片自动转换为临时URL
+
+    Returns:
+        tuple: (prompt, image_url)
+    """
+    prompt = ""
+    image_url = ""
+
+    if isinstance(content, str):
+        # 如果content是字符串，直接作为prompt
+        prompt = content
+    elif isinstance(content, list):
+        # 如果content是数组，解析每个元素
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    text_content = item.get("text", "")
+                    if text_content:
+                        prompt += text_content
+                elif item.get("type") == "image_url":
+                    img_data = item.get("image_url", {})
+                    img_url = img_data.get("url", "")
+                    if img_url and not image_url:  # 只取第一个图片
+                        # 检查是否是base64数据URL
+                        if img_url.startswith("data:image/"):
+                            print(
+                                f"🎬 【即梦content解析】检测到base64图片数据，转换为临时URL..."
+                            )
+                            try:
+                                from open_webui.utils.jimeng import (
+                                    save_base64_to_temp_file,
+                                )
+
+                                # 将base64转换为临时文件URL
+                                temp_relative_path = save_base64_to_temp_file(img_url)
+                                # 构建完整的URL - 使用当前请求的域名
+                                if http_request:
+                                    request_url_base = str(
+                                        http_request.base_url
+                                    ).rstrip("/")
+                                else:
+                                    request_url_base = (
+                                        "http://localhost:8080"  # 回退到默认值
+                                    )
+                                image_url = f"{request_url_base}/{temp_relative_path}"
+                                print(
+                                    f"✅ 【即梦content解析】base64转换成功，URL: {image_url}"
+                                )
+                            except Exception as convert_error:
+                                print(
+                                    f"❌ 【即梦content解析】base64转换失败: {convert_error}"
+                                )
+                                # 转换失败时，保持原始URL，后续处理会报错
+                                image_url = img_url
+                        else:
+                            # 普通图片URL，直接使用
+                            image_url = img_url
+
+    return prompt.strip(), image_url.strip()
+
+
 @router.post("/submit/text-to-video")
 async def submit_text_to_video_task(
     request: JimengGenerateRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     user=Depends(get_verified_user),
 ):
     """提交文生视频任务"""
     try:
         print(f"🎬 【即梦后端】收到文生视频请求: 用户={user.id}")
+
+        # 解析content数组或使用现有prompt
+        parsed_prompt, parsed_image_url = request.get_parsed_content(http_request)
         print(
-            f"🎬 【即梦后端】请求参数: prompt={request.prompt[:50]}..., duration={request.duration}"
+            f"🎬 【即梦后端】解析后的内容: prompt={parsed_prompt[:50]}..., image_url={parsed_image_url}"
         )
 
-        # 使用工具函数处理任务
-        print(f"🎬 【即梦后端】开始处理文生视频任务...")
-        task = await process_jimeng_generation(
-            user_id=user.id, request=request, action="TEXT_TO_VIDEO"
-        )
+        # 如果解析到了图片URL，这实际上是图生视频任务
+        if parsed_image_url:
+            print(f"🎬 【即梦后端】检测到图片URL，转为图生视频任务")
+            # 更新请求对象
+            request.prompt = parsed_prompt
+            request.image_url = parsed_image_url
 
-        print(f"🎬 【即梦后端】任务创建成功: {task.id}")
-        return {"success": True, "task_id": task.id, "message": "文生视频任务提交成功"}
+            # 调用图生视频处理逻辑
+            task = await process_jimeng_generation(
+                user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
+            )
+
+            print(f"🎬 【即梦后端】图生视频任务创建成功: {task.id}")
+            return {
+                "success": True,
+                "task_id": task.id,
+                "message": "图生视频任务提交成功",
+            }
+        # 如果有base64图片数据但没有图片URL，转换base64为临时URL
+        elif request.image and not request.image_url:
+            from open_webui.utils.jimeng import save_base64_to_temp_file
+
+            print(f"🎬 【即梦后端】检测到base64图片数据，转为图生视频任务...")
+            try:
+                # 将base64转换为临时文件URL
+                temp_relative_path = save_base64_to_temp_file(request.image)
+                # 构建完整的URL - 使用当前请求的域名
+                base_url = str(http_request.base_url).rstrip("/")
+                request.image_url = f"{base_url}/{temp_relative_path}"
+                request.prompt = parsed_prompt
+                print(f"✅ 【即梦后端】base64转换成功，URL: {request.image_url}")
+
+                # 清除base64数据，避免重复处理
+                request.image = None
+
+                # 调用图生视频处理逻辑
+                task = await process_jimeng_generation(
+                    user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
+                )
+
+                print(f"🎬 【即梦后端】图生视频任务创建成功: {task.id}")
+                return {
+                    "success": True,
+                    "task_id": task.id,
+                    "message": "图生视频任务提交成功",
+                }
+
+            except Exception as convert_error:
+                print(f"❌ 【即梦后端】base64转换失败: {convert_error}")
+                raise HTTPException(
+                    status_code=400, detail=f"图片数据处理失败: {str(convert_error)}"
+                )
+        else:
+            # 纯文生视频任务
+            request.prompt = parsed_prompt
+            print(
+                f"🎬 【即梦后端】文生视频任务参数: prompt={request.prompt[:50]}..., duration={request.duration}"
+            )
+
+            # 使用工具函数处理任务
+            print(f"🎬 【即梦后端】开始处理文生视频任务...")
+            task = await process_jimeng_generation(
+                user_id=user.id, request=request, action="TEXT_TO_VIDEO"
+            )
+
+            print(f"🎬 【即梦后端】任务创建成功: {task.id}")
+            return {
+                "success": True,
+                "task_id": task.id,
+                "message": "文生视频任务提交成功",
+            }
 
     except HTTPException:
         raise
@@ -411,13 +543,27 @@ async def submit_text_to_video_task(
 async def submit_image_to_video_task(
     request: JimengGenerateRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
     user=Depends(get_verified_user),
 ):
     """提交图生视频任务"""
     try:
         print(f"🎬 【即梦后端】收到图生视频请求: 用户={user.id}")
+
+        # 解析content数组或使用现有prompt和image_url
+        parsed_prompt, parsed_image_url = request.get_parsed_content(http_request)
         print(
-            f"🎬 【即梦后端】请求参数: prompt={request.prompt[:50]}..., duration={request.duration}"
+            f"🎬 【即梦后端】解析后的内容: prompt={parsed_prompt[:50]}..., image_url={parsed_image_url}"
+        )
+
+        # 更新请求对象
+        if parsed_prompt:
+            request.prompt = parsed_prompt
+        if parsed_image_url:
+            request.image_url = parsed_image_url
+
+        print(
+            f"🎬 【即梦后端】请求参数: prompt={request.prompt[:50] if request.prompt else ''}..., duration={request.duration}"
         )
 
         # 验证图生视频必需参数
@@ -426,6 +572,28 @@ async def submit_image_to_video_task(
             raise HTTPException(
                 status_code=400, detail="图生视频需要输入图片URL或图片数据"
             )
+
+        # 如果提供的是base64图片数据，转换为临时URL
+        if request.image and not request.image_url:
+            from open_webui.utils.jimeng import save_base64_to_temp_file
+
+            print(f"🎬 【即梦后端】检测到base64图片数据，转换为临时URL...")
+            try:
+                # 将base64转换为临时文件URL
+                temp_relative_path = save_base64_to_temp_file(request.image)
+                # 构建完整的URL - 使用当前请求的域名
+                base_url = str(http_request.base_url).rstrip("/")
+                request.image_url = f"{base_url}/{temp_relative_path}"
+                print(f"✅ 【即梦后端】base64转换成功，URL: {request.image_url}")
+
+                # 清除base64数据，避免重复处理
+                request.image = None
+
+            except Exception as convert_error:
+                print(f"❌ 【即梦后端】base64转换失败: {convert_error}")
+                raise HTTPException(
+                    status_code=400, detail=f"图片数据处理失败: {str(convert_error)}"
+                )
 
         # 使用工具函数处理任务
         print(f"🎬 【即梦后端】开始处理图生视频任务...")

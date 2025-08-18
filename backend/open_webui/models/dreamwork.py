@@ -172,20 +172,20 @@ class DreamWorkTask(Base):
     credits_cost = Column(Integer, default=0)
 
     # 时间字段
-    submit_time = Column(DateTime, default=func.now())
-    start_time = Column(DateTime)
-    finish_time = Column(DateTime)
-    progress = Column(String(20), default="0%", nullable=True)
+    submit_time = Column(DateTime, nullable=True)
+    start_time = Column(DateTime, nullable=True)
+    finish_time = Column(DateTime, nullable=True)
+    progress = Column(String(20), nullable=True, default="0%")
 
     # 结果字段
-    image_url = Column(Text)
-    fail_reason = Column(Text)
-    input_image = Column(Text)  # 图生图的输入图片(base64或URL)
+    image_url = Column(Text, nullable=True)
+    fail_reason = Column(Text, nullable=True)
+    input_image = Column(Text, nullable=True)  # 图生图的输入图片(base64或URL)
 
     # 元数据
-    properties = Column(JSON)  # 额外属性
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    properties = Column(JSON, nullable=True)  # 额外属性
+    created_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=True)
 
     # 创建索引
     __table_args__ = (

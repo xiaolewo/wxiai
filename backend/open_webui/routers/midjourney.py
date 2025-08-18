@@ -94,6 +94,8 @@ async def get_mj_user_config(user=Depends(get_verified_user)):
                 "relax": {"enabled": True, "credits": 2},
             },
             "default_mode": "fast",
+            "stream_enabled": False,  # 服务未配置时禁用流式
+            "stream_url": "/api/v1/midjourney/stream/user",  # 流式端点URL
         }
 
     # 只返回用户需要的配置，不包含敏感信息
@@ -101,6 +103,8 @@ async def get_mj_user_config(user=Depends(get_verified_user)):
         "enabled": config.enabled,
         "modes": config.modes,
         "default_mode": config.default_mode,
+        "stream_enabled": True,  # 指示流式功能已启用
+        "stream_url": "/api/v1/midjourney/stream/user",  # 流式端点URL
     }
 
 
@@ -839,66 +843,83 @@ async def stream_user_tasks(user=Depends(get_verified_user)):
     """用户任务状态实时流 - 修复版本"""
 
     async def generate():
-        print(f"🔄 【流媒体修复版】开始用户 {user.id} 的任务流")
-        sent_completed_tasks = set()  # 记录已发送的完成任务，避免重复
-        max_iterations = 200  # 最多运行200次 (约10分钟)
-        iteration = 0
+        try:
+            print(f"🔄 【流媒体修复版】开始用户 {user.id} 的任务流")
 
-        while iteration < max_iterations:
-            try:
-                # 获取用户最新任务状态 - 只获取最近更新的未完成任务
-                recent_tasks = MJTask.get_user_recent_tasks(user.id, limit=5)
+            # 检查MJ服务是否配置
+            config = MJConfig.get_config()
+            if not config or not config.enabled:
+                yield f"data: {json.dumps({'type': 'info', 'message': 'Midjourney service not configured or disabled'})}\n\n"
+                yield f"data: {json.dumps({'type': 'stream_end', 'message': 'Stream completed'})}\n\n"
+                return
 
-                active_tasks_found = False
+            sent_completed_tasks = set()  # 记录已发送的完成任务，避免重复
+            max_iterations = 200  # 最多运行200次 (约10分钟)
+            iteration = 0
 
-                for task in recent_tasks:
-                    # 🔥 只推送真正需要更新的任务
-                    should_send = False
+            while iteration < max_iterations:
+                try:
+                    # 获取用户最新任务状态 - 只获取最近更新的未完成任务
+                    recent_tasks = MJTask.get_user_recent_tasks(user.id, limit=5)
 
-                    # 1. 未完成的任务 - 总是发送
-                    if task.status not in ["SUCCESS", "FAILURE", "FAILED"]:
-                        should_send = True
-                        active_tasks_found = True
-                        print(
-                            f"🔄 【流媒体修复版】发送进行中任务: {task.id}, 状态: {task.status}"
-                        )
+                    active_tasks_found = False
 
-                    # 2. 刚完成的任务 - 只发送一次
-                    elif task.status in ["SUCCESS", "FAILURE", "FAILED"]:
-                        if task.id not in sent_completed_tasks:
+                    for task in recent_tasks:
+                        # 🔥 只推送真正需要更新的任务
+                        should_send = False
+
+                        # 1. 未完成的任务 - 总是发送
+                        if task.status not in ["SUCCESS", "FAILURE", "FAILED"]:
                             should_send = True
-                            sent_completed_tasks.add(task.id)
+                            active_tasks_found = True
                             print(
-                                f"🔄 【流媒体修复版】发送完成任务(首次): {task.id}, 状态: {task.status}"
+                                f"🔄 【流媒体修复版】发送进行中任务: {task.id}, 状态: {task.status}"
                             )
-                        else:
-                            print(f"🔄 【流媒体修复版】跳过已发送的完成任务: {task.id}")
 
-                    # 3. 最近更新的任务 (5秒内)
-                    elif task.updated_at > datetime.utcnow() - timedelta(seconds=5):
-                        should_send = True
-                        print(f"🔄 【流媒体修复版】发送最近更新任务: {task.id}")
+                        # 2. 刚完成的任务 - 只发送一次
+                        elif task.status in ["SUCCESS", "FAILURE", "FAILED"]:
+                            if task.id not in sent_completed_tasks:
+                                should_send = True
+                                sent_completed_tasks.add(task.id)
+                                print(
+                                    f"🔄 【流媒体修复版】发送完成任务(首次): {task.id}, 状态: {task.status}"
+                                )
+                            else:
+                                print(
+                                    f"🔄 【流媒体修复版】跳过已发送的完成任务: {task.id}"
+                                )
 
-                    if should_send:
-                        task_data = task.to_dict()
-                        yield f"data: {json.dumps(task_data)}\n\n"
+                        # 3. 最近更新的任务 (5秒内)
+                        elif task.updated_at > datetime.utcnow() - timedelta(seconds=5):
+                            should_send = True
+                            print(f"🔄 【流媒体修复版】发送最近更新任务: {task.id}")
 
-                # 🔥 如果没有活跃任务且已经发送了所有完成任务，则停止流
-                if not active_tasks_found and len(sent_completed_tasks) > 0:
-                    print(f"🔄 【流媒体修复版】没有活跃任务，停止流媒体")
+                        if should_send:
+                            task_data = task.to_dict()
+                            yield f"data: {json.dumps(task_data)}\n\n"
+
+                    # 🔥 如果没有活跃任务且已经发送了所有完成任务，则停止流
+                    if not active_tasks_found and len(sent_completed_tasks) > 0:
+                        print(f"🔄 【流媒体修复版】没有活跃任务，停止流媒体")
+                        break
+
+                    await asyncio.sleep(2)  # 每2秒检查一次
+                    iteration += 1
+
+                except Exception as e:
+                    print(f"🔄 【流媒体修复版】流媒体错误: {e}")
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
                     break
 
-                await asyncio.sleep(2)  # 每2秒检查一次
-                iteration += 1
+            print(
+                f"🔄 【流媒体修复版】用户 {user.id} 的任务流结束，共 {iteration} 次迭代"
+            )
+            # 发送结束标记
+            yield f"data: {json.dumps({'type': 'stream_end', 'message': 'Stream completed'})}\n\n"
 
-            except Exception as e:
-                print(f"🔄 【流媒体修复版】流媒体错误: {e}")
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                break
-
-        print(f"🔄 【流媒体修复版】用户 {user.id} 的任务流结束，共 {iteration} 次迭代")
-        # 发送结束标记
-        yield f"data: {json.dumps({'type': 'stream_end', 'message': 'Stream completed'})}\n\n"
+        except Exception as e:
+            print(f"🔄 【流媒体修复版】生成器错误: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

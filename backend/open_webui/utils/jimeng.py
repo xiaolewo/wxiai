@@ -18,8 +18,10 @@ from open_webui.config import CACHE_DIR
 
 
 def save_base64_to_temp_file(base64_data: str) -> str:
-    """将base64数据保存为临时文件并返回可访问的URL"""
+    """将base64数据保存到uploads目录并返回可访问的URL"""
     try:
+        from open_webui.config import UPLOAD_DIR
+
         # 解析base64数据
         if base64_data.startswith("data:"):
             # 提取格式和数据
@@ -38,28 +40,28 @@ def save_base64_to_temp_file(base64_data: str) -> str:
             data = base64_data
             ext = ".jpg"
 
-        # 创建临时文件
-        temp_dir = os.path.join(CACHE_DIR, "jimeng_temp_images")
-        os.makedirs(temp_dir, exist_ok=True)
+        # 在uploads目录下创建jimeng子目录
+        jimeng_upload_dir = os.path.join(UPLOAD_DIR, "jimeng")
+        os.makedirs(jimeng_upload_dir, exist_ok=True)
 
         filename = f"jimeng_temp_{uuid.uuid4().hex}{ext}"
-        file_path = os.path.join(temp_dir, filename)
+        file_path = os.path.join(jimeng_upload_dir, filename)
 
         # 解码并保存文件
         image_data = base64.b64decode(data)
         with open(file_path, "wb") as f:
             f.write(image_data)
 
-        # 构建可访问的URL - 使用正确的API端点
-        relative_path = f"api/v1/jimeng/temp-image/{filename}"
+        # 构建可访问的URL - 使用uploads静态文件服务
+        relative_path = f"uploads/jimeng/{filename}"
 
-        print(f"🎬 【即梦】Base64图片已保存为临时文件: {file_path}")
-        print(f"🎬 【即梦】临时文件相对路径: {relative_path}")
+        print(f"🎬 【即梦】Base64图片已保存到uploads目录: {file_path}")
+        print(f"🎬 【即梦】可访问URL路径: {relative_path}")
 
         return relative_path
 
     except Exception as e:
-        print(f"❌ 【即梦】保存临时文件失败: {e}")
+        print(f"❌ 【即梦】保存文件失败: {e}")
         raise ValueError(f"无法处理图片数据: {e}")
 
 
@@ -107,29 +109,13 @@ class JimengApiClient:
             "cfg_scale": float(request.cfg_scale),
         }
 
-        # 如果有图片URL，添加图生视频参数
+        # 如果有图片URL，添加图生视频参数（即梦API只支持image_url，不支持base64）
         if request.image_url:
             request_data["image_url"] = request.image_url
             print(f"🎬 【即梦API】使用提供的图片URL: {request.image_url}")
         elif request.image:
-            # 尝试直接发送base64数据给即梦API
-            print("🎬 【即梦API】检测到base64图片数据...")
-            try:
-                # 先尝试直接将base64数据作为image字段发送
-                if request.image.startswith("data:"):
-                    # 如果是完整的data URL，直接使用
-                    request_data["image"] = request.image
-                    print(f"🎬 【即梦API】使用完整data URL格式发送图片")
-                else:
-                    # 如果是纯base64数据，添加适当的前缀
-                    request_data["image"] = f"data:image/jpeg;base64,{request.image}"
-                    print(f"🎬 【即梦API】添加data URL前缀后发送图片")
-
-                print(f"🎬 【即梦API】图片数据长度: {len(request_data['image'])} 字符")
-
-            except Exception as e:
-                print(f"❌ 【即梦API】处理base64图片数据失败: {e}")
-                raise ValueError(f"无法处理图片数据: {e}")
+            print("❌ 【即梦API】即梦API不支持base64图片数据，只支持image_url")
+            raise ValueError("即梦API不支持base64图片数据，请提供图片URL")
         else:
             # 没有提供图片，这是正常的文生视频模式
             print("🎬 【即梦API】文生视频模式，不需要图片数据")

@@ -48,7 +48,10 @@ class JimengConfigForm(BaseModel):
 class JimengGenerateRequest(BaseModel):
     """即梦视频生成请求模型"""
 
-    prompt: str = Field(..., description="视频描述")
+    # 支持OpenAI格式的content数组或简单字符串prompt
+    prompt: Optional[str] = Field(None, description="视频描述")
+    content: Optional[Any] = Field(None, description="OpenAI格式的content数组或字符串")
+
     image_url: Optional[str] = Field(None, description="图生视频输入图片URL")
     image: Optional[str] = Field(None, description="图生视频输入图片base64数据")
     duration: str = Field("5", description="视频时长: 5, 10")
@@ -60,6 +63,19 @@ class JimengGenerateRequest(BaseModel):
     # 内部使用字段
     external_task_id: Optional[str] = None
     callback_url: Optional[str] = None
+
+    def get_parsed_content(self, http_request=None) -> tuple[str, str]:
+        """
+        解析content或prompt，返回(prompt, image_url)
+        """
+        from open_webui.routers.jimeng import parse_content_for_jimeng
+
+        if self.content is not None:
+            # 如果有content字段，解析它
+            return parse_content_for_jimeng(self.content, http_request)
+        else:
+            # 否则使用现有的prompt和image_url
+            return self.prompt or "", self.image_url or ""
 
 
 class JimengTaskForm(BaseModel):
