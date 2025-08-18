@@ -70,7 +70,7 @@ def upgrade() -> None:
         if "access_control" not in existing_columns:
             batch_op.add_column(sa.Column("access_control", sa.JSON(), nullable=True))
 
-    # 5. 为视频生成服务表添加serviceType列
+    # 5. 为视频生成服务表添加serviceType列和DreamWork progress列
     video_tables = ["jimeng_tasks", "kling_tasks", "dreamwork_tasks"]
 
     for table_name in video_tables:
@@ -83,6 +83,7 @@ def upgrade() -> None:
                     col["name"] for col in inspector.get_columns(table_name)
                 ]
 
+                # 添加 serviceType 列
                 if "serviceType" not in existing_columns:
                     with op.batch_alter_table(table_name, schema=None) as batch_op:
                         batch_op.add_column(
@@ -101,6 +102,24 @@ def upgrade() -> None:
                     op.execute(
                         f"UPDATE {table_name} SET serviceType = '{default_service}' WHERE serviceType IS NULL"
                     )
+
+                # 特别处理 DreamWork 的 progress 列
+                if (
+                    table_name == "dreamwork_tasks"
+                    and "progress" not in existing_columns
+                ):
+                    with op.batch_alter_table(table_name, schema=None) as batch_op:
+                        batch_op.add_column(
+                            sa.Column(
+                                "progress", sa.String(20), nullable=True, default="0%"
+                            )
+                        )
+
+                    # 为现有记录设置默认进度
+                    op.execute(
+                        "UPDATE dreamwork_tasks SET progress = '0%' WHERE progress IS NULL"
+                    )
+
         except Exception as e:
             print(f"Warning: Could not update table {table_name}: {e}")
             continue
@@ -139,6 +158,9 @@ def downgrade() -> None:
             if table_name in inspector.get_table_names():
                 with op.batch_alter_table(table_name, schema=None) as batch_op:
                     batch_op.drop_column("serviceType")
+                    # 特别处理 DreamWork 的 progress 列
+                    if table_name == "dreamwork_tasks":
+                        batch_op.drop_column("progress")
         except Exception as e:
             print(f"Warning: Could not revert table {table_name}: {e}")
             continue

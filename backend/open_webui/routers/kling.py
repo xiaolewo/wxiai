@@ -420,6 +420,9 @@ async def submit_text_to_video_task(
             user_id=user.id, request=request, action="TEXT_TO_VIDEO"
         )
 
+        # 添加后台轮询任务
+        background_tasks.add_task(poll_kling_task_status, task.id, user.id)
+
         print(f"🎬 【可灵后端】任务创建成功: {task.id}")
         return {"success": True, "task_id": task.id, "message": "文生视频任务提交成功"}
 
@@ -473,6 +476,9 @@ async def submit_image_to_video_task(
         task = await process_kling_generation(
             user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
         )
+
+        # 添加后台轮询任务
+        background_tasks.add_task(poll_kling_task_status, task.id, user.id)
 
         print(f"🎬 【可灵后端】任务创建成功: {task.id}")
         return {"success": True, "task_id": task.id, "message": "图生视频任务提交成功"}
@@ -690,3 +696,71 @@ async def admin_cleanup_old_tasks(days: int = 30, user=Depends(get_admin_user)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"清理任务失败: {str(e)}")
+
+
+# ======================== 后台轮询任务 ========================
+
+
+async def poll_kling_task_status(task_id: str, user_id: str):
+    """后台轮询可灵任务状态"""
+    import asyncio
+    from open_webui.models.kling import KlingTask
+
+    max_attempts = 60  # 最多轮询60次
+    interval = 10  # 每10秒轮询一次
+
+    print(f"🚀 【可灵轮询】开始后台轮询任务 {task_id}")
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            await asyncio.sleep(interval)
+
+            # 获取任务
+            task = KlingTask.get_task_by_id(task_id)
+            if not task:
+                print(f"❌ 【可灵轮询】任务 {task_id} 不存在")
+                break
+
+            # 检查任务是否已完成
+            if task.status in ["succeed", "failed"]:
+                print(f"✅ 【可灵轮询】任务 {task_id} 已完成: {task.status}")
+                break
+
+            # 查询远程状态
+            if task.external_task_id:
+                try:
+                    client = get_kling_client()
+                    remote_status = await client.query_task(task.external_task_id)
+                    print(
+                        f"📡 【可灵轮询】轮询 {attempt}/{max_attempts} - 任务 {task_id} 远程状态: {remote_status.get('data', {}).get('task_status', 'unknown')}"
+                    )
+
+                    # 更新任务状态
+                    task.update_from_api_response(remote_status)
+
+                    # 检查是否完成
+                    if task.status in ["succeed", "failed"]:
+                        print(
+                            f"🎯 【可灵轮询】任务 {task_id} 状态更新为: {task.status}"
+                        )
+                        break
+
+                except Exception as e:
+                    print(
+                        f"⚠️ 【可灵轮询】轮询任务 {task_id} 第 {attempt} 次查询失败: {e}"
+                    )
+                    # 查询失败不中断轮询
+                    continue
+            else:
+                print(f"⚠️ 【可灵轮询】任务 {task_id} 缺少external_task_id，跳过轮询")
+                break
+
+        except Exception as e:
+            print(f"❌ 【可灵轮询】轮询任务 {task_id} 第 {attempt} 次出错: {e}")
+            import traceback
+
+            traceback.print_exc()
+            # 出错不中断轮询
+            continue
+
+    print(f"🏁 【可灵轮询】任务 {task_id} 轮询结束，共 {attempt} 次")
