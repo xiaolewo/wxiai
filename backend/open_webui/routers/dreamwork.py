@@ -32,6 +32,7 @@ from open_webui.utils.dreamwork import (
     validate_user_credits,
     process_dreamwork_generation,
 )
+from open_webui.services.file_manager import get_file_manager
 
 # 导入修复版函数
 from open_webui.utils.dreamwork_fixed import generate_image_to_image_fixed
@@ -421,6 +422,53 @@ async def submit_image_to_image_task(
             # 更新任务状态
             task.update_from_api_response(api_response)
 
+            # 🔥 如果任务成功且有图片URL，自动上传到云存储
+            if task.status == "SUCCESS" and task.image_url:
+                try:
+                    with get_db() as db:
+                        file_manager = get_file_manager()
+                        success, message, file_record = (
+                            await file_manager.save_generated_content(
+                                user_id=user.id,
+                                file_url=task.image_url,
+                                filename=f"dreamwork_{task.id}.jpg",
+                                file_type="image",
+                                source_type="dreamwork",
+                                source_task_id=task.id,
+                                metadata={
+                                    "prompt": task.prompt,
+                                    "model": task.model,
+                                    "size": task.size,
+                                    "guidance_scale": task.guidance_scale,
+                                    "action": "IMAGE_TO_IMAGE",
+                                    "original_url": task.image_url,
+                                },
+                            )
+                        )
+                        if success and file_record and file_record.cloud_url:
+                            # 更新任务记录中的云存储URL
+                            with get_db() as update_db:
+                                update_task = (
+                                    update_db.query(DreamWorkTask)
+                                    .filter(DreamWorkTask.id == task.id)
+                                    .first()
+                                )
+                                if update_task:
+                                    update_task.cloud_image_url = file_record.cloud_url
+                                    update_db.commit()
+                                update_db.commit()
+                            print(
+                                f"☁️ 【云存储】DreamWork图生图上传成功，已更新URL: {task.id}"
+                            )
+                        else:
+                            print(
+                                f"☁️ 【云存储】DreamWork图生图上传失败: {task.id} - {message}"
+                            )
+                except Exception as upload_error:
+                    print(
+                        f"☁️ 【云存储】DreamWork图生图自动上传异常: {task.id} - {upload_error}"
+                    )
+
         except Exception as e:
             print(f"❌ 【DreamWork后端】修复版API调用失败: {e}")
             # 发生错误时退还积分
@@ -477,6 +525,64 @@ async def get_dreamwork_task_status(task_id: str, user=Depends(get_verified_user
         # 如果任务已完成，直接返回
         if task.status in ["SUCCESS", "FAILURE"]:
             print(f"🎨 【DreamWork API】任务已完成: {task.id}")
+
+            # 🔥 检查是否需要补充上传到云存储
+            if task.status == "SUCCESS" and task.image_url:
+                try:
+                    with get_db() as db:
+                        file_manager = get_file_manager()
+                        # 检查是否已经上传过
+                        existing_files = file_manager.file_table.get_files_by_source(
+                            "dreamwork", task.id
+                        )
+                        if not any(f.status == "uploaded" for f in existing_files):
+                            success, message, file_record = (
+                                await file_manager.save_generated_content(
+                                    user_id=user.id,
+                                    file_url=task.image_url,
+                                    filename=f"dreamwork_{task.id}.jpg",
+                                    file_type="image",
+                                    source_type="dreamwork",
+                                    source_task_id=task.id,
+                                    metadata={
+                                        "prompt": task.prompt,
+                                        "model": task.model,
+                                        "size": task.size,
+                                        "guidance_scale": task.guidance_scale,
+                                        "action": task.action,
+                                        "original_url": task.image_url,
+                                    },
+                                )
+                            )
+                            if success and file_record and file_record.cloud_url:
+                                # 更新任务记录中的云存储URL
+                                with get_db() as update_db:
+                                    update_task = (
+                                        update_db.query(DreamWorkTask)
+                                        .filter(DreamWorkTask.id == task.id)
+                                        .first()
+                                    )
+                                    if update_task:
+                                        update_task.cloud_image_url = (
+                                            file_record.cloud_url
+                                        )
+                                        update_db.commit()
+                                print(
+                                    f"☁️ 【云存储】DreamWork补充上传成功，已更新URL: {task.id}"
+                                )
+                            else:
+                                print(
+                                    f"☁️ 【云存储】DreamWork补充上传失败: {task.id} - {message}"
+                                )
+                        else:
+                            print(
+                                f"☁️ 【云存储】DreamWork图片已存在，跳过上传: {task.id}"
+                            )
+                except Exception as upload_error:
+                    print(
+                        f"☁️ 【云存储】DreamWork补充上传异常: {task.id} - {upload_error}"
+                    )
+
             return task.to_dict()
 
         # 如果任务还在进行中，可以选择查询远程状态（DreamWork API是同步的，所以通常不需要）

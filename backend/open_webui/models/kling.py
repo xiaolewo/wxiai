@@ -196,6 +196,7 @@ class KlingTask(Base):
     # 结果数据
     video_id = Column(String(100))
     video_url = Column(Text)
+    cloud_video_url = Column(Text, comment="云存储视频URL")
     video_duration = Column(String(10))
     fail_reason = Column(Text)
 
@@ -381,7 +382,7 @@ class KlingTask(Base):
                 self.finish_time.isoformat() if self.finish_time is not None else None
             ),
             "video_id": self.video_id,
-            "video_url": self.video_url,
+            "video_url": self.cloud_video_url or self.video_url,  # 优先返回云存储URL
             "video_duration": self.video_duration,
             "fail_reason": self.fail_reason,
             "properties": self.properties,

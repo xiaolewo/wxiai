@@ -66,7 +66,19 @@ def run_migrations():
         migrations_path = OPEN_WEBUI_DIR / "migrations"
         alembic_cfg.set_main_option("script_location", str(migrations_path))
 
-        command.upgrade(alembic_cfg, "head")
+        # 先尝试升级到最新的合并点
+        try:
+            command.upgrade(alembic_cfg, "merge_heads_final")
+        except Exception as merge_error:
+            log.warning(
+                f"Failed to upgrade to merge point, trying heads: {merge_error}"
+            )
+            # 如果合并点不存在，尝试升级到所有heads
+            try:
+                command.upgrade(alembic_cfg, "heads")
+            except Exception:
+                # 最后尝试升级到head（可能会失败如果有多个heads）
+                command.upgrade(alembic_cfg, "head")
         log.info("Migrations completed successfully")
     except Exception as e:
         log.exception(f"Error running migrations: {e}")
@@ -93,8 +105,15 @@ def delayed_migration_execution():
         except Exception as e:
             log.error(f"Failed to run delayed migrations: {e}")
 
-    migration_thread = threading.Thread(target=run_delayed, daemon=True)
+    migration_thread = threading.Thread(
+        target=run_delayed, daemon=False
+    )  # 改为非daemon，确保迁移完成
     migration_thread.start()
+
+    # 等待迁移完成，最多等待30秒
+    migration_thread.join(timeout=30)
+    if migration_thread.is_alive():
+        log.error("Migration timeout after 30 seconds")
 
 
 delayed_migration_execution()

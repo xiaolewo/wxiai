@@ -565,7 +565,13 @@ class ConnectionVerificationForm(BaseModel):
 async def verify_connection(
     form_data: ConnectionVerificationForm, user=Depends(get_admin_user)
 ):
-    url = form_data.url
+    # Clean URL to remove any invisible characters or leading/trailing spaces
+    url = (
+        form_data.url.strip()
+        .replace("\u00a0", "")
+        .replace("\u2020", "")
+        .replace("\u200b", "")
+    )
     key = form_data.key
 
     api_config = form_data.config or {}
@@ -579,10 +585,10 @@ async def verify_connection(
                 "Content-Type": "application/json",
                 **(
                     {
-                        "X-OpenWebUI-User-Name": quote(user.name, safe=" "),
-                        "X-OpenWebUI-User-Id": user.id,
-                        "X-OpenWebUI-User-Email": user.email,
-                        "X-OpenWebUI-User-Role": user.role,
+                        "X-OpenWebUI-User-Name": quote(user.name or "", safe=" "),
+                        "X-OpenWebUI-User-Id": user.id or "",
+                        "X-OpenWebUI-User-Email": user.email or "",
+                        "X-OpenWebUI-User-Role": user.role or "",
                     }
                     if ENABLE_FORWARD_USER_INFO_HEADERS
                     else {}
@@ -858,14 +864,21 @@ async def generate_chat_completion(
         ),
     }
 
+    # Clean URL to remove any invisible characters or leading/trailing spaces
+    cleaned_url = (
+        url.strip().replace("\u00a0", "").replace("\u2020", "").replace("\u200b", "")
+    )
+
     if api_config.get("azure", False):
         api_version = api_config.get("api_version", "2023-03-15-preview")
-        request_url, payload = convert_to_azure_payload(url, payload, api_version)
+        request_url, payload = convert_to_azure_payload(
+            cleaned_url, payload, api_version
+        )
         headers["api-key"] = key
         headers["api-version"] = api_version
         request_url = f"{request_url}/chat/completions?api-version={api_version}"
     else:
-        request_url = f"{url}/chat/completions"
+        request_url = f"{cleaned_url}/chat/completions"
         headers["Authorization"] = f"Bearer {key}"
 
     payload = json.dumps(payload)

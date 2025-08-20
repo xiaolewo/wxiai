@@ -33,6 +33,7 @@ from open_webui.utils.jimeng import (
     validate_user_credits,
     process_jimeng_generation,
 )
+from open_webui.services.file_manager import get_file_manager
 
 router = APIRouter(prefix="/jimeng", tags=["jimeng"])
 
@@ -375,7 +376,9 @@ async def test_jimeng_connection(user=Depends(get_admin_user)):
 # ======================== 任务提交 ========================
 
 
-def parse_content_for_jimeng(content, http_request=None) -> tuple[str, str]:
+async def parse_content_for_jimeng(
+    content, user_id: str, http_request=None
+) -> tuple[str, str]:
     """
     解析content数组，提取文本prompt和图片URL
     支持OpenAI格式的content数组: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "..."}}]
@@ -405,31 +408,62 @@ def parse_content_for_jimeng(content, http_request=None) -> tuple[str, str]:
                         # 检查是否是base64数据URL
                         if img_url.startswith("data:image/"):
                             print(
-                                f"🎬 【即梦content解析】检测到base64图片数据，转换为临时URL..."
+                                f"🎬 【即梦content解析】检测到base64图片数据，上传到云存储..."
                             )
                             try:
-                                from open_webui.utils.jimeng import (
-                                    save_base64_to_temp_file,
+                                import base64
+                                import uuid
+                                from open_webui.services.file_manager import (
+                                    get_file_manager,
                                 )
 
-                                # 将base64转换为临时文件URL
-                                temp_relative_path = save_base64_to_temp_file(img_url)
-                                # 构建完整的URL - 使用当前请求的域名
-                                if http_request:
-                                    request_url_base = str(
-                                        http_request.base_url
-                                    ).rstrip("/")
+                                # 解析base64数据
+                                if img_url.startswith("data:"):
+                                    header, data = img_url.split(",", 1)
+                                    if "image/jpeg" in header or "image/jpg" in header:
+                                        ext = "jpg"
+                                    elif "image/png" in header:
+                                        ext = "png"
+                                    elif "image/webp" in header:
+                                        ext = "webp"
+                                    else:
+                                        ext = "jpg"
                                 else:
-                                    request_url_base = (
-                                        "http://localhost:8080"  # 回退到默认值
+                                    data = img_url
+                                    ext = "jpg"
+
+                                # 解码图片数据
+                                image_data = base64.b64decode(data)
+                                filename = f"jimeng_content_{uuid.uuid4().hex}.{ext}"
+
+                                # 上传到云存储
+                                file_manager = get_file_manager()
+                                success, message, file_record = (
+                                    await file_manager.save_generated_content(
+                                        user_id=user_id,
+                                        file_data=image_data,
+                                        filename=filename,
+                                        file_type="image",
+                                        source_type="jimeng_content",
+                                        metadata={
+                                            "original_format": ext,
+                                            "file_size": len(image_data),
+                                            "purpose": "content_image_to_video",
+                                        },
                                     )
-                                image_url = f"{request_url_base}/{temp_relative_path}"
-                                print(
-                                    f"✅ 【即梦content解析】base64转换成功，URL: {image_url}"
                                 )
+
+                                if success and file_record and file_record.cloud_url:
+                                    image_url = file_record.cloud_url
+                                    print(
+                                        f"✅ 【即梦content解析】图片上传云存储成功，URL: {image_url}"
+                                    )
+                                else:
+                                    raise Exception(f"云存储上传失败: {message}")
+
                             except Exception as convert_error:
                                 print(
-                                    f"❌ 【即梦content解析】base64转换失败: {convert_error}"
+                                    f"❌ 【即梦content解析】图片上传失败: {convert_error}"
                                 )
                                 # 转换失败时，保持原始URL，后续处理会报错
                                 image_url = img_url
@@ -452,7 +486,9 @@ async def submit_text_to_video_task(
         print(f"🎬 【即梦后端】收到文生视频请求: 用户={user.id}")
 
         # 解析content数组或使用现有prompt
-        parsed_prompt, parsed_image_url = request.get_parsed_content(http_request)
+        parsed_prompt, parsed_image_url = await request.get_parsed_content(
+            user.id, http_request
+        )
         print(
             f"🎬 【即梦后端】解析后的内容: prompt={parsed_prompt[:50]}..., image_url={parsed_image_url}"
         )
@@ -475,39 +511,78 @@ async def submit_text_to_video_task(
                 "task_id": task.id,
                 "message": "图生视频任务提交成功",
             }
-        # 如果有base64图片数据但没有图片URL，转换base64为临时URL
+        # 如果有base64图片数据但没有图片URL，上传到云存储获取公网URL
         elif request.image and not request.image_url:
-            from open_webui.utils.jimeng import save_base64_to_temp_file
-
             print(f"🎬 【即梦后端】检测到base64图片数据，转为图生视频任务...")
             try:
-                # 将base64转换为临时文件URL
-                temp_relative_path = save_base64_to_temp_file(request.image)
-                # 构建完整的URL - 使用当前请求的域名
-                base_url = str(http_request.base_url).rstrip("/")
-                request.image_url = f"{base_url}/{temp_relative_path}"
-                request.prompt = parsed_prompt
-                print(f"✅ 【即梦后端】base64转换成功，URL: {request.image_url}")
+                import base64
+                import uuid
+                from open_webui.services.file_manager import get_file_manager
 
-                # 清除base64数据，避免重复处理
-                request.image = None
+                # 解析base64数据
+                if request.image.startswith("data:"):
+                    header, data = request.image.split(",", 1)
+                    if "image/jpeg" in header or "image/jpg" in header:
+                        ext = "jpg"
+                    elif "image/png" in header:
+                        ext = "png"
+                    elif "image/webp" in header:
+                        ext = "webp"
+                    else:
+                        ext = "jpg"
+                else:
+                    data = request.image
+                    ext = "jpg"
 
-                # 调用图生视频处理逻辑
-                task = await process_jimeng_generation(
-                    user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
+                # 解码图片数据
+                image_data = base64.b64decode(data)
+                filename = f"jimeng_input_{uuid.uuid4().hex}.{ext}"
+
+                # 上传到云存储
+                file_manager = get_file_manager()
+                success, message, file_record = (
+                    await file_manager.save_generated_content(
+                        user_id=user.id,
+                        file_data=image_data,
+                        filename=filename,
+                        file_type="image",
+                        source_type="jimeng_input",
+                        metadata={
+                            "original_format": ext,
+                            "file_size": len(image_data),
+                            "purpose": "image_to_video_input",
+                        },
+                    )
                 )
 
-                print(f"🎬 【即梦后端】图生视频任务创建成功: {task.id}")
-                return {
-                    "success": True,
-                    "task_id": task.id,
-                    "message": "图生视频任务提交成功",
-                }
+                if success and file_record and file_record.cloud_url:
+                    request.image_url = file_record.cloud_url
+                    request.prompt = parsed_prompt
+                    print(
+                        f"✅ 【即梦后端】图片上传云存储成功，URL: {request.image_url}"
+                    )
+
+                    # 清除base64数据，避免重复处理
+                    request.image = None
+
+                    # 调用图生视频处理逻辑
+                    task = await process_jimeng_generation(
+                        user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
+                    )
+
+                    print(f"🎬 【即梦后端】图生视频任务创建成功: {task.id}")
+                    return {
+                        "success": True,
+                        "task_id": task.id,
+                        "message": "图生视频任务提交成功",
+                    }
+                else:
+                    raise Exception(f"云存储上传失败: {message}")
 
             except Exception as convert_error:
-                print(f"❌ 【即梦后端】base64转换失败: {convert_error}")
+                print(f"❌ 【即梦后端】图片上传失败: {convert_error}")
                 raise HTTPException(
-                    status_code=400, detail=f"图片数据处理失败: {str(convert_error)}"
+                    status_code=400, detail=f"图片上传失败: {str(convert_error)}"
                 )
         else:
             # 纯文生视频任务
@@ -536,7 +611,27 @@ async def submit_text_to_video_task(
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"提交文生视频任务失败: {str(e)}")
+
+        # 检查是否是即梦API错误，提供友好提示
+        error_message = str(e)
+        if "输入图片包含敏感内容" in error_message:
+            raise HTTPException(
+                status_code=400, detail="输入图片包含敏感内容，请更换图片后重试"
+            )
+        elif "图片下载失败" in error_message:
+            raise HTTPException(
+                status_code=400, detail="图片下载失败，请检查图片是否有效"
+            )
+        elif "账户余额不足" in error_message:
+            raise HTTPException(
+                status_code=402, detail="即梦服务余额不足，请联系管理员"
+            )
+        elif "请求过于频繁" in error_message:
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"提交文生视频任务失败: {error_message}"
+            )
 
 
 @router.post("/submit/image-to-video")
@@ -551,7 +646,9 @@ async def submit_image_to_video_task(
         print(f"🎬 【即梦后端】收到图生视频请求: 用户={user.id}")
 
         # 解析content数组或使用现有prompt和image_url
-        parsed_prompt, parsed_image_url = request.get_parsed_content(http_request)
+        parsed_prompt, parsed_image_url = await request.get_parsed_content(
+            user.id, http_request
+        )
         print(
             f"🎬 【即梦后端】解析后的内容: prompt={parsed_prompt[:50]}..., image_url={parsed_image_url}"
         )
@@ -573,26 +670,65 @@ async def submit_image_to_video_task(
                 status_code=400, detail="图生视频需要输入图片URL或图片数据"
             )
 
-        # 如果提供的是base64图片数据，转换为临时URL
+        # 如果提供的是base64图片数据，上传到云存储获取公网URL
         if request.image and not request.image_url:
-            from open_webui.utils.jimeng import save_base64_to_temp_file
-
-            print(f"🎬 【即梦后端】检测到base64图片数据，转换为临时URL...")
+            print(f"🎬 【即梦后端】检测到base64图片数据，上传到云存储...")
             try:
-                # 将base64转换为临时文件URL
-                temp_relative_path = save_base64_to_temp_file(request.image)
-                # 构建完整的URL - 使用当前请求的域名
-                base_url = str(http_request.base_url).rstrip("/")
-                request.image_url = f"{base_url}/{temp_relative_path}"
-                print(f"✅ 【即梦后端】base64转换成功，URL: {request.image_url}")
+                import base64
+                import uuid
+                from open_webui.services.file_manager import get_file_manager
 
-                # 清除base64数据，避免重复处理
-                request.image = None
+                # 解析base64数据
+                if request.image.startswith("data:"):
+                    header, data = request.image.split(",", 1)
+                    if "image/jpeg" in header or "image/jpg" in header:
+                        ext = "jpg"
+                    elif "image/png" in header:
+                        ext = "png"
+                    elif "image/webp" in header:
+                        ext = "webp"
+                    else:
+                        ext = "jpg"
+                else:
+                    data = request.image
+                    ext = "jpg"
+
+                # 解码图片数据
+                image_data = base64.b64decode(data)
+                filename = f"jimeng_input_{uuid.uuid4().hex}.{ext}"
+
+                # 上传到云存储
+                file_manager = get_file_manager()
+                success, message, file_record = (
+                    await file_manager.save_generated_content(
+                        user_id=user.id,
+                        file_data=image_data,
+                        filename=filename,
+                        file_type="image",
+                        source_type="jimeng_input",
+                        metadata={
+                            "original_format": ext,
+                            "file_size": len(image_data),
+                            "purpose": "image_to_video_input",
+                        },
+                    )
+                )
+
+                if success and file_record and file_record.cloud_url:
+                    request.image_url = file_record.cloud_url
+                    print(
+                        f"✅ 【即梦后端】图片上传云存储成功，URL: {request.image_url}"
+                    )
+
+                    # 清除base64数据，避免重复处理
+                    request.image = None
+                else:
+                    raise Exception(f"云存储上传失败: {message}")
 
             except Exception as convert_error:
-                print(f"❌ 【即梦后端】base64转换失败: {convert_error}")
+                print(f"❌ 【即梦后端】图片上传失败: {convert_error}")
                 raise HTTPException(
-                    status_code=400, detail=f"图片数据处理失败: {str(convert_error)}"
+                    status_code=400, detail=f"图片上传失败: {str(convert_error)}"
                 )
 
         # 使用工具函数处理任务
@@ -611,7 +747,27 @@ async def submit_image_to_video_task(
         import traceback
 
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"提交图生视频任务失败: {str(e)}")
+
+        # 检查是否是即梦API错误，提供友好提示
+        error_message = str(e)
+        if "输入图片包含敏感内容" in error_message:
+            raise HTTPException(
+                status_code=400, detail="输入图片包含敏感内容，请更换图片后重试"
+            )
+        elif "图片下载失败" in error_message:
+            raise HTTPException(
+                status_code=400, detail="图片下载失败，请检查图片是否有效"
+            )
+        elif "账户余额不足" in error_message:
+            raise HTTPException(
+                status_code=402, detail="即梦服务余额不足，请联系管理员"
+            )
+        elif "请求过于频繁" in error_message:
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+        else:
+            raise HTTPException(
+                status_code=500, detail=f"提交图生视频任务失败: {error_message}"
+            )
 
 
 # ======================== 任务查询 ========================
@@ -688,6 +844,46 @@ async def get_jimeng_task_status(task_id: str, user=Depends(get_verified_user)):
                             db_task.updated_at = datetime.utcnow()
                             db.commit()
                             db.refresh(db_task)
+
+                            # 🔥 如果任务成功且有视频URL，自动上传到云存储
+                            if new_status == "succeed" and video_url:
+                                try:
+                                    file_manager = get_file_manager()
+                                    success, message, file_record = (
+                                        await file_manager.save_generated_content(
+                                            user_id=user.id,
+                                            file_url=video_url,
+                                            filename=f"jimeng_{task_id}.mp4",
+                                            file_type="video",
+                                            source_type="jimeng",
+                                            source_task_id=task_id,
+                                            metadata={
+                                                "prompt": db_task.prompt,
+                                                "duration": db_task.duration,
+                                                "aspect_ratio": db_task.aspect_ratio,
+                                                "original_url": video_url,
+                                            },
+                                        )
+                                    )
+                                    if (
+                                        success
+                                        and file_record
+                                        and file_record.cloud_url
+                                    ):
+                                        # 更新任务记录中的云存储URL
+                                        db_task.cloud_video_url = file_record.cloud_url
+                                        db.commit()
+                                        print(
+                                            f"☁️ 【云存储】即梦视频上传成功，已更新URL: {task_id}"
+                                        )
+                                    else:
+                                        print(
+                                            f"☁️ 【云存储】即梦视频上传失败: {task_id} - {message}"
+                                        )
+                                except Exception as upload_error:
+                                    print(
+                                        f"☁️ 【云存储】即梦自动上传异常: {task_id} - {upload_error}"
+                                    )
 
                             # 返回更新后的任务
                             return db_task.to_dict()

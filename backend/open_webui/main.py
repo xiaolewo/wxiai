@@ -81,6 +81,8 @@ from open_webui.routers import (
     dreamwork,
     kling,
     jimeng,
+    storage,
+    flux,
 )
 
 from open_webui.routers.retrieval import (
@@ -1260,6 +1262,8 @@ app.include_router(midjourney.router, prefix="/api/v1", tags=["midjourney"])
 app.include_router(dreamwork.router, prefix="/api/v1", tags=["dreamwork"])
 app.include_router(kling.router, prefix="/api/v1", tags=["kling"])
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
+app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
+app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
 app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])

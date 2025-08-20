@@ -14,6 +14,7 @@
 	import Images from './Settings/Images.svelte';
 	import Midjourney from './Settings/Midjourney.svelte';
 	import DreamWork from './Settings/DreamWork.svelte';
+	import Flux from './Settings/Flux.svelte';
 	import Kling from './Settings/Kling.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
 	import Interface from './Settings/Interface.svelte';
@@ -29,6 +30,7 @@
 	import Tools from './Settings/Tools.svelte';
 	import Credit from './Settings/Credit.svelte';
 	import SMS from './Settings/SMS.svelte';
+	import CloudStorage from './Settings/CloudStorage.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -53,8 +55,10 @@
 			'images',
 			'midjourney',
 			'dreamwork',
+			'flux',
 			'kling',
 			'jimeng',
+			'storage',
 			'pipelines',
 			'sms',
 			'db'
@@ -495,6 +499,32 @@
 		</button>
 
 		<button
+			id="flux"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'flux'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/flux');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12 2l3.09 6.26L22 9l-5.18 4.73L18.18 20 12 16.77 5.82 20l1.36-6.27L2 9l6.91-.74L12 2Z"
+						fill="currentColor"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">Flux AI</div>
+		</button>
+
+		<button
 			id="kling"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'kling'
@@ -542,6 +572,34 @@
 				</svg>
 			</div>
 			<div class=" self-center">即梦视频 (Jimeng)</div>
+		</button>
+
+		<button
+			id="storage"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'storage'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/storage');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625Z"
+					/>
+					<path
+						d="M12.971 1.816A5.23 5.23 0 0 1 14.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 0 1 3.434 1.279 9.768 9.768 0 0 0-6.963-6.963Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">云存储</div>
 		</button>
 
 		<button
@@ -693,6 +751,12 @@
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}
 			/>
+		{:else if selectedTab === 'flux'}
+			<Flux
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
 		{:else if selectedTab === 'kling'}
 			<Kling
 				on:save={() => {
@@ -701,6 +765,12 @@
 			/>
 		{:else if selectedTab === 'jimeng'}
 			<Jimeng
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'storage'}
+			<CloudStorage
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

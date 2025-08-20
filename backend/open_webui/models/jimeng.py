@@ -64,7 +64,9 @@ class JimengGenerateRequest(BaseModel):
     external_task_id: Optional[str] = None
     callback_url: Optional[str] = None
 
-    def get_parsed_content(self, http_request=None) -> tuple[str, str]:
+    async def get_parsed_content(
+        self, user_id: str, http_request=None
+    ) -> tuple[str, str]:
         """
         解析content或prompt，返回(prompt, image_url)
         """
@@ -72,7 +74,7 @@ class JimengGenerateRequest(BaseModel):
 
         if self.content is not None:
             # 如果有content字段，解析它
-            return parse_content_for_jimeng(self.content, http_request)
+            return await parse_content_for_jimeng(self.content, user_id, http_request)
         else:
             # 否则使用现有的prompt和image_url
             return self.prompt or "", self.image_url or ""
@@ -233,6 +235,7 @@ class JimengTask(Base):
     # 任务结果
     external_task_id = Column(String(255), nullable=True, comment="即梦返回的任务ID")
     video_url = Column(Text, nullable=True, comment="生成的视频URL")
+    cloud_video_url = Column(Text, nullable=True, comment="云存储视频URL")
     progress = Column(String(50), default="0%", comment="任务进度")
     fail_reason = Column(Text, nullable=True, comment="失败原因")
 
@@ -416,7 +419,7 @@ class JimengTask(Base):
             "image_url": self.image_url,
             "input_image": self.input_image,
             "external_task_id": self.external_task_id,
-            "video_url": self.video_url,
+            "video_url": self.cloud_video_url or self.video_url,  # 优先返回云存储URL
             "progress": self.progress,
             "fail_reason": self.fail_reason,
             "credits_cost": self.credits_cost,

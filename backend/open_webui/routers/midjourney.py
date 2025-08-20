@@ -33,6 +33,7 @@ from open_webui.utils.midjourney import (
     get_user_credit_balance,
     validate_user_credits,
 )
+from open_webui.services.file_manager import get_file_manager
 
 router = APIRouter(prefix="/midjourney", tags=["midjourney"])
 
@@ -966,6 +967,54 @@ async def poll_task_status(task_id: str, user_id: str):
                         }
                         task.update_from_mj_response(forced_data)
                         print(f"✅ 【修复版】任务 {task_id} 已强制完成")
+
+                        # 🔥 自动上传到云存储
+                        try:
+                            from open_webui.internal.db import get_db
+
+                            file_manager = get_file_manager()
+                            success, message, file_record = (
+                                await file_manager.save_generated_content(
+                                    user_id=user_id,
+                                    file_url=image_url,
+                                    filename=f"midjourney_{task_id}.jpg",
+                                    file_type="image",
+                                    source_type="midjourney",
+                                    source_task_id=task_id,
+                                    metadata={
+                                        "prompt": task.prompt,
+                                        "mode": task.mode,
+                                        "original_url": image_url,
+                                    },
+                                )
+                            )
+                            if success and file_record and file_record.cloud_url:
+                                # 重新获取task对象并在新的session中更新云存储URL
+                                with get_db() as update_db:
+                                    update_task = (
+                                        update_db.query(MJTask)
+                                        .filter(MJTask.id == task_id)
+                                        .first()
+                                    )
+                                    if update_task:
+                                        update_task.cloud_image_url = (
+                                            file_record.cloud_url
+                                        )
+                                        update_db.commit()
+                                        print(
+                                            f"☁️ 【云存储】Midjourney图片上传成功，已更新URL: {task_id}"
+                                        )
+                                    else:
+                                        print(f"☁️ 【云存储】找不到任务记录: {task_id}")
+                            else:
+                                print(
+                                    f"☁️ 【云存储】Midjourney图片上传失败: {task_id} - {message}"
+                                )
+                        except Exception as upload_error:
+                            print(
+                                f"☁️ 【云存储【Midjourney自动上传异常: {task_id} - {upload_error}"
+                            )
+
                         break
                     else:
                         # 没有图片时正常更新
@@ -1010,5 +1059,50 @@ async def poll_task_status(task_id: str, user_id: str):
                     "buttons": final_task.get("buttons", []),
                 }
                 task.update_from_mj_response(final_data)
+
+                # 🔥 最终检查时也自动上传到云存储
+                try:
+                    from open_webui.internal.db import get_db
+
+                    file_manager = get_file_manager()
+                    success, message, file_record = (
+                        await file_manager.save_generated_content(
+                            user_id=user_id,
+                            file_url=final_task.get("imageUrl"),
+                            filename=f"midjourney_{task_id}.jpg",
+                            file_type="image",
+                            source_type="midjourney",
+                            source_task_id=task_id,
+                            metadata={
+                                "prompt": task.prompt,
+                                "mode": task.mode,
+                                "original_url": final_task.get("imageUrl"),
+                            },
+                        )
+                    )
+                    if success and file_record and file_record.cloud_url:
+                        # 重新获取task对象并在新的session中更新云存储URL
+                        with get_db() as update_db:
+                            update_task = (
+                                update_db.query(MJTask)
+                                .filter(MJTask.id == task_id)
+                                .first()
+                            )
+                            if update_task:
+                                update_task.cloud_image_url = file_record.cloud_url
+                                update_db.commit()
+                                print(
+                                    f"☁️ 【云存储】Midjourney最终检查图片上传成功，已更新URL: {task_id}"
+                                )
+                            else:
+                                print(f"☁️ 【云存储】找不到任务记录: {task_id}")
+                    else:
+                        print(
+                            f"☁️ 【云存储】Midjourney最终检查图片上传失败: {task_id} - {message}"
+                        )
+                except Exception as upload_error:
+                    print(
+                        f"☁️ 【云存储】Midjourney最终检查自动上传异常: {task_id} - {upload_error}"
+                    )
     except Exception as e:
         print(f"❌ 【修复版】最终检查失败: {e}")

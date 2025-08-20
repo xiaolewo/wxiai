@@ -145,16 +145,72 @@ class ToolsTable:
     def get_tools(self) -> list[ToolUserModel]:
         with get_db() as db:
             tools = []
-            for tool in db.query(Tool).order_by(Tool.updated_at.desc()).all():
-                user = Users.get_user_by_id(tool.user_id)
-                tools.append(
-                    ToolUserModel.model_validate(
-                        {
-                            **ToolModel.model_validate(tool).model_dump(),
-                            "user": user.model_dump() if user else None,
-                        }
+            try:
+                # 尝试正常查询
+                for tool in db.query(Tool).order_by(Tool.updated_at.desc()).all():
+                    user = Users.get_user_by_id(tool.user_id)
+                    tools.append(
+                        ToolUserModel.model_validate(
+                            {
+                                **ToolModel.model_validate(tool).model_dump(),
+                                "user": user.model_dump() if user else None,
+                            }
+                        )
                     )
-                )
+            except Exception as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+
+                if "no such column" in str(e) and "access_control" in str(e):
+                    # access_control列不存在，使用兼容查询
+                    logger.warning("access_control列不存在，使用兼容模式查询tools")
+                    try:
+                        from sqlalchemy import text
+
+                        result = db.execute(
+                            text(
+                                """
+                            SELECT id, user_id, name, content, specs, meta, valves, 
+                                   updated_at, created_at
+                            FROM tool 
+                            ORDER BY updated_at DESC
+                        """
+                            )
+                        ).fetchall()
+
+                        for row in result:
+                            # 手动构建tool对象
+                            tool_dict = {
+                                "id": row[0],
+                                "user_id": row[1],
+                                "name": row[2],
+                                "content": row[3],
+                                "specs": row[4],
+                                "meta": row[5],
+                                "valves": row[6],
+                                "access_control": {},  # 默认空的访问控制
+                                "updated_at": row[7].isoformat() if row[7] else None,
+                                "created_at": row[8].isoformat() if row[8] else None,
+                            }
+
+                            user = Users.get_user_by_id(row[1])
+                            tools.append(
+                                ToolUserModel.model_validate(
+                                    {
+                                        **tool_dict,
+                                        "user": user.model_dump() if user else None,
+                                    }
+                                )
+                            )
+                    except Exception as inner_e:
+                        logger.error(f"兼容查询也失败: {inner_e}")
+                        # 返回空列表，避免应用崩溃
+                        return []
+                else:
+                    # 其他错误，重新抛出
+                    raise e
+
             return tools
 
     def get_tools_by_user_id(

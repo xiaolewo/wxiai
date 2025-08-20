@@ -43,6 +43,29 @@
 		deleteDreamWorkTask
 	} from '$lib/apis/dreamwork';
 
+	// Import Flux API functions
+	import {
+		type FluxTask,
+		type FluxConfig,
+		type FluxModel,
+		type FluxTextToImageRequest,
+		type FluxImageToImageRequest,
+		type FluxMultiImageRequest,
+		submitFluxTextToImage,
+		submitFluxImageToImage,
+		submitFluxMultiImage,
+		getFluxTaskStatus,
+		getFluxUserTaskHistory,
+		getFluxUserCredits,
+		getFluxUserConfig,
+		getFluxModels,
+		deleteFluxTask,
+		uploadFluxImage,
+		uploadFluxImages,
+		formatFluxProgress,
+		getFluxTaskImageUrl
+	} from '$lib/apis/flux';
+
 	// Import MJ streaming/callback system
 	import { mjCallbackHandler, type MJTaskUpdate } from '$lib/apis/midjourney/streaming';
 
@@ -60,9 +83,10 @@
 	let pollingInterval: NodeJS.Timeout | null = null;
 	let mjConfig: MJConfig | null = null;
 	let dreamWorkConfig: DreamWorkConfig | null = null;
+	let fluxConfig: FluxConfig | null = null;
 
 	// 服务选择
-	type ImageService = 'midjourney' | 'dreamwork';
+	type ImageService = 'midjourney' | 'dreamwork' | 'flux';
 	let selectedService: ImageService = 'midjourney';
 	let availableServices: { id: ImageService; name: string; icon: string; enabled: boolean }[] = [];
 
@@ -97,6 +121,21 @@
 	let dreamWorkGuidanceScale = 2.5;
 	let dreamWorkWatermarkEnabled = true;
 	let dreamWorkInputImage: string | null = null; // 图生图的输入图片(base64)
+
+	// Flux 参数
+	let fluxModels: FluxModel[] = [];
+	let selectedFluxModel = 'fal-ai/flux-1/schnell'; // 默认快速模型
+	let fluxNumImages = 1; // 图片数量
+	let fluxGuidanceScale = 3.5;
+	let fluxInferenceSteps = 28;
+	let fluxAspectRatio = '1:1';
+	let fluxImageSize = 'landscape_4_3'; // Dev模型使用的图片尺寸
+	let fluxSafetyTolerance = '2';
+	let fluxOutputFormat = 'jpeg';
+	let fluxEnableSafetyChecker = true;
+	let fluxInputImageUrl: string | null = null; // 单图输入
+	let fluxInputImageUrls: string[] = []; // 多图输入
+	let fluxStrength = 0.95; // 图生图强度
 
 	// 参考图片
 	let referenceImages: MJReferenceImage[] = [];
@@ -160,6 +199,28 @@
 		'16:9': { label: '电脑壁纸', icon: '💻' },
 		'21:9': { label: '超长横幅', icon: '🖥️' },
 		custom: { label: '自定义', icon: '⚙️' }
+	};
+
+	// 计算Flux模型积分 - 基于后台配置的动态计算
+	const getFluxModelCredits = (model: string): number => {
+		// 支持两种字段名：model_credits (backend) 和 modelCredits (interface)
+		const modelCredits = fluxConfig?.model_credits || fluxConfig?.modelCredits;
+
+		if (!modelCredits) {
+			// 如果没有配置，使用默认值
+			const defaultCredits: Record<string, number> = {
+				'fal-ai/flux-1/schnell': 5,
+				'fal-ai/flux-1/dev': 10,
+				'fal-ai/flux-1/dev/image-to-image': 10,
+				'fal-ai/flux-pro': 20,
+				'fal-ai/flux-pro/kontext': 25,
+				'fal-ai/flux-pro/kontext/multi': 30,
+				'fal-ai/flux-pro/max': 35
+			};
+			return defaultCredits[model] || 5;
+		}
+
+		return modelCredits[model] || 5;
 	};
 
 	// 质量配置
@@ -320,7 +381,7 @@
 		}
 	};
 
-	// 加载MJ配置
+	// 加载DreamWork配置
 	const loadDreamWorkConfig = async () => {
 		if (!$user?.token) return;
 
@@ -332,6 +393,30 @@
 			}
 		} catch (error) {
 			console.error('加载即梦配置失败:', error);
+		}
+	};
+
+	// 加载Flux配置
+	const loadFluxConfig = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const config = await getFluxUserConfig($user.token);
+			if (config) {
+				fluxConfig = config;
+				console.log('Flux配置已加载:', config);
+
+				// 加载支持的模型列表
+				const models = await getFluxModels($user.token);
+				fluxModels = models;
+
+				// 设置默认模型
+				if (config.default_model && models.find((m) => m.id === config.default_model)) {
+					selectedFluxModel = config.default_model;
+				}
+			}
+		} catch (error) {
+			console.error('加载Flux配置失败:', error);
 		}
 	};
 
@@ -348,6 +433,12 @@
 				name: '即梦 (DreamWork)',
 				icon: '🎨',
 				enabled: dreamWorkConfig?.enabled || false
+			},
+			{
+				id: 'flux',
+				name: 'Flux AI',
+				icon: '⚡',
+				enabled: fluxConfig?.enabled || false
 			}
 		];
 
@@ -402,6 +493,7 @@
 			// 加载配置 - 获取最新的积分设置
 			await loadMJConfig();
 			await loadDreamWorkConfig();
+			await loadFluxConfig();
 			await updateAvailableServices();
 
 			// 加载用户积分 - 确保使用用户token进行隔离
@@ -449,6 +541,36 @@
 				}
 			} catch (error) {
 				console.error('加载DreamWork历史记录失败:', error);
+			}
+
+			// 3. 加载Flux历史记录
+			try {
+				const fluxHistory = await getFluxUserTaskHistory($user.token, 1, 20);
+				if (fluxHistory && fluxHistory.data) {
+					console.log('⚡ 加载Flux历史记录:', fluxHistory.data.length, '个任务');
+					// 为Flux任务添加serviceType标识以便区分，并转换为统一格式
+					const fluxTasksWithType = fluxHistory.data.map((task) => ({
+						...task,
+						// 转换Flux格式到统一的MJTask格式
+						action: task.task_type === 'image_to_image' ? 'IMAGE_TO_IMAGE' : 'TEXT_TO_IMAGE',
+						promptEn: task.prompt,
+						description: `Flux ${task.task_type === 'image_to_image' ? '图生图' : '文生图'}: ${task.prompt}`,
+						submitTime: new Date(task.created_at).getTime(),
+						startTime: task.updated_at ? new Date(task.updated_at).getTime() : 0,
+						finishTime: task.completed_at ? new Date(task.completed_at).getTime() : 0,
+						progress: formatFluxProgress(task),
+						imageUrl: getFluxTaskImageUrl(task),
+						failReason: task.error_message,
+						properties: {
+							serviceType: 'flux',
+							model: task.model,
+							task_type: task.task_type
+						}
+					}));
+					allTasks = [...allTasks, ...fluxTasksWithType];
+				}
+			} catch (error) {
+				console.error('加载Flux历史记录失败:', error);
 			}
 
 			if (allTasks.length > 0) {
@@ -502,7 +624,7 @@
 				console.log(
 					'📋 历史记录已更新，保留本地状态:',
 					taskHistory.length,
-					'个任务（MJ+DreamWork）'
+					'个任务（MJ+DreamWork+Flux）'
 				);
 				console.log(
 					'📋 DreamWork任务数量:',
@@ -511,6 +633,10 @@
 				console.log(
 					'📋 MidJourney任务数量:',
 					taskHistory.filter((t) => t.properties?.serviceType === 'midjourney').length
+				);
+				console.log(
+					'📋 Flux任务数量:',
+					taskHistory.filter((t) => t.properties?.serviceType === 'flux').length
 				);
 
 				// 🔥 加载数据后强制修复本地任务显示
@@ -662,7 +788,11 @@
 		const requiredCredits =
 			selectedService === 'midjourney'
 				? modeConfig[selectedMode].credits
-				: dreamWorkConfig?.creditsPerGeneration || 10;
+				: selectedService === 'dreamwork'
+					? dreamWorkConfig?.creditsPerGeneration || 10
+					: selectedService === 'flux'
+						? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1) // Flux按模型和图片数量计算积分
+						: 5;
 
 		if (userCredits < requiredCredits) {
 			toast.error('积分不足');
@@ -890,6 +1020,175 @@
 					console.error('🎨 【DreamWork前端】API返回错误:', result);
 					throw new Error(result?.message || '即梦任务提交失败');
 				}
+			} else if (selectedService === 'flux') {
+				// === Flux 生成逻辑 ===
+				if (!fluxConfig || !fluxConfig.enabled) {
+					toast.error('Flux服务未配置或未启用');
+					isGenerating = false;
+					return;
+				}
+
+				// 判断生成模式
+				const isImageToImage = fluxInputImageUrl && selectedFluxModel.includes('image-to-image');
+				const isMultiImage = fluxInputImageUrls.length > 0 && selectedFluxModel.includes('multi');
+
+				console.log('⚡ 【Flux前端】模式判断:', {
+					selectedModel: selectedFluxModel,
+					hasInputImage: !!fluxInputImageUrl,
+					hasMultiImages: fluxInputImageUrls.length > 0,
+					isImageToImage: isImageToImage,
+					isMultiImage: isMultiImage
+				});
+
+				// 验证必要条件
+				if (isImageToImage && !fluxInputImageUrl) {
+					toast.error('图生图模式需要上传输入图片');
+					isGenerating = false;
+					return;
+				}
+				if (isMultiImage && fluxInputImageUrls.length === 0) {
+					toast.error('多图编辑模式需要上传图片');
+					isGenerating = false;
+					return;
+				}
+
+				try {
+					let result;
+
+					if (isMultiImage) {
+						// 验证多图编辑的必要条件
+						if (!fluxInputImageUrls || fluxInputImageUrls.length === 0) {
+							throw new Error('多图编辑模式需要至少上传一张图片');
+						}
+
+						console.log('⚡ 【Flux多图】请求参数:', {
+							model: selectedFluxModel,
+							prompt: prompt.trim(),
+							image_urls: fluxInputImageUrls,
+							image_count: fluxInputImageUrls.length,
+							guidance_scale: fluxGuidanceScale,
+							num_images: fluxNumImages
+						});
+
+						// 多图编辑模式
+						const fluxMultiRequest: FluxMultiImageRequest = {
+							model: selectedFluxModel,
+							prompt: prompt.trim(),
+							image_urls: fluxInputImageUrls,
+							guidance_scale: fluxGuidanceScale,
+							num_images: fluxNumImages,
+							seed: seedValue,
+							sync_mode: false
+						};
+
+						// 根据模型类型添加参数
+						if (selectedFluxModel.includes('pro') || selectedFluxModel.includes('kontext')) {
+							fluxMultiRequest.aspect_ratio = fluxAspectRatio;
+							fluxMultiRequest.safety_tolerance = fluxSafetyTolerance;
+							fluxMultiRequest.output_format = fluxOutputFormat;
+						}
+
+						result = await submitFluxMultiImage($user.token, fluxMultiRequest);
+					} else if (isImageToImage) {
+						// 图生图
+						const fluxImageRequest: FluxImageToImageRequest = {
+							model: selectedFluxModel,
+							prompt: prompt.trim(),
+							image_url: fluxInputImageUrl,
+							strength: fluxStrength,
+							guidance_scale: fluxGuidanceScale,
+							num_inference_steps: fluxInferenceSteps,
+							seed: seedValue,
+							sync_mode: false,
+							enable_safety_checker: fluxEnableSafetyChecker
+						};
+
+						result = await submitFluxImageToImage($user.token, fluxImageRequest);
+					} else {
+						// 文生图 - 根据模型类型使用不同参数
+						const fluxTextRequest: FluxTextToImageRequest = {
+							model: selectedFluxModel,
+							prompt: prompt.trim(),
+							num_images: fluxNumImages,
+							guidance_scale: fluxGuidanceScale,
+							seed: seedValue,
+							sync_mode: false,
+							enable_safety_checker: fluxEnableSafetyChecker
+						};
+
+						// Pro/Kontext模型使用aspect_ratio和safety_tolerance
+						if (selectedFluxModel.includes('pro') || selectedFluxModel.includes('kontext')) {
+							fluxTextRequest.aspect_ratio = fluxAspectRatio;
+							fluxTextRequest.safety_tolerance = fluxSafetyTolerance;
+							fluxTextRequest.output_format = fluxOutputFormat;
+						} else {
+							// Dev/Schnell模型使用image_size和num_inference_steps
+							fluxTextRequest.image_size = fluxImageSize;
+							fluxTextRequest.num_inference_steps = fluxInferenceSteps;
+						}
+
+						result = await submitFluxTextToImage($user.token, fluxTextRequest);
+					}
+
+					if (result && result.id) {
+						// 确定任务类型和描述
+						let taskType = 'text_to_image';
+						let description = `Flux 文生图 (${fluxNumImages}张): ${prompt.trim()}`;
+						let inputImageData = undefined;
+
+						if (isMultiImage) {
+							taskType = 'multi_image';
+							description = `Flux 多图编辑 (${fluxInputImageUrls.length}→${fluxNumImages}张): ${prompt.trim()}`;
+							inputImageData = fluxInputImageUrls.join(';'); // 多个URL用分号分隔
+						} else if (isImageToImage) {
+							taskType = 'image_to_image';
+							description = `Flux 图生图 (${fluxNumImages}张): ${prompt.trim()}`;
+							inputImageData = fluxInputImageUrl;
+						}
+
+						// 提交成功，创建任务记录
+						currentTask = {
+							id: result.id,
+							action: isImageToImage ? 'IMAGE_TO_IMAGE' : 'TEXT_TO_IMAGE',
+							status: 'SUBMITTED',
+							prompt: prompt.trim(),
+							promptEn: prompt.trim(),
+							description: description,
+							submitTime: Date.now(),
+							startTime: 0,
+							finishTime: 0,
+							progress: '0%',
+							creditsCost: requiredCredits,
+							inputImage: inputImageData,
+							properties: {
+								serviceType: 'flux',
+								model: selectedFluxModel,
+								task_type: taskType,
+								multi_images_count: isMultiImage ? fluxInputImageUrls.length : 0
+							}
+						};
+
+						let successMessage = `Flux 文生图任务已提交，开始生成${fluxNumImages}张图片...`;
+						if (isMultiImage) {
+							successMessage = `Flux 多图编辑任务已提交（${fluxInputImageUrls.length}→${fluxNumImages}张），开始生成...`;
+						} else if (isImageToImage) {
+							successMessage = `Flux 图生图任务已提交，开始生成${fluxNumImages}张图片...`;
+						}
+						toast.success(successMessage);
+
+						// 立即添加到历史记录
+						taskHistory = [currentTask, ...taskHistory];
+
+						// Flux使用异步轮询
+						pollFluxTaskStatus(result.id);
+					} else {
+						console.error('⚡ 【Flux前端】API返回错误:', result);
+						throw new Error('Flux任务提交失败');
+					}
+				} catch (error) {
+					console.error('⚡ 【Flux前端】任务提交失败:', error);
+					throw error;
+				}
 			} else {
 				toast.error('不支持的生成服务');
 				isGenerating = false;
@@ -1055,6 +1354,86 @@
 		poll();
 	};
 
+	// Flux 任务状态轮询
+	const pollFluxTaskStatus = async (taskId: string) => {
+		const maxAttempts = 60; // 最多轮询60次 (约10分钟)
+		let attempts = 0;
+
+		const poll = async () => {
+			try {
+				attempts++;
+				console.log(`⚡ 【Flux轮询】第${attempts}次查询任务状态: ${taskId}`);
+
+				const task = await getFluxTaskStatus($user.token, taskId);
+
+				if (task) {
+					// 更新当前任务状态
+					if (currentTask && currentTask.id === taskId) {
+						currentTask = {
+							...currentTask,
+							status: task.status,
+							progress: formatFluxProgress(task),
+							imageUrl: getFluxTaskImageUrl(task),
+							failReason: task.error_message,
+							finishTime: task.completed_at ? new Date(task.completed_at).getTime() : 0
+						};
+					}
+
+					// 更新历史记录中的任务
+					taskHistory = taskHistory.map((t) =>
+						t.id === taskId
+							? {
+									...t,
+									status: task.status,
+									progress: formatFluxProgress(task),
+									imageUrl: getFluxTaskImageUrl(task),
+									failReason: task.error_message,
+									finishTime: task.completed_at ? new Date(task.completed_at).getTime() : 0
+								}
+							: t
+					);
+
+					if (task.status === 'SUCCESS' || task.status === 'COMPLETED') {
+						console.log('⚡ 【Flux轮询】任务完成成功:', task);
+						toast.success('Flux图片生成完成!');
+						generatedImage = currentTask;
+						isGenerating = false;
+						currentTask = null;
+						return;
+					} else if (task.status === 'FAILED' || task.status === 'FAILURE') {
+						console.log('⚡ 【Flux轮询】任务失败:', task.error_message);
+						toast.error(`Flux生成失败: ${task.error_message || '未知错误'}`);
+						isGenerating = false;
+						currentTask = null;
+						return;
+					}
+				}
+
+				// 如果还没完成且未达到最大尝试次数，继续轮询
+				if (attempts < maxAttempts) {
+					setTimeout(poll, 10000); // 10秒后再次轮询
+				} else {
+					console.log('⚡ 【Flux轮询】达到最大轮询次数，停止轮询');
+					toast.error('Flux任务轮询超时');
+					isGenerating = false;
+					currentTask = null;
+				}
+			} catch (error) {
+				console.error('⚡ 【Flux轮询】轮询出错:', error);
+				if (attempts < maxAttempts) {
+					setTimeout(poll, 10000); // 出错也继续重试
+				} else {
+					toast.error('Flux任务状态查询失败');
+					isGenerating = false;
+					currentTask = null;
+				}
+			}
+		};
+
+		// 开始轮询
+		poll();
+	};
+
 	// 删除参考图片
 	const removeReferenceImage = (id: string, type: 'normal' | 'style' | 'character') => {
 		if (type === 'normal') {
@@ -1112,6 +1491,100 @@
 
 		// 清空input值，允许重复上传同一文件
 		target.value = '';
+	};
+
+	// Flux 单图上传处理
+	const handleFluxImageUpload = async (event: Event) => {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+
+		if (!file) return;
+
+		// 验证文件类型
+		if (!file.type.startsWith('image/')) {
+			toast.error('请选择图片文件');
+			return;
+		}
+
+		// 验证文件大小 (10MB)
+		if (file.size > 10 * 1024 * 1024) {
+			toast.error('图片大小不能超过10MB');
+			return;
+		}
+
+		try {
+			console.log('⚡ 【Flux】开始上传图片:', file.name);
+			const result = await uploadFluxImage($user.token, file);
+
+			if (result.success && result.url) {
+				fluxInputImageUrl = result.url;
+				console.log('⚡ 【Flux】图片上传成功:', result.url);
+				toast.success('图片上传成功');
+			} else {
+				throw new Error(result.message || '图片上传失败');
+			}
+		} catch (error) {
+			console.error('⚡ 【Flux】图片上传失败:', error);
+			toast.error(`图片上传失败: ${error.message || error}`);
+		}
+
+		// 清空input值，允许重复上传同一文件
+		target.value = '';
+	};
+
+	// Flux 多图上传处理
+	const handleFluxMultiImageUpload = async (event: Event) => {
+		const target = event.target as HTMLInputElement;
+		const files = target.files;
+
+		if (!files || files.length === 0) return;
+
+		// 检查文件数量限制
+		if (fluxInputImageUrls.length + files.length > 5) {
+			toast.error('最多可上传5张图片');
+			return;
+		}
+
+		for (const file of Array.from(files)) {
+			// 验证文件类型
+			if (!file.type.startsWith('image/')) {
+				toast.error(`${file.name} 不是图片文件`);
+				continue;
+			}
+
+			// 验证文件大小 (10MB)
+			if (file.size > 10 * 1024 * 1024) {
+				toast.error(`${file.name} 文件过大（超过10MB）`);
+				continue;
+			}
+
+			try {
+				console.log('⚡ 【Flux多图】开始上传:', file.name);
+				const result = await uploadFluxImage($user.token, file);
+
+				if (result.success && result.url) {
+					fluxInputImageUrls = [...fluxInputImageUrls, result.url];
+					console.log('⚡ 【Flux多图】上传成功:', result.url);
+				} else {
+					throw new Error(result.message || '上传失败');
+				}
+			} catch (error) {
+				console.error('⚡ 【Flux多图】上传失败:', error);
+				toast.error(`${file.name} 上传失败: ${error.message || error}`);
+			}
+		}
+
+		if (fluxInputImageUrls.length > 0) {
+			toast.success(`成功上传 ${files.length} 张图片`);
+		}
+
+		// 清空input值，允许重复上传同一文件
+		target.value = '';
+	};
+
+	// 删除多图中的某张图片
+	const removeFluxImage = (index: number) => {
+		fluxInputImageUrls = fluxInputImageUrls.filter((_, i) => i !== index);
 	};
 
 	// 🔥 简化轮询 - 直接有效
@@ -1381,20 +1854,20 @@
 			if (!confirmed) return;
 
 			// 根据任务类型调用不同的删除API
-			const isDreamWorkTask = task.properties?.serviceType === 'dreamwork';
-			console.log(
-				`🗑️ 删除任务: ${task.id}, 服务类型: ${isDreamWorkTask ? 'DreamWork' : 'MidJourney'}`
-			);
+			const serviceType = task.properties?.serviceType || 'midjourney';
+			console.log(`🗑️ 删除任务: ${task.id}, 服务类型: ${serviceType}`);
 
 			let success = false;
 			try {
-				if (isDreamWorkTask) {
+				if (serviceType === 'dreamwork') {
 					success = await deleteDreamWorkTask($user.token, task.id);
+				} else if (serviceType === 'flux') {
+					success = await deleteFluxTask($user.token, task.id);
 				} else {
 					success = await deleteTask($user.token, task.id);
 				}
 			} catch (error) {
-				console.error(`删除${isDreamWorkTask ? 'DreamWork' : 'MidJourney'}任务失败:`, error);
+				console.error(`删除${serviceType}任务失败:`, error);
 				throw error;
 			}
 			if (success) {
@@ -1514,12 +1987,21 @@
 					<!-- 当前服务信息 -->
 					<div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
 						<div>
-							当前服务: {selectedService === 'midjourney' ? 'MidJourney' : '即梦 (DreamWork)'}
+							当前服务: {selectedService === 'midjourney'
+								? 'MidJourney'
+								: selectedService === 'dreamwork'
+									? '即梦 (DreamWork)'
+									: 'Flux AI'}
 						</div>
 						{#if selectedService === 'midjourney'}
 							<div>消耗积分: {modeConfig[selectedMode].credits}积分/次</div>
 						{:else if selectedService === 'dreamwork' && dreamWorkConfig}
 							<div>消耗积分: {dreamWorkConfig.creditsPerGeneration}积分/次</div>
+						{:else if selectedService === 'flux'}
+							<div>
+								消耗积分: {getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}积分 ({fluxNumImages ||
+									1}张图片)
+							</div>
 						{/if}
 						<div class="flex justify-between items-center">
 							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
@@ -1558,7 +2040,11 @@
 								{:else}
 									生成图像 ({selectedService === 'midjourney'
 										? modeConfig[selectedMode].credits
-										: dreamWorkConfig?.creditsPerGeneration || 10}积分)
+										: selectedService === 'dreamwork'
+											? dreamWorkConfig?.creditsPerGeneration || 10
+											: selectedService === 'flux'
+												? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
+												: 5}积分)
 								{/if}
 							</button>
 						</div>
@@ -1758,6 +2244,373 @@
 							/>
 							<label for="dreamwork-watermark" class="text-sm text-gray-600 dark:text-gray-400"
 								>启用水印</label
+							>
+						</div>
+					{:else if selectedService === 'flux' && fluxConfig}
+						<!-- Flux 参数 -->
+						<!-- Flux模型选择 - 增强版本信息 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>Flux模型</label
+							>
+							<select
+								bind:value={selectedFluxModel}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								{#each fluxModels as model}
+									<option value={model.id}>
+										{model.name} - {model.description}
+										{#if model.id.includes('schnell')}
+											(最多4张)
+										{:else if model.id.includes('dev')}
+											(最多4张)
+										{:else if model.id.includes('kontext/max')}
+											(最多8张)
+										{:else if model.id.includes('kontext')}
+											(最多6张)
+										{/if}
+									</option>
+								{/each}
+							</select>
+
+							<!-- 模型能力说明 -->
+							<div
+								class="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-600 dark:text-blue-400"
+							>
+								{#if selectedFluxModel.includes('schnell')}
+									⚡ 快速模式：1-4推理步数，最多4张图片，适合快速原型制作
+								{:else if selectedFluxModel.includes('dev')}
+									🔧 开发模式：28步推理，最多4张图片，支持图片尺寸设置
+								{:else if selectedFluxModel.includes('kontext/max')}
+									🚀 Pro Max：最高质量，最多8张图片，支持比例调节和安全容忍度
+								{:else if selectedFluxModel.includes('kontext')}
+									💎 Pro版本：专业质量，最多6张图片，支持比例调节和安全容忍度
+								{:else}
+									📝 标准模式：通用参数配置
+								{/if}
+							</div>
+						</div>
+
+						<!-- 输入图片 -->
+						{#if selectedFluxModel.includes('image-to-image')}
+							<!-- 单图模式 -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>输入图片</label
+								>
+								<div
+									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+								>
+									{#if fluxInputImageUrl}
+										<div class="relative">
+											<img
+												src={fluxInputImageUrl}
+												alt="输入图片"
+												class="w-full h-32 object-cover rounded"
+											/>
+											<button
+												on:click={() => (fluxInputImageUrl = null)}
+												class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+												title="删除图片"
+											>
+												×
+											</button>
+										</div>
+									{:else}
+										<div class="text-center">
+											<input
+												type="file"
+												id="flux-input-image"
+												accept="image/*"
+												class="hidden"
+												on:change={handleFluxImageUpload}
+											/>
+											<button
+												type="button"
+												on:click={() => document.getElementById('flux-input-image')?.click()}
+												class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+											>
+												选择图片
+											</button>
+											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+										</div>
+									{/if}
+								</div>
+							</div>
+						{:else if selectedFluxModel.includes('multi')}
+							<!-- 多图模式 -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>多图输入 ({fluxInputImageUrls.length}/5)</label
+								>
+								<div
+									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+								>
+									{#if fluxInputImageUrls.length > 0}
+										<div class="grid grid-cols-2 gap-2 mb-3">
+											{#each fluxInputImageUrls as imageUrl, index}
+												<div class="relative">
+													<img
+														src={imageUrl}
+														alt={`输入图片 ${index + 1}`}
+														class="w-full h-20 object-cover rounded"
+													/>
+													<button
+														on:click={() => removeFluxImage(index)}
+														class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors"
+														title="删除图片"
+													>
+														×
+													</button>
+												</div>
+											{/each}
+										</div>
+									{/if}
+									<div class="text-center">
+										<input
+											type="file"
+											id="flux-multi-images"
+											accept="image/*"
+											multiple
+											class="hidden"
+											on:change={handleFluxMultiImageUpload}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('flux-multi-images')?.click()}
+											class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+											disabled={fluxInputImageUrls.length >= 5}
+										>
+											{fluxInputImageUrls.length > 0 ? '添加更多图片' : '选择图片'}
+										</button>
+										<div class="text-xs text-gray-500 mt-2">
+											支持多选，JPG、PNG、WebP，最大 10MB/张，最多5张
+										</div>
+									</div>
+								</div>
+							</div>
+						{/if}
+
+						<!-- 图像尺寸/比例 -->
+						{#if selectedFluxModel.includes('pro') || selectedFluxModel.includes('kontext')}
+							<!-- Pro/Kontext 模型使用 aspect_ratio -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>图像比例</label
+								>
+								<select
+									bind:value={fluxAspectRatio}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="21:9">21:9 (超宽)</option>
+									<option value="16:9">16:9 (宽屏)</option>
+									<option value="4:3">4:3 (标准)</option>
+									<option value="3:2">3:2 (照片)</option>
+									<option value="1:1">1:1 (正方形)</option>
+									<option value="2:3">2:3 (竖版)</option>
+									<option value="3:4">3:4 (社交)</option>
+									<option value="9:16">9:16 (竖屏)</option>
+									<option value="9:21">9:21 (超长)</option>
+								</select>
+								<div class="text-xs text-gray-500 mt-1">Pro模型支持的比例选项</div>
+							</div>
+						{:else}
+							<!-- Dev/Schnell 模型使用 image_size -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>图像尺寸</label
+								>
+								<select
+									bind:value={fluxImageSize}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="square_hd">正方形高清 (1024x1024)</option>
+									<option value="square">正方形 (512x512)</option>
+									<option value="portrait_4_3">竖版4:3 (768x1024)</option>
+									<option value="portrait_16_9">竖版16:9 (576x1024)</option>
+									<option value="landscape_4_3">横版4:3 (1024x768)</option>
+									<option value="landscape_16_9">横版16:9 (1024x576)</option>
+								</select>
+								<div class="text-xs text-gray-500 mt-1">Dev/Schnell模型预设尺寸</div>
+							</div>
+						{/if}
+
+						<!-- 图片数量选择 - 根据模型动态限制 -->
+						<div>
+							<div class="flex justify-between items-center mb-2">
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">图片数量</label>
+								<span class="text-sm text-gray-500">{fluxNumImages || 1}</span>
+							</div>
+							<input
+								type="range"
+								min="1"
+								max={selectedFluxModel.includes('kontext/max')
+									? 8
+									: selectedFluxModel.includes('kontext')
+										? 6
+										: 4}
+								step="1"
+								bind:value={fluxNumImages}
+								class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+							/>
+							<div class="flex justify-between text-xs text-gray-400 mt-1">
+								<span>1张</span>
+								<span>
+									{selectedFluxModel.includes('kontext/max')
+										? '8张'
+										: selectedFluxModel.includes('kontext')
+											? '6张'
+											: '4张'}
+								</span>
+							</div>
+							<div class="text-xs text-gray-500 mt-1">
+								{#if selectedFluxModel.includes('kontext/max')}
+									Pro Max版本支持最多8张图片同时生成
+								{:else if selectedFluxModel.includes('kontext')}
+									Pro版本支持最多6张图片同时生成
+								{:else}
+									Dev/Schnell版本支持最多4张图片同时生成
+								{/if}
+							</div>
+						</div>
+
+						<!-- 引导尺度 -->
+						<div>
+							<div class="flex justify-between items-center mb-2">
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300">引导尺度</label>
+								<span class="text-sm text-gray-500">{fluxGuidanceScale}</span>
+							</div>
+							<input
+								type="range"
+								min="1"
+								max="20"
+								step="0.5"
+								bind:value={fluxGuidanceScale}
+								class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+							/>
+							<div class="flex justify-between text-xs text-gray-400 mt-1">
+								<span>1.0</span>
+								<span>20.0</span>
+							</div>
+							<div class="text-xs text-gray-500 mt-1">推荐值: 3.5，数值越高与提示词匹配度越高</div>
+						</div>
+
+						<!-- 推理步数 - 根据模型版本智能调整 -->
+						{#if !selectedFluxModel.includes('kontext')}
+							<div>
+								<div class="flex justify-between items-center mb-2">
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+										>推理步数</label
+									>
+									<span class="text-sm text-gray-500">{fluxInferenceSteps}</span>
+								</div>
+								<input
+									type="range"
+									min={selectedFluxModel.includes('schnell') ? 1 : 4}
+									max={selectedFluxModel.includes('schnell') ? 4 : 50}
+									step="1"
+									bind:value={fluxInferenceSteps}
+									class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+								/>
+								<div class="flex justify-between text-xs text-gray-400 mt-1">
+									<span>{selectedFluxModel.includes('schnell') ? '1' : '4'}</span>
+									<span>{selectedFluxModel.includes('schnell') ? '4' : '50'}</span>
+								</div>
+								<div class="text-xs text-gray-500 mt-1">
+									{#if selectedFluxModel.includes('schnell')}
+										⚡ Schnell快速模式：推荐1-4步，更高步数无明显提升
+									{:else if selectedFluxModel.includes('dev') && selectedFluxModel.includes('image-to-image')}
+										🔄 Dev图生图：推荐40步获得最佳质量
+									{:else if selectedFluxModel.includes('dev')}
+										🔧 Dev文生图：推荐28步平衡质量与速度
+									{:else}
+										📝 标准模式：调整步数以平衡质量与生成时间
+									{/if}
+								</div>
+							</div>
+						{:else}
+							<!-- Pro版本不显示推理步数控制 -->
+							<div
+								class="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs text-yellow-600 dark:text-yellow-400"
+							>
+								💎 Pro版本使用优化的推理参数，无需手动调节步数
+							</div>
+						{/if}
+
+						<!-- 安全容忍度 (仅Pro模型) -->
+						{#if selectedFluxModel.includes('pro') || selectedFluxModel.includes('kontext')}
+							<div>
+								<div class="flex justify-between items-center mb-2">
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+										>安全容忍度</label
+									>
+									<span class="text-sm text-gray-500">{fluxSafetyTolerance}</span>
+								</div>
+								<input
+									type="range"
+									min="1"
+									max="6"
+									step="1"
+									bind:value={fluxSafetyTolerance}
+									class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+								/>
+								<div class="flex justify-between text-xs text-gray-400 mt-1">
+									<span>1 (最严格)</span>
+									<span>6 (最宽松)</span>
+								</div>
+								<div class="text-xs text-gray-500 mt-1">控制内容审核严格程度，Pro模型专有参数</div>
+							</div>
+						{/if}
+
+						<!-- 图生图强度 -->
+						{#if selectedFluxModel.includes('image-to-image')}
+							<div>
+								<div class="flex justify-between items-center mb-2">
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300">强度</label>
+									<span class="text-sm text-gray-500">{fluxStrength}</span>
+								</div>
+								<input
+									type="range"
+									min="0.1"
+									max="1.0"
+									step="0.05"
+									bind:value={fluxStrength}
+									class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+								/>
+								<div class="flex justify-between text-xs text-gray-400 mt-1">
+									<span>0.1</span>
+									<span>1.0</span>
+								</div>
+								<div class="text-xs text-gray-500 mt-1">数值越高变化越大，推荐0.95</div>
+							</div>
+						{/if}
+
+						<!-- 种子值 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>种子值（可选）</label
+							>
+							<input
+								type="number"
+								bind:value={seedValue}
+								min="0"
+								max="4294967295"
+								placeholder="留空随机生成"
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+							/>
+							<div class="text-xs text-gray-500 mt-1">相同种子值产生相似结果</div>
+						</div>
+
+						<!-- 安全检查 -->
+						<div class="flex items-center gap-2">
+							<input
+								type="checkbox"
+								id="flux-safety-checker"
+								bind:checked={fluxEnableSafetyChecker}
+								class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+							/>
+							<label for="flux-safety-checker" class="text-sm text-gray-600 dark:text-gray-400"
+								>启用安全检查</label
 							>
 						</div>
 					{/if}
@@ -2190,10 +3043,14 @@
 											class="px-2 py-1 text-xs font-medium text-white rounded {task.properties
 												?.serviceType === 'dreamwork'
 												? 'bg-gradient-to-r from-purple-500 to-pink-500'
-												: 'bg-purple-600'}"
+												: task.properties?.serviceType === 'flux'
+													? 'bg-gradient-to-r from-blue-500 to-cyan-500'
+													: 'bg-purple-600'}"
 										>
 											{#if task.properties?.serviceType === 'dreamwork'}
 												即梦 (DreamWork)
+											{:else if task.properties?.serviceType === 'flux'}
+												Flux AI
 											{:else}
 												{task.properties?.botType === 'NIJI_JOURNEY' ? 'Niji3.0' : 'MidJourney'}
 											{/if}
@@ -2225,7 +3082,7 @@
 															on:click|stopPropagation={() =>
 																downloadImage(
 																	task.imageUrl,
-																	`${task.properties?.serviceType === 'dreamwork' ? 'dreamwork' : 'mj'}-${task.id}.png`
+																	`${task.properties?.serviceType === 'dreamwork' ? 'dreamwork' : task.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${task.id}.png`
 																)}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
 														>
@@ -2309,6 +3166,8 @@
 											<span>
 												{#if task.properties?.serviceType === 'dreamwork'}
 													即梦 ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
+												{:else if task.properties?.serviceType === 'flux'}
+													Flux ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
 												{:else}
 													MidJourney (fast)
 												{/if}
@@ -2408,10 +3267,14 @@
 							class="px-2 py-1 text-xs font-medium text-white rounded {selectedImageForViewing
 								.properties?.serviceType === 'dreamwork'
 								? 'bg-gradient-to-r from-purple-500 to-pink-500'
-								: 'bg-purple-600'}"
+								: selectedImageForViewing.properties?.serviceType === 'flux'
+									? 'bg-gradient-to-r from-blue-500 to-cyan-500'
+									: 'bg-purple-600'}"
 						>
 							{#if selectedImageForViewing.properties?.serviceType === 'dreamwork'}
 								即梦 (DreamWork)
+							{:else if selectedImageForViewing.properties?.serviceType === 'flux'}
+								Flux AI
 							{:else}
 								{selectedImageForViewing.properties?.botType === 'NIJI_JOURNEY'
 									? 'Niji3.0'
@@ -2475,7 +3338,7 @@
 							on:click={() =>
 								downloadImage(
 									selectedImageForViewing.imageUrl,
-									`${selectedImageForViewing.properties?.serviceType === 'dreamwork' ? 'dreamwork' : 'mj'}-${selectedImageForViewing.id}.png`
+									`${selectedImageForViewing.properties?.serviceType === 'dreamwork' ? 'dreamwork' : selectedImageForViewing.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${selectedImageForViewing.id}.png`
 								)}
 							class="px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
 						>

@@ -32,6 +32,7 @@ from open_webui.utils.kling import (
     validate_user_credits,
     process_kling_generation,
 )
+from open_webui.services.file_manager import get_file_manager
 
 router = APIRouter(prefix="/kling", tags=["kling"])
 
@@ -724,6 +725,66 @@ async def poll_kling_task_status(task_id: str, user_id: str):
             # 检查任务是否已完成
             if task.status in ["succeed", "failed"]:
                 print(f"✅ 【可灵轮询】任务 {task_id} 已完成: {task.status}")
+
+                # 🔥 检查本地已完成任务是否需要上传
+                if task.status == "succeed" and task.video_url:
+                    try:
+                        from open_webui.internal.db import get_db
+
+                        with get_db() as db:
+                            file_manager = get_file_manager()
+                            # 检查是否已经上传过
+                            existing_files = (
+                                file_manager.file_table.get_files_by_source(
+                                    "kling", task_id
+                                )
+                            )
+                            if not any(f.status == "uploaded" for f in existing_files):
+                                success, message, file_record = (
+                                    await file_manager.save_generated_content(
+                                        user_id=user_id,
+                                        file_url=task.video_url,
+                                        filename=f"kling_{task_id}.mp4",
+                                        file_type="video",
+                                        source_type="kling",
+                                        source_task_id=task_id,
+                                        metadata={
+                                            "prompt": task.prompt,
+                                            "mode": task.mode,
+                                            "duration": task.duration,
+                                            "aspect_ratio": task.aspect_ratio,
+                                            "original_url": task.video_url,
+                                        },
+                                    )
+                                )
+                                if success and file_record and file_record.cloud_url:
+                                    # 更新任务记录中的云存储URL
+                                    update_task = (
+                                        db.query(KlingTask)
+                                        .filter(KlingTask.id == task_id)
+                                        .first()
+                                    )
+                                    if update_task:
+                                        update_task.cloud_video_url = (
+                                            file_record.cloud_url
+                                        )
+                                        db.commit()
+                                    print(
+                                        f"☁️ 【云存储】可灵本地检查视频上传成功，已更新URL: {task_id}"
+                                    )
+                                else:
+                                    print(
+                                        f"☁️ 【云存储】可灵本地检查视频上传失败: {task_id} - {message}"
+                                    )
+                            else:
+                                print(
+                                    f"☁️ 【云存储】可灵视频已存在，跳过上传: {task_id}"
+                                )
+                    except Exception as upload_error:
+                        print(
+                            f"☁️ 【云存储】可灵本地检查自动上传异常: {task_id} - {upload_error}"
+                        )
+
                 break
 
             # 查询远程状态
@@ -743,6 +804,59 @@ async def poll_kling_task_status(task_id: str, user_id: str):
                         print(
                             f"🎯 【可灵轮询】任务 {task_id} 状态更新为: {task.status}"
                         )
+
+                        # 🔥 如果任务成功且有视频URL，自动上传到云存储
+                        if task.status == "succeed" and task.video_url:
+                            try:
+                                from open_webui.internal.db import get_db
+
+                                with get_db() as db:
+                                    file_manager = get_file_manager()
+                                    success, message, file_record = (
+                                        await file_manager.save_generated_content(
+                                            user_id=user_id,
+                                            file_url=task.video_url,
+                                            filename=f"kling_{task_id}.mp4",
+                                            file_type="video",
+                                            source_type="kling",
+                                            source_task_id=task_id,
+                                            metadata={
+                                                "prompt": task.prompt,
+                                                "mode": task.mode,
+                                                "duration": task.duration,
+                                                "aspect_ratio": task.aspect_ratio,
+                                                "original_url": task.video_url,
+                                            },
+                                        )
+                                    )
+                                    if (
+                                        success
+                                        and file_record
+                                        and file_record.cloud_url
+                                    ):
+                                        # 更新任务记录中的云存储URL
+                                        update_task = (
+                                            db.query(KlingTask)
+                                            .filter(KlingTask.id == task_id)
+                                            .first()
+                                        )
+                                        if update_task:
+                                            update_task.cloud_video_url = (
+                                                file_record.cloud_url
+                                            )
+                                            db.commit()
+                                        print(
+                                            f"☁️ 【云存储】可灵视频上传成功，已更新URL: {task_id}"
+                                        )
+                                    else:
+                                        print(
+                                            f"☁️ 【云存储】可灵视频上传失败: {task_id} - {message}"
+                                        )
+                            except Exception as upload_error:
+                                print(
+                                    f"☁️ 【云存储】可灵自动上传异常: {task_id} - {upload_error}"
+                                )
+
                         break
 
                 except Exception as e:

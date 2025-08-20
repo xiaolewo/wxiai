@@ -97,6 +97,45 @@ class JimengApiClient:
         print(f"🎬 【即梦客户端】构建API URL: {url}")
         return url
 
+    def _parse_error_message(self, raw_message: str) -> str:
+        """解析即梦API错误信息，提供用户友好的提示"""
+        try:
+            # 尝试解析嵌套的JSON错误信息
+            if raw_message.startswith("{") and raw_message.endswith("}"):
+                import json
+
+                inner_error = json.loads(raw_message)
+                if "error" in inner_error and isinstance(inner_error["error"], dict):
+                    error_code = inner_error["error"].get("code", "")
+                    error_message = inner_error["error"].get("message", "")
+
+                    # 根据错误码提供友好提示
+                    if error_code == "InputImageSensitiveContentDetected":
+                        return "输入图片包含敏感内容，请更换图片后重试"
+                    elif error_code == "InvalidParameter":
+                        if (
+                            "image_url" in error_message
+                            and "download failed" in error_message
+                        ):
+                            return "图片下载失败，请检查图片是否有效"
+                        else:
+                            return f"参数错误: {error_message}"
+                    elif error_code == "InsufficientBalance":
+                        return "账户余额不足，请联系管理员充值"
+                    elif error_code == "RateLimitExceeded":
+                        return "请求过于频繁，请稍后再试"
+                    elif error_code == "BadRequest":
+                        return f"请求格式错误: {error_message}"
+                    else:
+                        return f"即梦服务错误 ({error_code}): {error_message}"
+
+            # 如果不是JSON格式，直接返回原始信息
+            return raw_message
+
+        except Exception as e:
+            print(f"🎬 【即梦API】错误信息解析失败: {e}")
+            return raw_message
+
     async def generate_video(self, request: JimengGenerateRequest) -> dict:
         """生成视频（文生视频或图生视频）"""
         url = self._get_api_url()
@@ -147,10 +186,14 @@ class JimengApiClient:
 
                     try:
                         error_json = response.json()
-                        error_message = error_json.get("message", "API请求失败")
+                        raw_message = error_json.get("message", "API请求失败")
                         print(f"🎬 【即梦API】解析错误JSON: {error_json}")
+
+                        # 解析嵌套的错误信息
+                        user_friendly_message = self._parse_error_message(raw_message)
+
                         raise ValueError(
-                            f"即梦API错误 ({response.status_code}): {error_message}"
+                            f"即梦API错误 ({response.status_code}): {user_friendly_message}"
                         )
                     except json.JSONDecodeError:
                         print(f"🎬 【即梦API】无法解析错误响应为JSON")

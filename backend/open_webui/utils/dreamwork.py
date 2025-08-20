@@ -15,6 +15,8 @@ from open_webui.models.dreamwork import (
     DreamWorkTask,
     DreamWorkGenerateRequest,
 )
+from open_webui.services.file_manager import get_file_manager
+from open_webui.internal.db import get_db
 
 
 class DreamWorkApiClient:
@@ -571,6 +573,51 @@ async def process_dreamwork_generation(
 
         # 更新任务状态
         task.update_from_api_response(api_response)
+
+        # 🔥 如果任务成功且有图片URL，自动上传到云存储
+        if task.status == "SUCCESS" and task.image_url:
+            try:
+                file_manager = get_file_manager()
+                success, message, file_record = (
+                    await file_manager.save_generated_content(
+                        user_id=user_id,
+                        file_url=task.image_url,
+                        filename=f"dreamwork_{task.id}.jpg",
+                        file_type="image",
+                        source_type="dreamwork",
+                        source_task_id=task.id,
+                        metadata={
+                            "prompt": task.prompt,
+                            "model": task.model,
+                            "size": task.size,
+                            "guidance_scale": task.guidance_scale,
+                            "action": action,
+                            "original_url": task.image_url,
+                        },
+                    )
+                )
+                if success and file_record and file_record.cloud_url:
+                    # 更新任务记录中的云存储URL
+                    with get_db() as update_db:
+                        update_task = (
+                            update_db.query(DreamWorkTask)
+                            .filter(DreamWorkTask.id == task.id)
+                            .first()
+                        )
+                        if update_task:
+                            update_task.cloud_image_url = file_record.cloud_url
+                            update_db.commit()
+                    print(
+                        f"☁️ 【云存储】DreamWork{action}上传成功，已更新URL: {task.id}"
+                    )
+                else:
+                    print(
+                        f"☁️ 【云存储】DreamWork{action}上传失败: {task.id} - {message}"
+                    )
+            except Exception as upload_error:
+                print(
+                    f"☁️ 【云存储】DreamWork{action}自动上传异常: {task.id} - {upload_error}"
+                )
 
         return task
 

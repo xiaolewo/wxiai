@@ -196,6 +196,7 @@ class MJTask(Base):
 
     # 结果字段
     image_url = Column(Text)
+    cloud_image_url = Column(Text, comment="云存储图片URL")
     fail_reason = Column(Text)
     properties = Column(JSON)
     buttons = Column(JSON)
@@ -425,7 +426,7 @@ class MJTask(Base):
                 int(self.finish_time.timestamp() * 1000) if self.finish_time else 0
             ),
             "progress": self.progress,
-            "imageUrl": self.image_url,
+            "imageUrl": self.cloud_image_url or self.image_url,  # 优先返回云存储URL
             "failReason": self.fail_reason,
             "properties": self.properties or {},
             "buttons": self.buttons or [],

@@ -160,7 +160,45 @@ class UsersTable:
             with get_db() as db:
                 user = db.query(User).filter_by(id=id).first()
                 return UserModel.model_validate(user)
-        except Exception:
+        except Exception as e:
+            if "no such column" in str(e) and "phone" in str(e):
+                # phone列不存在，使用兼容查询
+                try:
+                    with get_db() as db:
+                        from sqlalchemy import text
+
+                        result = db.execute(
+                            text(
+                                """
+                            SELECT id, name, email, role, profile_image_url,
+                                   last_active_at, updated_at, created_at, api_key,
+                                   settings, info, oauth_sub
+                            FROM user WHERE id = :user_id
+                        """
+                            ),
+                            {"user_id": id},
+                        ).fetchone()
+
+                        if result:
+                            user_dict = {
+                                "id": result[0],
+                                "name": result[1],
+                                "email": result[2],
+                                "role": result[3],
+                                "profile_image_url": result[4],
+                                "last_active_at": result[5],
+                                "updated_at": result[6],
+                                "created_at": result[7],
+                                "api_key": result[8],
+                                "settings": result[9],
+                                "info": result[10],
+                                "oauth_sub": result[11],
+                                "phone": None,
+                            }
+                            return UserModel.model_validate(user_dict)
+                        return None
+                except Exception:
+                    return None
             return None
 
     def get_user_by_api_key(self, api_key: str) -> Optional[UserModel]:
@@ -176,7 +214,45 @@ class UsersTable:
             with get_db() as db:
                 user = db.query(User).filter_by(email=email).first()
                 return UserModel.model_validate(user)
-        except Exception:
+        except Exception as e:
+            if "no such column" in str(e) and "phone" in str(e):
+                # phone列不存在，使用兼容查询
+                try:
+                    with get_db() as db:
+                        from sqlalchemy import text
+
+                        result = db.execute(
+                            text(
+                                """
+                            SELECT id, name, email, role, profile_image_url,
+                                   last_active_at, updated_at, created_at, api_key,
+                                   settings, info, oauth_sub
+                            FROM user WHERE email = :email
+                        """
+                            ),
+                            {"email": email},
+                        ).fetchone()
+
+                        if result:
+                            user_dict = {
+                                "id": result[0],
+                                "name": result[1],
+                                "email": result[2],
+                                "role": result[3],
+                                "profile_image_url": result[4],
+                                "last_active_at": result[5],
+                                "updated_at": result[6],
+                                "created_at": result[7],
+                                "api_key": result[8],
+                                "settings": result[9],
+                                "info": result[10],
+                                "oauth_sub": result[11],
+                                "phone": None,
+                            }
+                            return UserModel.model_validate(user_dict)
+                        return None
+                except Exception:
+                    return None
             return None
 
     def get_user_by_oauth_sub(self, sub: str) -> Optional[UserModel]:
@@ -194,68 +270,175 @@ class UsersTable:
         limit: Optional[int] = None,
     ) -> UserListResponse:
         with get_db() as db:
-            query = db.query(User)
+            try:
+                # 尝试正常查询
+                query = db.query(User)
 
-            if filter:
-                query_key = filter.get("query")
-                if query_key:
-                    query = query.filter(
-                        or_(
-                            User.name.ilike(f"%{query_key}%"),
-                            User.email.ilike(f"%{query_key}%"),
+                if filter:
+                    query_key = filter.get("query")
+                    if query_key:
+                        query = query.filter(
+                            or_(
+                                User.name.ilike(f"%{query_key}%"),
+                                User.email.ilike(f"%{query_key}%"),
+                            )
                         )
-                    )
 
-                order_by = filter.get("order_by")
-                direction = filter.get("direction")
+                    order_by = filter.get("order_by")
+                    direction = filter.get("direction")
 
-                if order_by == "name":
-                    if direction == "asc":
-                        query = query.order_by(User.name.asc())
-                    else:
-                        query = query.order_by(User.name.desc())
-                elif order_by == "email":
-                    if direction == "asc":
-                        query = query.order_by(User.email.asc())
-                    else:
-                        query = query.order_by(User.email.desc())
+                    if order_by == "name":
+                        if direction == "asc":
+                            query = query.order_by(User.name.asc())
+                        else:
+                            query = query.order_by(User.name.desc())
+                    elif order_by == "email":
+                        if direction == "asc":
+                            query = query.order_by(User.email.asc())
+                        else:
+                            query = query.order_by(User.email.desc())
 
-                elif order_by == "created_at":
-                    if direction == "asc":
-                        query = query.order_by(User.created_at.asc())
-                    else:
-                        query = query.order_by(User.created_at.desc())
+                    elif order_by == "created_at":
+                        if direction == "asc":
+                            query = query.order_by(User.created_at.asc())
+                        else:
+                            query = query.order_by(User.created_at.desc())
 
-                elif order_by == "last_active_at":
-                    if direction == "asc":
-                        query = query.order_by(User.last_active_at.asc())
-                    else:
-                        query = query.order_by(User.last_active_at.desc())
+                    elif order_by == "last_active_at":
+                        if direction == "asc":
+                            query = query.order_by(User.last_active_at.asc())
+                        else:
+                            query = query.order_by(User.last_active_at.desc())
 
-                elif order_by == "updated_at":
-                    if direction == "asc":
-                        query = query.order_by(User.updated_at.asc())
-                    else:
-                        query = query.order_by(User.updated_at.desc())
-                elif order_by == "role":
-                    if direction == "asc":
-                        query = query.order_by(User.role.asc())
-                    else:
-                        query = query.order_by(User.role.desc())
+                    elif order_by == "updated_at":
+                        if direction == "asc":
+                            query = query.order_by(User.updated_at.asc())
+                        else:
+                            query = query.order_by(User.updated_at.desc())
+                    elif order_by == "role":
+                        if direction == "asc":
+                            query = query.order_by(User.role.asc())
+                        else:
+                            query = query.order_by(User.role.desc())
 
-            else:
-                query = query.order_by(User.created_at.desc())
+                else:
+                    query = query.order_by(User.created_at.desc())
 
-            if skip:
-                query = query.offset(skip)
-            if limit:
-                query = query.limit(limit)
+                if skip:
+                    query = query.offset(skip)
+                if limit:
+                    query = query.limit(limit)
 
-            users = query.all()
-            return {
-                "users": [UserModel.model_validate(user) for user in users],
-                "total": db.query(User).count(),
-            }
+                users = query.all()
+                return {
+                    "users": [UserModel.model_validate(user) for user in users],
+                    "total": db.query(User).count(),
+                }
+
+            except Exception as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+
+                if "no such column" in str(e) and "phone" in str(e):
+                    # phone列不存在，使用兼容查询
+                    logger.warning("phone列不存在，使用兼容模式查询users")
+                    try:
+                        from sqlalchemy import text
+
+                        # 构建基础查询
+                        base_query = """
+                            SELECT id, name, email, role, profile_image_url, 
+                                   last_active_at, updated_at, created_at, api_key,
+                                   settings, info, oauth_sub
+                            FROM user 
+                        """
+
+                        # 应用过滤条件
+                        where_conditions = []
+                        params = {}
+
+                        if filter:
+                            query_key = filter.get("query")
+                            if query_key:
+                                where_conditions.append(
+                                    "(name LIKE :query OR email LIKE :query)"
+                                )
+                                params["query"] = f"%{query_key}%"
+
+                        if where_conditions:
+                            base_query += " WHERE " + " AND ".join(where_conditions)
+
+                        # 应用排序
+                        order_clause = "ORDER BY created_at DESC"  # 默认排序
+                        if filter:
+                            order_by = filter.get("order_by")
+                            direction = filter.get("direction", "desc")
+
+                            if order_by in [
+                                "name",
+                                "email",
+                                "role",
+                                "created_at",
+                                "updated_at",
+                                "last_active_at",
+                            ]:
+                                order_clause = (
+                                    f"ORDER BY {order_by} {direction.upper()}"
+                                )
+
+                        base_query += f" {order_clause}"
+
+                        # 应用分页
+                        if limit:
+                            base_query += f" LIMIT {limit}"
+                        if skip:
+                            base_query += f" OFFSET {skip}"
+
+                        result = db.execute(text(base_query), params).fetchall()
+
+                        users = []
+                        for row in result:
+                            # 手动构建user对象
+                            user_dict = {
+                                "id": row[0],
+                                "name": row[1],
+                                "email": row[2],
+                                "role": row[3],
+                                "profile_image_url": row[4],
+                                "last_active_at": row[5],
+                                "updated_at": row[6],
+                                "created_at": row[7],
+                                "api_key": row[8],
+                                "settings": row[9],
+                                "info": row[10],
+                                "oauth_sub": row[11],
+                                "phone": None,  # 缺失列设为None
+                            }
+                            users.append(UserModel.model_validate(user_dict))
+
+                        # 获取总数
+                        count_query = "SELECT COUNT(*) FROM user"
+                        if where_conditions:
+                            count_query += " WHERE " + " AND ".join(where_conditions)
+
+                        total = db.execute(text(count_query), params).scalar()
+
+                        return {
+                            "users": users,
+                            "total": total,
+                        }
+
+                    except Exception as inner_e:
+                        logger.error(f"兼容查询也失败: {inner_e}")
+                        # 返回空列表，避免应用崩溃
+                        return {
+                            "users": [],
+                            "total": 0,
+                        }
+                else:
+                    # 其他错误，重新抛出
+                    raise e
 
     def get_users_by_user_ids(self, user_ids: list[str]) -> list[UserModel]:
         with get_db() as db:

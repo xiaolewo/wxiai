@@ -179,13 +179,22 @@ class DreamWorkTask(Base):
 
     # 结果字段
     image_url = Column(Text, nullable=True)
+    cloud_image_url = Column(Text, nullable=True, comment="云存储图片URL")
     fail_reason = Column(Text, nullable=True)
     input_image = Column(Text, nullable=True)  # 图生图的输入图片(base64或URL)
 
     # 元数据
     properties = Column(JSON, nullable=True)  # 额外属性
-    created_at = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        DateTime, nullable=False, default=func.now(), comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=func.now(),
+        onupdate=func.now(),
+        comment="更新时间",
+    )
 
     # 创建索引
     __table_args__ = (
@@ -211,6 +220,7 @@ class DreamWorkTask(Base):
         """创建任务记录"""
         with get_db() as db:
             task_id = str(uuid.uuid4())
+            current_time = datetime.utcnow()
             task = cls(
                 id=task_id,
                 user_id=user_id,
@@ -225,6 +235,8 @@ class DreamWorkTask(Base):
                 input_image=input_image,
                 properties=properties or {},
                 status="SUBMITTED",
+                created_at=current_time,
+                updated_at=current_time,
             )
             db.add(task)
             db.commit()
@@ -357,7 +369,7 @@ class DreamWorkTask(Base):
                 int(self.finish_time.timestamp() * 1000) if self.finish_time else 0
             ),
             "progress": getattr(self, "progress", "0%"),
-            "imageUrl": self.image_url,
+            "imageUrl": self.cloud_image_url or self.image_url,  # 优先返回云存储URL
             "failReason": self.fail_reason,
             "inputImage": self.input_image,
             "creditsCost": self.credits_cost,
