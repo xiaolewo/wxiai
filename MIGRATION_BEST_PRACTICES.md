@@ -171,9 +171,6 @@ python migration_management_guide.py
    sa.Column('id', sa.String(255), primary_key=True)
    ```
 
-3. **完整的迁移测试**
-
-
 ## 🔄 迁移冲突解决
 
 ### 当遇到迁移冲突时
