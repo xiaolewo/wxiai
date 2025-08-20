@@ -663,10 +663,10 @@ class FluxConfigs:
         logger = logging.getLogger(__name__)
 
         with get_db() as db:
-            # 首先尝试获取现有配置（使用兼容方法）
-            config = FluxConfigs.get_config()
-
             try:
+                # 直接在当前Session中查询配置，避免Session分离问题
+                config = db.query(FluxConfig).first()
+
                 if config:
                     # 更新现有配置
                     config.api_key = form.api_key
@@ -678,8 +678,7 @@ class FluxConfigs:
                     config.model_credits = form.model_credits
                     config.updated_at = func.now()
 
-                    # 重新绑定到当前session
-                    db.merge(config)
+                    # config已经在当前session中，直接更新
                 else:
                     # 创建新配置
                     config = FluxConfig(
@@ -705,7 +704,12 @@ class FluxConfigs:
                     try:
                         from sqlalchemy import text
 
-                        if config and config.id:
+                        # 重新查询配置以确保在当前Session中
+                        existing_config = db.execute(
+                            text("SELECT * FROM flux_config LIMIT 1")
+                        ).fetchone()
+
+                        if existing_config:
                             # 更新现有配置（不包含model_credits）
                             db.execute(
                                 text(
@@ -713,7 +717,7 @@ class FluxConfigs:
                                 UPDATE flux_config 
                                 SET api_key = :api_key, base_url = :base_url, enabled = :enabled,
                                     timeout = :timeout, max_concurrent_tasks = :max_concurrent_tasks,
-                                    default_model = :default_model, updated_at = :updated_at
+                                    default_model = :default_model, updated_at = CURRENT_TIMESTAMP
                                 WHERE id = :config_id
                             """
                                 ),
@@ -724,12 +728,14 @@ class FluxConfigs:
                                     "timeout": form.timeout,
                                     "max_concurrent_tasks": form.max_concurrent_tasks,
                                     "default_model": form.default_model,
-                                    "updated_at": func.now(),
-                                    "config_id": config.id,
+                                    "config_id": existing_config[0],  # 使用查询到的ID
                                 },
                             )
+                            config_id = existing_config[0]
                         else:
                             # 创建新配置（不包含model_credits）
+                            import uuid
+
                             new_id = str(uuid.uuid4())
                             db.execute(
                                 text(
@@ -738,7 +744,7 @@ class FluxConfigs:
                                 (id, api_key, base_url, enabled, timeout, max_concurrent_tasks, 
                                  default_model, created_at, updated_at)
                                 VALUES (:id, :api_key, :base_url, :enabled, :timeout, 
-                                        :max_concurrent_tasks, :default_model, :created_at, :updated_at)
+                                        :max_concurrent_tasks, :default_model, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                             """
                                 ),
                                 {
@@ -749,16 +755,15 @@ class FluxConfigs:
                                     "timeout": form.timeout,
                                     "max_concurrent_tasks": form.max_concurrent_tasks,
                                     "default_model": form.default_model,
-                                    "created_at": func.now(),
-                                    "updated_at": func.now(),
                                 },
                             )
+                            config_id = new_id
 
-                            # 创建配置对象返回
-                            config = FluxConfig()
-                            config.id = new_id
+                        db.commit()
 
-                        # 设置配置对象属性
+                        # 创建返回对象
+                        config = FluxConfig()
+                        config.id = config_id
                         config.api_key = form.api_key
                         config.base_url = form.base_url
                         config.enabled = form.enabled
@@ -767,7 +772,6 @@ class FluxConfigs:
                         config.default_model = form.default_model
                         config.model_credits = None  # 旧版本不支持
 
-                        db.commit()
                         return config
 
                     except Exception as inner_e:

@@ -28,6 +28,8 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: ["bash", "start.sh"]
 
 volumes:
   ollama: {}

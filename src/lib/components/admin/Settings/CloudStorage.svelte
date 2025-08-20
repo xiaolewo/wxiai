@@ -235,12 +235,18 @@
 
 				<div class="mb-3">
 					<div class="text-xs text-gray-400 mb-1">SecretId</div>
-					<SensitiveInput placeholder="请输入SecretId" bind:value={storageConfig.secretId} />
+					<SensitiveInput
+						placeholder="请输入SecretId"
+						bind:value={storageConfig.secretId}
+					/>
 				</div>
 
 				<div class="mb-3">
 					<div class="text-xs text-gray-400 mb-1">SecretKey</div>
-					<SensitiveInput placeholder="请输入SecretKey" bind:value={storageConfig.secretKey} />
+					<SensitiveInput
+						placeholder="请输入SecretKey"
+						bind:value={storageConfig.secretKey}
+					/>
 				</div>
 
 				<div class="mb-3">
