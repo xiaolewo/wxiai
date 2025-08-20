@@ -172,13 +172,6 @@ python migration_management_guide.py
    ```
 
 3. **完整的迁移测试**
-   ```python
-   def test_migration_upgrade():
-       # 测试正向迁移
-
-   def test_migration_downgrade():
-       # 测试反向迁移
-   ```
 
 ## 🔄 迁移冲突解决
 
