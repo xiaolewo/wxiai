@@ -16,7 +16,10 @@
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
 	import Kling from './Settings/Kling.svelte';
+	import KlingLipSync from './Settings/KlingLipSync.svelte';
+	import Inpainting from './Settings/Inpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
+	import GoogleVideo from './Settings/GoogleVideo.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
 	import Connections from './Settings/Connections.svelte';
@@ -57,7 +60,10 @@
 			'dreamwork',
 			'flux',
 			'kling',
+			'kling-lip-sync',
+			'inpainting',
 			'jimeng',
+			'google-video',
 			'storage',
 			'pipelines',
 			'sms',
@@ -550,6 +556,57 @@
 		</button>
 
 		<button
+			id="kling-lip-sync"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'kling-lip-sync'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/kling-lip-sync');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12 2C8.686 2 6 4.686 6 8c0 1.657.672 3.157 1.757 4.243L12 16.486l4.243-4.243C17.328 11.157 18 9.657 18 8c0-3.314-2.686-6-6-6zm0 8c-1.105 0-2-.895-2-2s.895-2 2-2 2 .895 2 2-.895 2-2 2z"
+					/>
+					<path d="M7 18h10v2H7v-2z" />
+				</svg>
+			</div>
+			<div class=" self-center">可灵对口型 (Kling Lip Sync)</div>
+		</button>
+
+		<button
+			id="inpainting"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'inpainting'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/inpainting');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M18 12.75h.008v.008H18V12.75Z M21.75 12A9.75 9.75 0 1 1 12 2.25 9.75 9.75 0 0 1 21.75 12Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">图像编辑 (Inpainting)</div>
+		</button>
+
+		<button
 			id="jimeng"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'jimeng'
@@ -572,6 +629,31 @@
 				</svg>
 			</div>
 			<div class=" self-center">即梦视频 (Jimeng)</div>
+		</button>
+
+		<button
+			id="google-video"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'google-video'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/google-video');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M4.5 4.5a3 3 0 0 0-3 3v9a3 3 0 0 0 3 3h8.25a3 3 0 0 0 3-3v-9a3 3 0 0 0-3-3H4.5ZM19.94 5.25c.94.38 1.56 1.3 1.56 2.37v8.76c0 1.07-.62 1.99-1.56 2.37l-2.69-1.8v-9.9l2.69-1.8Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">谷歌视频 (Google Video)</div>
 		</button>
 
 		<button
@@ -763,8 +845,26 @@
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}
 			/>
+		{:else if selectedTab === 'kling-lip-sync'}
+			<KlingLipSync
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'inpainting'}
+			<Inpainting
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
 		{:else if selectedTab === 'jimeng'}
 			<Jimeng
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'google-video'}
+			<GoogleVideo
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

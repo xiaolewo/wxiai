@@ -66,6 +66,7 @@
 		getFluxTaskImageUrl
 	} from '$lib/apis/flux';
 
+
 	// Import MJ streaming/callback system
 	import { mjCallbackHandler, type MJTaskUpdate } from '$lib/apis/midjourney/streaming';
 
@@ -84,8 +85,10 @@
 	let mjConfig: MJConfig | null = null;
 	let dreamWorkConfig: DreamWorkConfig | null = null;
 	let fluxConfig: FluxConfig | null = null;
+	let gptImageConfig: GPTImageUserConfig | null = null;
 
 	// 服务选择
+	type ImageService = 'midjourney' | 'dreamwork' | 'flux' | 'gptimage';
 	let selectedService: ImageService = 'midjourney';
 	let availableServices: { id: ImageService; name: string; icon: string; enabled: boolean }[] = [];
 
@@ -120,6 +123,70 @@
 	let dreamWorkGuidanceScale = 2.5;
 	let dreamWorkWatermarkEnabled = true;
 	let dreamWorkInputImage: string | null = null; // 图生图的输入图片(base64)
+
+	// GPT图像编辑参数
+	let gptImageModel = 'gpt-image-1';
+	let gptImageQuality = 'auto';
+	let gptImageSize = 'auto';
+	let gptImageResponseFormat = 'url'; // 固定为URL格式
+	let gptImageN = 1; // 固定生成1张图片
+	let gptImageInputImages: string[] = []; // 输入图片URLs
+	let gptImageMaskImage: string | null = null; // 遮罩图片URL
+	let gptImageUploadedFiles: FileList | null = null;
+	let gptImageMaskFile: File | null = null;
+	
+	// GPT图像编辑可用模型
+	const gptImageModelOptions = [
+		{
+			value: 'gpt-image-1',
+			label: 'GPT Image 1',
+			description: 'GPT官方图像编辑模型，支持精准编辑'
+		},
+		{
+			value: 'sora_image',
+			label: 'Sora Image',
+			description: 'Sora图像编辑模型'
+		},
+		{
+			value: 'sora_image-vip',
+			label: 'Sora Image VIP',
+			description: 'Sora高级图像编辑模型'
+		},
+		{
+			value: 'gpt-4o-image',
+			label: 'GPT-4O Image',
+			description: 'GPT-4O图像编辑模型'
+		},
+		{
+			value: 'gpt-4o-image-vip',
+			label: 'GPT-4O Image VIP',
+			description: 'GPT-4O高级图像编辑模型'
+		}
+	];
+	
+	// GPT图像质量选项
+	const gptImageQualityOptions = [
+		{ value: 'auto', label: '自动', description: '系统自动选择最佳质量' },
+		{ value: 'high', label: '高质量', description: '最高图像质量，消耗更多积分' },
+		{ value: 'medium', label: '中等质量', description: '平衡质量与速度' },
+		{ value: 'low', label: '低质量', description: '快速处理，较低质量' }
+	];
+	
+	// GPT图像尺寸选项
+	const gptImageSizeOptions = [
+		{ value: 'auto', label: '自动', description: '根据输入图片自动调整' },
+		{ value: '1024x1024', label: '1024×1024', description: '正方形高清' },
+		{ value: '1536x1024', label: '1536×1024', description: '横版高清' },
+		{ value: '1024x1536', label: '1024×1536', description: '竖版高清' },
+		{ value: '512x512', label: '512×512', description: '正方形标准' },
+		{ value: '256x256', label: '256×256', description: '正方形快速' }
+	];
+	
+	// GPT图像响应格式选项
+	const gptImageResponseFormatOptions = [
+		{ value: 'url', label: 'URL链接', description: '返回图片链接(有效期60分钟)' },
+		{ value: 'b64_json', label: 'Base64编码', description: '直接返回base64编码数据' }
+	];
 
 	// Flux 参数
 	let fluxModels: FluxModel[] = [];
@@ -419,6 +486,21 @@
 		}
 	};
 
+	// 加载GPT图像配置
+	const loadGPTImageConfig = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const config = await getGPTImageUserConfig($user.token);
+			if (config) {
+				gptImageConfig = config;
+				console.log('GPT图像配置已加载:', config);
+			}
+		} catch (error) {
+			console.error('加载GPT图像配置失败:', error);
+		}
+	};
+
 	const updateAvailableServices = async () => {
 		availableServices = [
 			{
@@ -438,6 +520,12 @@
 				name: 'Flux AI',
 				icon: '⚡',
 				enabled: fluxConfig?.enabled || false
+			},
+			{
+				id: 'gptimage',
+				name: 'GPT图像编辑',
+				icon: '🎯',
+				enabled: gptImageConfig?.enabled || false
 			}
 		];
 
@@ -493,6 +581,7 @@
 			await loadMJConfig();
 			await loadDreamWorkConfig();
 			await loadFluxConfig();
+			await loadGPTImageConfig();
 			await updateAvailableServices();
 
 			// 加载用户积分 - 确保使用用户token进行隔离
@@ -572,6 +661,41 @@
 				}
 			} catch (error) {
 				console.error('加载Flux历史记录失败:', error);
+			}
+
+			// 4. 加载GPT图像历史记录
+			try {
+				const gptImageHistory = await getGPTImageHistory($user.token, 1, 20);
+				if (gptImageHistory && gptImageHistory.data) {
+					console.log('🎨 加载GPT图像历史记录:', gptImageHistory.data.length, '个任务');
+					// 为GPT图像任务添加serviceType标识以便区分，并转换为统一格式
+					const gptImageTasksWithType = gptImageHistory.data.map((task) => ({
+						...task,
+						// 转换GPT图像格式到统一的MJTask格式
+						action: 'IMAGE_EDIT',
+						promptEn: task.prompt,
+						description: `GPT图像编辑: ${task.prompt}`,
+						submitTime: task.submit_time ? new Date(task.submit_time).getTime() : new Date(task.created_at).getTime(),
+						startTime: task.start_time ? new Date(task.start_time).getTime() : 0,
+						finishTime: task.complete_time ? new Date(task.complete_time).getTime() : 0,
+						progress: task.status === 'succeed' ? '100%' : task.progress || '0%',
+						status: task.status === 'succeed' ? 'SUCCESS' : task.status === 'failed' ? 'FAILURE' : 'IN_PROGRESS',
+						// 优先使用云存储URL
+						imageUrl: task.cloud_image_urls?.[0] || task.output_image_urls?.[0],
+						failReason: task.fail_reason,
+						properties: {
+							serviceType: 'gptimage',
+							model: task.model,
+							quality: task.quality,
+							size: task.size,
+							// 保存所有生成的图片URL
+							all_images: task.cloud_image_urls || task.output_image_urls || []
+						}
+					}));
+					allTasks = [...allTasks, ...gptImageTasksWithType];
+				}
+			} catch (error) {
+				console.error('加载GPT图像历史记录失败:', error);
 			}
 
 			if (allTasks.length > 0) {
@@ -779,6 +903,16 @@
 		}
 	};
 
+	// GPT图像编辑积分计算
+	const getGPTImageCredits = () => {
+		if (!gptImageConfig) return 15;
+		let baseCredits = gptImageConfig.credits_per_edit * gptImageN;
+		if (gptImageQuality === 'high') {
+			baseCredits += gptImageConfig.credits_per_high_quality * gptImageN;
+		}
+		return baseCredits;
+	};
+
 	const generateImage = async () => {
 		if (!prompt.trim()) {
 			toast.error('请输入描述');
@@ -793,7 +927,9 @@
 					? dreamWorkConfig?.creditsPerGeneration || 10
 					: selectedService === 'flux'
 						? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1) // Flux按模型和图片数量计算积分
-						: 5;
+						: selectedService === 'gptimage'
+							? getGPTImageCredits()
+							: 5;
 
 		if (userCredits < requiredCredits) {
 			toast.error('积分不足');
@@ -1188,6 +1324,72 @@
 					}
 				} catch (error) {
 					console.error('⚡ 【Flux前端】任务提交失败:', error);
+					throw error;
+				}
+			} else if (selectedService === 'gptimage') {
+				// === GPT图像编辑生成逻辑 ===
+				if (!gptImageConfig || !gptImageConfig.enabled) {
+					toast.error('GPT图像编辑服务未配置或未启用');
+					isGenerating = false;
+					return;
+				}
+
+				// 验证必须有输入图片
+				if (gptImageInputImages.length === 0) {
+					toast.error('GPT图像编辑需要上传至少一张输入图片');
+					isGenerating = false;
+					return;
+				}
+
+				try {
+					// 构建GPT图像编辑请求
+					const gptImageRequest: GPTImageEditRequest = {
+						prompt: prompt.trim(),
+						model: gptImageModel,
+						image_urls: gptImageInputImages,
+						mask_url: gptImageMaskImage || undefined,
+						n: gptImageN,
+						quality: gptImageQuality,
+						response_format: gptImageResponseFormat,
+						size: gptImageSize
+					};
+
+					console.log('🎯 【GPT图像编辑】提交编辑任务:', gptImageRequest);
+
+					// 提交GPT图像编辑任务
+					const result = await submitGPTImageEdit($user.token, gptImageRequest);
+
+					if (result && result.success && result.task_id) {
+						// 创建当前任务对象
+						currentTask = {
+							id: result.task_id,
+							status: 'submitted',
+							progress: '0%',
+							submitTime: Date.now(),
+							prompt: prompt.trim(),
+							model: gptImageModel,
+							credits_cost: result.credits_cost,
+							properties: {
+								serviceType: 'gptimage',
+								model: gptImageModel,
+								quality: gptImageQuality,
+								size: gptImageSize,
+								n: gptImageN
+							}
+						} as any;
+
+						toast.success(`GPT图像编辑任务已提交 (消耗${result.credits_cost}积分)`);
+
+						// 立即添加到历史记录
+						taskHistory = [currentTask, ...taskHistory];
+
+						// 开始轮询任务状态
+						pollGPTImageTaskStatus(result.task_id);
+					} else {
+						throw new Error(result?.message || 'GPT图像编辑任务提交失败');
+					}
+				} catch (error) {
+					console.error('🎯 【GPT图像编辑】任务提交失败:', error);
 					throw error;
 				}
 			} else {
@@ -1587,6 +1789,100 @@
 	const removeFluxImage = (index: number) => {
 		fluxInputImageUrls = fluxInputImageUrls.filter((_, i) => i !== index);
 	};
+	
+	// GPT图像编辑 - 多图上传处理
+	const handleGPTImageUpload = async (event: Event) => {
+		const target = event.target as HTMLInputElement;
+		const files = target.files;
+		
+		if (!files || files.length === 0) return;
+		
+		// 检查文件数量限制(最多10张)
+		if (gptImageInputImages.length + files.length > 10) {
+			toast.error('最多可上传10张图片');
+			return;
+		}
+		
+		for (const file of Array.from(files)) {
+			// 验证文件类型
+			if (!file.type.startsWith('image/')) {
+				toast.error(`${file.name} 不是图片文件`);
+				continue;
+			}
+			
+			// 验证文件大小(25MB)
+			if (file.size > 25 * 1024 * 1024) {
+				toast.error(`${file.name} 文件过大（超过25MB）`);
+				continue;
+			}
+			
+			try {
+				console.log('🎨 【GPT图像编辑】开始上传:', file.name);
+				const result = await uploadGPTImage($user.token, file);
+				
+				if (result.success && result.url) {
+					gptImageInputImages = [...gptImageInputImages, result.url];
+					console.log('🎨 【GPT图像编辑】上传成功:', result.url);
+				} else {
+					throw new Error(result.message || '上传失败');
+				}
+			} catch (error) {
+				console.error('🎨 【GPT图像编辑】上传失败:', error);
+				toast.error(`${file.name} 上传失败: ${error.message || error}`);
+			}
+		}
+		
+		if (gptImageInputImages.length > 0) {
+			toast.success(`成功上传 ${files.length} 张图片`);
+		}
+		
+		// 清空input值，允许重复上传同一文件
+		target.value = '';
+	};
+	
+	// GPT图像编辑 - 遮罩图片上传处理
+	const handleGPTMaskUpload = async (event: Event) => {
+		const target = event.target as HTMLInputElement;
+		const file = target.files?.[0];
+		
+		if (!file) return;
+		
+		// 验证文件类型
+		if (!file.type.startsWith('image/')) {
+			toast.error('请选择图片文件');
+			return;
+		}
+		
+		// 验证文件大小(4MB)
+		if (file.size > 4 * 1024 * 1024) {
+			toast.error('遮罩图片大小不能超过4MB');
+			return;
+		}
+		
+		try {
+			console.log('🎨 【GPT遮罩图片】开始上传:', file.name);
+			const result = await uploadGPTImageMask($user.token, file);
+			
+			if (result.success && result.url) {
+				gptImageMaskImage = result.url;
+				console.log('🎨 【GPT遮罩图片】上传成功:', result.url);
+				toast.success('遮罩图片上传成功');
+			} else {
+				throw new Error(result.message || '遮罩图片上传失败');
+			}
+		} catch (error) {
+			console.error('🎨 【GPT遮罩图片】上传失败:', error);
+			toast.error(`遮罩图片上传失败: ${error.message || error}`);
+		}
+		
+		// 清空input值，允许重复上传同一文件
+		target.value = '';
+	};
+	
+	// GPT图像编辑 - 删除输入图片
+	const removeGPTImage = (index: number) => {
+		gptImageInputImages = gptImageInputImages.filter((_, i) => i !== index);
+	};
 
 	// 🔥 简化轮询 - 直接有效
 	const pollTaskStatus = async (taskId: string) => {
@@ -1669,6 +1965,126 @@
 				}
 			}
 		}, 600000);
+	};
+
+	// GPT图像编辑任务状态轮询
+	const pollGPTImageTaskStatus = async (taskId: string) => {
+		const maxAttempts = 60; // 最多轮询60次 (约10分钟)
+		let attempts = 0;
+
+		const poll = async () => {
+			try {
+				attempts++;
+				console.log(`🎯 【GPT图像编辑轮询】第${attempts}次查询任务状态: ${taskId}`);
+
+				const result = await getGPTImageTaskStatus($user.token, taskId);
+
+				if (result && result.success && result.task) {
+					const task = result.task;
+					console.log(`🎯 【GPT图像编辑轮询】任务状态: ${task.status}, 进度: ${task.progress}`);
+
+					// 更新当前任务
+					if (currentTask && currentTask.id === taskId) {
+						currentTask = {
+							...currentTask,
+							status: task.status,
+							progress: task.progress,
+							output_image_urls: task.output_image_urls,
+							cloud_image_urls: task.cloud_image_urls,
+							fail_reason: task.fail_reason,
+							generation_time: task.generation_time,
+							updated_at: task.updated_at
+						};
+					}
+
+					// 更新历史记录
+					taskHistory = taskHistory.map((t) =>
+						t.id === taskId
+							? {
+								...t,
+								status: task.status,
+								progress: task.progress,
+								imageUrl: task.cloud_image_urls?.[0] || task.output_image_urls?.[0],
+								output_image_urls: task.output_image_urls,
+								cloud_image_urls: task.cloud_image_urls,
+								fail_reason: task.fail_reason,
+								generation_time: task.generation_time,
+								updated_at: task.updated_at,
+								properties: {
+									...t.properties,
+									serviceType: 'gptimage'
+								}
+							}
+							: t
+					);
+
+					// 检查任务是否完成
+					if (task.status === 'succeed') {
+						console.log('🎯 【GPT图像编辑】任务完成:', taskId);
+						toast.success('GPT图像编辑完成！');
+						
+						// 设置生成的图片
+						if (task.cloud_image_urls?.[0] || task.output_image_urls?.[0]) {
+							generatedImage = {
+								...currentTask,
+								imageUrl: task.cloud_image_urls?.[0] || task.output_image_urls?.[0],
+								output_image_urls: task.output_image_urls,
+								cloud_image_urls: task.cloud_image_urls
+							} as any;
+						}
+						
+						// 重置当前任务状态
+						currentTask = null;
+						isGenerating = false;
+						
+						// 刷新用户数据
+						loadUserData();
+						return;
+					} else if (task.status === 'failed') {
+						console.log('🎯 【GPT图像编辑】任务失败:', taskId, task.fail_reason);
+						toast.error(`GPT图像编辑失败: ${task.fail_reason || '未知错误'}`);
+						
+						// 重置状态
+						currentTask = null;
+						isGenerating = false;
+						return;
+					}
+
+					// 如果任务还在进行中，继续轮询
+					if (attempts < maxAttempts && (task.status === 'submitted' || task.status === 'processing')) {
+						setTimeout(poll, 10000); // 10秒后再次查询
+					} else if (attempts >= maxAttempts) {
+						console.log('🎯 【GPT图像编辑】轮询达到最大次数，停止轮询');
+						toast.warning('任务查询超时，请手动刷新查看结果');
+						isGenerating = false;
+						currentTask = null;
+					}
+				} else {
+					console.error('🎯 【GPT图像编辑轮询】获取任务状态失败:', result);
+					
+					if (attempts < maxAttempts) {
+						setTimeout(poll, 15000); // 失败时15秒后重试
+					} else {
+						toast.error('无法获取任务状态，请稍后手动查看');
+						isGenerating = false;
+						currentTask = null;
+					}
+				}
+			} catch (error) {
+				console.error(`🎯 【GPT图像编辑轮询】查询失败:`, error);
+				
+				if (attempts < maxAttempts) {
+					setTimeout(poll, 20000); // 异常时20秒后重试
+				} else {
+					toast.error('任务状态查询失败');
+					isGenerating = false;
+					currentTask = null;
+				}
+			}
+		};
+
+		// 开始轮询
+		setTimeout(poll, 5000); // 5秒后开始第一次查询
 	};
 
 	const executeAction = async (customId: string, taskId: string) => {
@@ -1994,7 +2410,7 @@
 									? '即梦 (DreamWork)'
 									: selectedService === 'flux'
 										? 'Flux AI'
-										: '未知服务'}
+										: 'GPT图像编辑'}
 						</div>
 						{#if selectedService === 'midjourney'}
 							<div>消耗积分: {modeConfig[selectedMode].credits}积分/次</div>
@@ -2005,6 +2421,8 @@
 								消耗积分: {getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}积分 ({fluxNumImages ||
 									1}张图片)
 							</div>
+						{:else if selectedService === 'gptimage' && gptImageConfig}
+							<div>消耗积分: {getGPTImageCredits()}积分</div>
 						{/if}
 						<div class="flex justify-between items-center">
 							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
@@ -2047,7 +2465,9 @@
 											? dreamWorkConfig?.creditsPerGeneration || 10
 											: selectedService === 'flux'
 												? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
-												: 5}积分)
+												: selectedService === 'gptimage'
+													? getGPTImageCredits()
+													: 5}积分)
 								{/if}
 							</button>
 						</div>
@@ -2618,6 +3038,174 @@
 						</div>
 					{/if}
 
+					{#if selectedService === 'gptimage' && gptImageConfig}
+						<!-- GPT图像编辑参数 -->
+						<!-- 模型选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>编辑模型</label
+							>
+							<select
+								bind:value={gptImageModel}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								{#each gptImageModelOptions as model}
+									<option value={model.value}>{model.label}</option>
+								{/each}
+							</select>
+							<div class="text-xs text-gray-500 mt-1">
+								{gptImageModelOptions.find(m => m.value === gptImageModel)?.description || ''}
+							</div>
+						</div>
+
+						<!-- 输入图片上传 (多图) -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>输入图片 ({gptImageInputImages.length}/10)</label
+							>
+							<div
+								class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+							>
+								{#if gptImageInputImages.length > 0}
+									<div class="grid grid-cols-2 gap-2 mb-3">
+										{#each gptImageInputImages as imageUrl, index}
+											<div class="relative">
+												<img
+													src={imageUrl}
+													alt={`输入图片 ${index + 1}`}
+													class="w-full h-20 object-cover rounded"
+												/>
+												<button
+													on:click={() => removeGPTImage(index)}
+													class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors"
+													title="删除图片"
+												>
+													×
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+								<div class="text-center">
+									<input
+										type="file"
+										id="gpt-input-images"
+										accept="image/*"
+										multiple
+										class="hidden"
+										on:change={handleGPTImageUpload}
+									/>
+									<button
+										type="button"
+										on:click={() => document.getElementById('gpt-input-images')?.click()}
+										class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+										disabled={gptImageInputImages.length >= 10}
+									>
+										{gptImageInputImages.length > 0 ? '添加更多图片' : '选择图片'}
+									</button>
+									<div class="text-xs text-gray-500 mt-2">
+										支持多选，PNG、JPG、WEBP，最大 25MB/张，最多10张
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<!-- 遮罩图片上传 (可选) -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>遮罩图片（可选）</label
+							>
+							<div
+								class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+							>
+								{#if gptImageMaskImage}
+									<div class="relative">
+										<img
+											src={gptImageMaskImage}
+											alt="遮罩图片"
+											class="w-full h-32 object-cover rounded"
+										/>
+										<button
+											on:click={() => (gptImageMaskImage = null)}
+											class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+											title="删除遮罩"
+										>
+											×
+										</button>
+									</div>
+								{:else}
+									<div class="text-center">
+										<input
+											type="file"
+											id="gpt-mask-image"
+											accept="image/png"
+											class="hidden"
+											on:change={handleGPTMaskUpload}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('gpt-mask-image')?.click()}
+											class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded transition-colors"
+										>
+											上传遮罩
+										</button>
+										<div class="text-xs text-gray-500 mt-2">
+											仅支持 PNG 格式，透明区域表示要编辑的部分，最大 4MB
+										</div>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- 画质选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>画质</label
+							>
+							<select
+								bind:value={gptImageQuality}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								{#each gptImageQualityOptions as quality}
+									<option value={quality.value}>{quality.label}</option>
+								{/each}
+							</select>
+							<div class="text-xs text-gray-500 mt-1">
+								{gptImageQualityOptions.find(q => q.value === gptImageQuality)?.description || ''}
+							</div>
+						</div>
+
+						<!-- 尺寸选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>输出尺寸</label
+							>
+							<select
+								bind:value={gptImageSize}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								{#each gptImageSizeOptions as size}
+									<option value={size.value}>{size.label}</option>
+								{/each}
+							</select>
+							<div class="text-xs text-gray-500 mt-1">
+								{gptImageSizeOptions.find(s => s.value === gptImageSize)?.description || ''}
+							</div>
+						</div>
+
+
+						<!-- 使用提示 -->
+						<div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded text-xs text-blue-600 dark:text-blue-400">
+							<div class="font-medium mb-1">💡 使用提示</div>
+							<ul class="space-y-1 list-disc list-inside">
+								<li>上传需要编辑的原始图片（必需）</li>
+								<li>可选上传遮罩图片，透明部分将被编辑</li>
+								<li>在描述中详细说明要进行的编辑操作</li>
+								<li>高质量模式会消耗更多积分但效果更好</li>
+							</ul>
+						</div>
+					{/if}
+
 					{#if selectedService === 'midjourney'}
 						<!-- 负面提示词 -->
 						<div>
@@ -3048,12 +3636,16 @@
 												? 'bg-gradient-to-r from-purple-500 to-pink-500'
 												: task.properties?.serviceType === 'flux'
 													? 'bg-gradient-to-r from-blue-500 to-cyan-500'
-													: 'bg-purple-600'}"
+													: task.properties?.serviceType === 'gptimage'
+														? 'bg-gradient-to-r from-green-500 to-teal-500'
+														: 'bg-purple-600'}"
 										>
 											{#if task.properties?.serviceType === 'dreamwork'}
 												即梦 (DreamWork)
 											{:else if task.properties?.serviceType === 'flux'}
 												Flux AI
+											{:else if task.properties?.serviceType === 'gptimage'}
+												GPT图像编辑
 											{:else}
 												{task.properties?.botType === 'NIJI_JOURNEY' ? 'Niji3.0' : 'MidJourney'}
 											{/if}

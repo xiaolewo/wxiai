@@ -643,6 +643,10 @@ ENABLE_VERSION_UPDATE_CHECK = (
     os.environ.get("ENABLE_VERSION_UPDATE_CHECK", "true").lower() == "true"
 )
 OFFLINE_MODE = os.environ.get("OFFLINE_MODE", "false").lower() == "true"
+# 在网络连接问题时优先使用本地缓存模型
+HF_LOCAL_CACHE_PREFERRED = (
+    os.environ.get("HF_LOCAL_CACHE_PREFERRED", "true").lower() == "true"
+)
 
 if OFFLINE_MODE:
     os.environ["HF_HUB_OFFLINE"] = "1"

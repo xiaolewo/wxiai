@@ -59,6 +59,7 @@ class JimengGenerateRequest(BaseModel):
         "16:9", description="画面比例: 1:1, 21:9, 16:9, 9:16, 4:3, 3:4"
     )
     cfg_scale: float = Field(0.5, description="CFG Scale")
+    watermark: bool = Field(False, description="生成视频是否包含水印")
 
     # 内部使用字段
     external_task_id: Optional[str] = None

@@ -99,7 +99,7 @@
 		}
 	};
 
-	const showQRCode = (detail: object): Boolean => {
+	const showQRCode = (detail: object): boolean => {
 		if (detail?.img) {
 			tradeInfo.detail.imgDisplayUrl = detail.img;
 			return true;
@@ -121,7 +121,7 @@
 		return false;
 	};
 
-	const redirectLink = (detail: object): Boolean => {
+	const redirectLink = (detail: object): boolean => {
 		if (detail?.payurl) {
 			window.location.href = detail.payurl;
 			return true;

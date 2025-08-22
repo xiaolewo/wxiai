@@ -1,0 +1,757 @@
+<script lang="ts">
+	import { onMount, getContext } from 'svelte';
+	import { WEBUI_NAME, showSidebar, user, mobile, config } from '$lib/stores';
+	import { goto } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
+
+	// Import Kling Lip Sync API functions
+	import {
+		type KlingLipSyncTask,
+		type KlingLipSyncConfig,
+		type KlingLipSyncGenerateRequest,
+		getKlingLipSyncUserConfig,
+		submitKlingLipSyncTask,
+		getKlingLipSyncTaskStatus,
+		getKlingLipSyncUserTaskHistory,
+		getKlingLipSyncUserCredits,
+		deleteKlingLipSyncTask
+	} from '$lib/apis/kling-lip-sync';
+
+	const i18n = getContext('i18n');
+
+	let loaded = false;
+	let isGenerating = false;
+	let currentTask: KlingLipSyncTask | null = null;
+	let generatedResult: KlingLipSyncTask | null = null;
+	let taskHistory: KlingLipSyncTask[] = [];
+	let userCredits = 0;
+	let loadingData = false;
+	let pollingInterval: NodeJS.Timeout | null = null;
+	let lipSyncConfig: KlingLipSyncConfig | null = null;
+
+	// Form data
+	let videoFile: File | null = null;
+	let videoId = '';
+	let uploadedVideoUrl = '';
+	let inputText = '';
+	let selectedVoiceId = 'girlfriend_1_speech02';
+	let selectedLanguage = 'zh';
+	let inputMode: 'file' | 'video_id' = 'file';
+
+	// Available voices and languages
+	let availableVoices = [];
+	let supportedLanguages = [];
+	let filteredVoices = [];
+
+	// 根据选择的语言过滤音色
+	$: {
+		if (selectedLanguage && availableVoices.length > 0) {
+			filteredVoices = availableVoices.filter((voice) => voice.language === selectedLanguage);
+			// 如果当前选中的音色不在过滤后的列表中，选择首个可用音色
+			if (filteredVoices.length > 0 && !filteredVoices.find((v) => v.id === selectedVoiceId)) {
+				selectedVoiceId = filteredVoices[0].id;
+			}
+		} else {
+			filteredVoices = availableVoices;
+		}
+	}
+
+	onMount(async () => {
+		if ($user) {
+			await loadUserData();
+			await loadAvailableOptions();
+			loaded = true;
+		}
+	});
+
+	const loadUserData = async () => {
+		if (!$user?.token) {
+			console.error('🎤 【对口型】没有token，无法加载数据');
+			return;
+		}
+
+		try {
+			loadingData = true;
+
+			// Load configuration using API wrapper
+			try {
+				lipSyncConfig = await getKlingLipSyncUserConfig($user.token);
+				console.log('🎤 【对口型】配置已加载:', lipSyncConfig);
+			} catch (error) {
+				console.error('🎤 【对口型】加载配置失败:', error);
+			}
+
+			// Load user credits using system credits
+			try {
+				const creditsResponse = await fetch(`${WEBUI_API_BASE_URL}/kling-lip-sync/credits`, {
+					method: 'GET',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${$user.token}`
+					}
+				});
+
+				if (creditsResponse.ok) {
+					const creditsData = await creditsResponse.json();
+					if (creditsData && creditsData.success) {
+						userCredits = creditsData.balance || 0;
+						console.log('🎤 【对口型】系统积分余额:', userCredits);
+					}
+				}
+			} catch (error) {
+				console.error('🎤 【对口型】加载系统积分失败:', error);
+			}
+
+			// Load task history using API wrapper
+			try {
+				const historyData = await getKlingLipSyncUserTaskHistory($user.token, 1, 20);
+				if (historyData && historyData.data) {
+					taskHistory = historyData.data;
+					console.log('🎤 【对口型】加载历史记录:', taskHistory.length, '个任务');
+				}
+			} catch (error) {
+				console.error('🎤 【对口型】加载历史失败:', error);
+			}
+		} catch (error) {
+			console.error('🎤 【对口型】加载用户数据失败:', error);
+			toast.error('加载数据失败');
+		} finally {
+			loadingData = false;
+		}
+	};
+
+	const loadAvailableOptions = async () => {
+		try {
+			// Load available voices
+			const voicesResponse = await fetch(`${WEBUI_API_BASE_URL}/kling-lip-sync/voices`, {
+				method: 'GET',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${localStorage.getItem('token')}`
+				}
+			});
+
+			if (voicesResponse.ok) {
+				const voicesData = await voicesResponse.json();
+				availableVoices = voicesData.voices || availableVoices;
+			}
+
+			// Load supported languages
+			const languagesResponse = await fetch(`${WEBUI_API_BASE_URL}/kling-lip-sync/languages`, {
+				method: 'GET',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${localStorage.getItem('token')}`
+				}
+			});
+
+			if (languagesResponse.ok) {
+				const languagesData = await languagesResponse.json();
+				supportedLanguages = languagesData.languages || supportedLanguages;
+			}
+		} catch (error) {
+			console.error('加载可用选项失败:', error);
+		}
+	};
+
+	const handleVideoUpload = async (event) => {
+		const file = event.target.files[0];
+		if (!file) return;
+
+		if (!file.type.startsWith('video/')) {
+			toast.error('请上传视频文件');
+			return;
+		}
+
+		if (file.size > 100 * 1024 * 1024) {
+			toast.error('视频文件不能超过100MB');
+			return;
+		}
+
+		try {
+			// 使用直接 fetch 上传视频，因为这是文件上传而不是对口型任务提交
+			const formData = new FormData();
+			formData.append('file', file);
+
+			const response = await fetch(`${WEBUI_API_BASE_URL}/kling-lip-sync/upload-video`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${$user?.token}`
+				},
+				body: formData
+			});
+
+			const result = await response.json();
+			if (result.success) {
+				uploadedVideoUrl = result.video_url;
+				videoFile = file;
+				toast.success('视频上传成功');
+				console.log('🎤 【对口型】视频上传成功:', uploadedVideoUrl);
+			} else {
+				toast.error(result.message || '视频上传失败');
+			}
+		} catch (error) {
+			console.error('🎤 【对口型】视频上传失败:', error);
+			toast.error('视频上传失败');
+		}
+	};
+
+	const submitLipSyncTask = async () => {
+		if (!inputText.trim()) {
+			toast.error('请输入对口型文本');
+			return;
+		}
+
+		if (inputMode === 'file' && !videoFile) {
+			toast.error('请先上传视频文件');
+			return;
+		}
+
+		if (inputMode === 'video_id' && !videoId.trim()) {
+			toast.error('请输入视频ID');
+			return;
+		}
+
+		if (!$user?.token) {
+			toast.error('请先登录');
+			return;
+		}
+
+		try {
+			isGenerating = true;
+
+			// 构建请求参数
+			const taskRequest = {
+				request: {
+					text: inputText.trim(),
+					voice_id: selectedVoiceId,
+					voice_language: selectedLanguage,
+					mode: 'text2video',
+					...(inputMode === 'video_id' ? { video_id: videoId.trim() } : {}),
+					...(inputMode === 'file' && uploadedVideoUrl ? { video_url: uploadedVideoUrl } : {})
+				}
+			};
+
+			console.log('🎤 【对口型前端】提交对口型任务:', taskRequest);
+
+			// 直接使用fetch调用API
+			const response = await fetch(`${WEBUI_API_BASE_URL}/kling-lip-sync/lip-sync`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${$user.token}`
+				},
+				body: JSON.stringify(taskRequest)
+			});
+
+			const result = await response.json();
+
+			if (result && result.success) {
+				currentTask = {
+					id: result.task_id,
+					status: 'submitted',
+					audioText: inputText.trim(),
+					voiceType: selectedVoiceId,
+					language: selectedLanguage,
+					progress: '0%'
+				} as KlingLipSyncTask;
+				toast.success('对口型任务提交成功');
+
+				// Start polling for task status
+				startPolling(result.task_id);
+
+				// Refresh user data
+				await loadUserData();
+			} else {
+				toast.error(result?.message || '任务提交失败');
+			}
+		} catch (error) {
+			console.error('🎤 【对口型】提交任务失败:', error);
+			toast.error('提交任务失败');
+		} finally {
+			isGenerating = false;
+		}
+	};
+
+	const startPolling = (taskId: string) => {
+		if (!$user?.token) {
+			console.error('🎤 【对口型轮询】无token，停止轮询');
+			return;
+		}
+
+		if (pollingInterval) {
+			clearInterval(pollingInterval);
+		}
+
+		console.log('🎤 【对口型轮询】开始轮询任务:', taskId);
+		const maxAttempts = 120; // 最多轮询120次 (约10分钟，5秒间隔)
+		let attempts = 0;
+
+		pollingInterval = setInterval(async () => {
+			try {
+				attempts++;
+				console.log(`🎤 【对口型轮询】第${attempts}次查询任务状态: ${taskId}`);
+
+				// 使用 API wrapper 获取任务状态
+				const taskData = await getKlingLipSyncTaskStatus($user.token, taskId);
+
+				if (taskData) {
+					console.log('🎤 【对口型轮询】任务状态更新:', {
+						status: taskData.status,
+						progress: taskData.progress,
+						outputVideoUrl: taskData.outputVideoUrl,
+						cloudVideoUrl: taskData.cloudVideoUrl
+					});
+
+					// 更新当前任务状态
+					currentTask = taskData;
+
+					// 检查完成
+					if (taskData.status === 'succeed') {
+						console.log('🎉 对口型任务完成!');
+						generatedResult = taskData;
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+						toast.success('视频对口型生成完成');
+						await loadUserData();
+						return;
+					} else if (taskData.status === 'failed') {
+						console.log('❌ 对口型任务失败');
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+						toast.error('视频生成失败: ' + (taskData.failReason || '未知错误'));
+						await loadUserData();
+						return;
+					}
+				}
+
+				// 检查超时
+				if (attempts >= maxAttempts) {
+					console.log('🎤 【对口型轮询】达到最大轮询次数，停止轮询');
+					if (pollingInterval) {
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+					}
+					currentTask = null;
+					toast.error('任务超时');
+					return;
+				}
+			} catch (error) {
+				console.error('🎤 【对口型轮询】轮询出错:', error);
+			}
+		}, 5000); // 每5秒轮询一次
+	};
+
+	const deleteTask = async (taskId: string) => {
+		if (!$user?.token) {
+			toast.error('请先登录');
+			return;
+		}
+
+		try {
+			const confirmed = confirm('确定要删除此对口型任务吗？');
+			if (!confirmed) return;
+
+			console.log('🗑️ 删除对口型任务:', taskId);
+
+			// 使用 API wrapper 删除任务
+			const result = await deleteKlingLipSyncTask($user.token, taskId);
+
+			if (result && result.success) {
+				// 从历史记录中移除任务
+				taskHistory = taskHistory.filter((t) => t.id !== taskId);
+
+				// 如果删除的是当前任务，清空当前任务状态
+				if (currentTask?.id === taskId) {
+					currentTask = null;
+					if (pollingInterval) {
+						clearInterval(pollingInterval);
+						pollingInterval = null;
+					}
+				}
+
+				// 如果删除的是最新生成结果，清空显示
+				if (generatedResult?.id === taskId) {
+					generatedResult = null;
+				}
+
+				toast.success('任务删除成功');
+				await loadUserData(); // 刷新数据
+			} else {
+				toast.error(result?.message || '删除失败');
+			}
+		} catch (error) {
+			console.error('🎤 【对口型】删除任务失败:', error);
+			toast.error('删除失败');
+		}
+	};
+
+	const formatDate = (dateString) => {
+		if (!dateString) return '-';
+		return new Date(dateString).toLocaleString('zh-CN');
+	};
+
+	const getStatusText = (status) => {
+		const statusMap = {
+			submitted: '已提交',
+			processing: '处理中',
+			completed: '已完成',
+			failed: '失败'
+		};
+		return statusMap[status] || status;
+	};
+
+	const getStatusColor = (status) => {
+		const colorMap = {
+			submitted: 'text-yellow-600',
+			processing: 'text-blue-600',
+			completed: 'text-green-600',
+			failed: 'text-red-600'
+		};
+		return colorMap[status] || 'text-gray-600';
+	};
+</script>
+
+<svelte:head>
+	<title>视频口型 - {$WEBUI_NAME}</title>
+</svelte:head>
+
+{#if loaded}
+	<div
+		class="relative flex w-full h-screen max-h-[100dvh] transition-width duration-200 ease-in-out {$showSidebar
+			? 'md:max-w-[calc(100%-260px)]'
+			: ''} max-w-full"
+	>
+		<!-- 主体内容 - 左右分栏：左侧操作栏，右侧历史记录栏 -->
+		<div class="flex w-full h-full">
+			<!-- 左侧操作栏 -->
+			<div
+				class="w-80 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-600 overflow-y-auto scrollbar-hide"
+			>
+				<div class="p-4 space-y-4">
+					<!-- 服务选择和状态 -->
+					<div>
+						<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+							🎤 视频口型服务
+						</h3>
+						<div class="rounded-lg p-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white">
+							<div class="flex items-center justify-between">
+								<div>
+									<div class="font-medium">可灵 AI 对口型</div>
+									<div class="text-xs opacity-75">
+										{lipSyncConfig?.enabled ? '已启用' : '未配置'}
+									</div>
+								</div>
+								<div class="text-xl">🎤</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- 积分余额 -->
+					<div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+						<div>当前服务: 可灵视频对口型</div>
+						<div>消耗积分: {lipSyncConfig?.credits_per_task || 50}积分/次</div>
+						<div class="flex justify-between items-center">
+							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
+							<button
+								class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded transition-colors"
+								on:click={async () => {
+									await loadUserData();
+									toast.success('配置和积分已刷新');
+								}}
+								disabled={loadingData}
+								title="刷新积分和配置"
+							>
+								{loadingData ? '刷新中...' : '刷新'}
+							</button>
+						</div>
+					</div>
+
+					{#if !lipSyncConfig || !lipSyncConfig.enabled}
+						<div
+							class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3"
+						>
+							<div class="text-sm font-medium text-red-700 dark:text-red-300 mb-1">服务未启用</div>
+							<div class="text-xs text-red-600 dark:text-red-400">
+								请联系管理员配置可灵对口型服务
+							</div>
+						</div>
+					{:else}
+						<!-- 视频描述 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>对口型文本</label
+							>
+							<textarea
+								bind:value={inputText}
+								placeholder="请输入要生成对口型的文本内容..."
+								rows="4"
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white resize-none"
+							></textarea>
+							<div class="flex justify-between items-center mt-1">
+								<div class="text-xs text-gray-500">{inputText.length}/2000</div>
+								<button
+									on:click={submitLipSyncTask}
+									disabled={isGenerating ||
+										!inputText.trim() ||
+										!lipSyncConfig?.enabled ||
+										(inputMode === 'file' && !uploadedVideoUrl) ||
+										(inputMode === 'video_id' && !videoId.trim())}
+									class="px-4 py-1 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
+								>
+									{#if isGenerating}
+										<Spinner className="size-3" />
+										生成中...
+									{:else}
+										生成对口型 ({lipSyncConfig?.credits_per_task || 50}积分)
+									{/if}
+								</button>
+							</div>
+						</div>
+
+						<!-- 输入方式选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>输入方式</label
+							>
+							<div class="grid grid-cols-2 gap-2">
+								<button
+									class="px-3 py-2 text-sm rounded border transition-colors {inputMode === 'file'
+										? 'bg-blue-500 text-white border-blue-500'
+										: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+									on:click={() => (inputMode = 'file')}
+								>
+									上传视频文件
+								</button>
+								<button
+									class="px-3 py-2 text-sm rounded border transition-colors {inputMode ===
+									'video_id'
+										? 'bg-blue-500 text-white border-blue-500'
+										: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+									on:click={() => (inputMode = 'video_id')}
+								>
+									视频ID
+								</button>
+							</div>
+						</div>
+
+						<!-- 视频输入 -->
+						{#if inputMode === 'file'}
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>上传视频</label
+								>
+								<input
+									type="file"
+									accept="video/*"
+									on:change={handleVideoUpload}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+								/>
+								{#if videoFile}
+									<div class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+										已选择: {videoFile.name} ({Math.round((videoFile.size / 1024 / 1024) * 100) /
+											100} MB)
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>视频ID</label
+								>
+								<input
+									type="text"
+									bind:value={videoId}
+									placeholder="请输入视频ID（如：de1b86d9-8e40-4f1c-a6a5-6459f8eb42f2）"
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+								/>
+								<div class="text-xs text-gray-500 mt-1">提示：请输入可灵AI生成的视频ID</div>
+							</div>
+						{/if}
+
+						<!-- 音色选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>音色选择</label
+							>
+							<select
+								bind:value={selectedVoiceId}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+							>
+								{#each filteredVoices as voice}
+									<option value={voice.id}>{voice.name}</option>
+								{/each}
+							</select>
+						</div>
+
+						<!-- 语言选择 -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>语言</label
+							>
+							<select
+								bind:value={selectedLanguage}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+							>
+								{#each supportedLanguages as lang}
+									<option value={lang.code}>{lang.name}</option>
+								{/each}
+							</select>
+						</div>
+
+						<!-- 当前任务状态 -->
+						{#if currentTask}
+							<div
+								class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3"
+							>
+								<div class="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">
+									当前任务状态
+								</div>
+								<div class="text-sm text-blue-600 dark:text-blue-400">
+									{getStatusText(currentTask.status)}
+									{#if currentTask.progress}
+										- {currentTask.progress}
+									{/if}
+								</div>
+								{#if currentTask.status === 'processing'}
+									<div class="mt-2">
+										<div class="w-full bg-gray-200 rounded-full h-1">
+											<div
+												class="bg-blue-600 h-1 rounded-full"
+												style="width: {currentTask.progress || '0%'}"
+											></div>
+										</div>
+									</div>
+								{/if}
+							</div>
+						{/if}
+
+						<!-- 最新生成结果 -->
+						{#if generatedResult && generatedResult.status === 'succeed'}
+							<div
+								class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3"
+							>
+								<div class="text-sm font-medium text-green-700 dark:text-green-300 mb-2">
+									生成完成
+								</div>
+								{#if generatedResult.cloudVideoUrl || generatedResult.outputVideoUrl}
+									<video controls class="w-full rounded-lg">
+										<source
+											src={generatedResult.cloudVideoUrl || generatedResult.outputVideoUrl}
+											type="video/mp4"
+										/>
+										您的浏览器不支持视频播放
+									</video>
+								{/if}
+							</div>
+						{/if}
+					{/if}
+				</div>
+			</div>
+
+			<!-- 右侧历史记录栏 -->
+			<div class="flex-1 flex flex-col bg-white dark:bg-gray-800">
+				<!-- 搜索栏 -->
+				<div class="p-4 border-b border-gray-200 dark:border-gray-600">
+					<div class="flex items-center justify-between">
+						<h2 class="text-xl font-semibold">任务历史</h2>
+						<button
+							on:click={loadUserData}
+							class="text-blue-600 hover:text-blue-700 text-sm"
+							disabled={loadingData}
+						>
+							{#if loadingData}
+								<Spinner className="size-4" />
+							{:else}
+								刷新
+							{/if}
+						</button>
+					</div>
+				</div>
+
+				<!-- 历史记录列表 -->
+				<div class="flex-1 p-4 overflow-y-auto scrollbar-hide">
+					{#if taskHistory.length === 0}
+						<div class="text-center text-gray-500 py-8">
+							<div class="text-lg mb-2">暂无历史记录</div>
+							<div class="text-sm">开始你的第一个视频口型生成任务吧</div>
+						</div>
+					{:else}
+						<div class="space-y-3">
+							{#each taskHistory as task}
+								<div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+									<div class="flex items-center justify-between mb-2">
+										<div class="text-sm {getStatusColor(task.status)} font-medium">
+											{getStatusText(task.status)}
+										</div>
+										<div class="text-xs text-gray-500">
+											{formatDate(task.createdAt)}
+										</div>
+									</div>
+
+									{#if task.audioText}
+										<div class="text-sm mb-2">
+											<span class="font-medium">文本:</span>
+											<span class="text-gray-600 dark:text-gray-300">
+												{task.audioText.length > 50
+													? task.audioText.substring(0, 50) + '...'
+													: task.audioText}
+											</span>
+										</div>
+									{/if}
+
+									{#if task.voiceType}
+										<div class="text-sm mb-2">
+											<span class="font-medium">音色:</span>
+											<span class="text-gray-600 dark:text-gray-300">
+												{availableVoices.find((v) => v.id === task.voiceType)?.name ||
+													task.voiceType}
+											</span>
+										</div>
+									{/if}
+
+									{#if task.status === 'succeed' && (task.cloudVideoUrl || task.outputVideoUrl)}
+										<div class="mt-3">
+											<video controls class="w-full rounded-lg" style="max-height: 200px;">
+												<source src={task.cloudVideoUrl || task.outputVideoUrl} type="video/mp4" />
+												您的浏览器不支持视频播放
+											</video>
+										</div>
+									{/if}
+
+									{#if task.status === 'failed' && task.failReason}
+										<div class="mt-2 text-sm text-red-600 dark:text-red-400">
+											失败原因: {task.failReason}
+										</div>
+									{/if}
+
+									{#if task.status === 'succeed' || task.status === 'failed'}
+										<div class="mt-3 flex justify-end">
+											<button
+												on:click={() => deleteTask(task.id)}
+												class="text-red-600 hover:text-red-700 text-sm"
+											>
+												删除
+											</button>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<style>
+	/* Custom styles for video elements */
+	video {
+		background-color: #000;
+	}
+</style>

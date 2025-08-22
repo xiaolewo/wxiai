@@ -28,6 +28,7 @@ from open_webui.utils.access_control import has_access
 from open_webui.env import (
     SRC_LOG_LEVELS,
     OFFLINE_MODE,
+    HF_LOCAL_CACHE_PREFERRED,
     ENABLE_FORWARD_USER_INFO_HEADERS,
 )
 from open_webui.config import (
@@ -697,6 +698,10 @@ def get_model_path(model: str, update_model: bool = False):
 
     if OFFLINE_MODE:
         local_files_only = True
+    elif HF_LOCAL_CACHE_PREFERRED:
+        # 优先使用本地缓存，只在没有本地缓存时才尝试下载
+        local_files_only = True
+        update_model = False
 
     snapshot_kwargs = {
         "cache_dir": cache_dir,
@@ -721,13 +726,54 @@ def get_model_path(model: str, update_model: bool = False):
     snapshot_kwargs["repo_id"] = model
 
     # Attempt to query the huggingface_hub library to determine the local path and/or to update
-    try:
-        model_repo_path = snapshot_download(**snapshot_kwargs)
-        log.debug(f"model_repo_path: {model_repo_path}")
-        return model_repo_path
-    except Exception as e:
-        log.exception(f"Cannot determine model snapshot path: {e}")
-        return model
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            log.debug(f"尝试下载模型 {model}，第 {attempt + 1}/{max_retries} 次...")
+            model_repo_path = snapshot_download(**snapshot_kwargs)
+            log.debug(f"model_repo_path: {model_repo_path}")
+            return model_repo_path
+        except (
+            requests.exceptions.SSLError,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as e:
+            log.warning(f"网络连接错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt == max_retries - 1:
+                # 最后一次尝试失败，使用本地缓存
+                log.info("所有网络尝试失败，转为使用本地缓存模型...")
+                snapshot_kwargs_local = snapshot_kwargs.copy()
+                snapshot_kwargs_local["local_files_only"] = True
+                try:
+                    model_repo_path = snapshot_download(**snapshot_kwargs_local)
+                    log.info(f"成功使用本地缓存模型: {model_repo_path}")
+                    return model_repo_path
+                except Exception as local_e:
+                    log.warning(f"本地缓存也不可用: {local_e}")
+                    return model
+            else:
+                # 还有重试机会，等待后重试
+                import time
+
+                time.sleep(2**attempt)  # 指数退避
+                continue
+        except Exception as e:
+            log.exception(f"Cannot determine model snapshot path: {e}")
+            # 如果不是网络错误，也尝试本地缓存
+            if not local_files_only:
+                log.info("发生未知错误，尝试使用本地缓存模型...")
+                snapshot_kwargs_local = snapshot_kwargs.copy()
+                snapshot_kwargs_local["local_files_only"] = True
+                try:
+                    model_repo_path = snapshot_download(**snapshot_kwargs_local)
+                    log.info(f"成功使用本地缓存模型: {model_repo_path}")
+                    return model_repo_path
+                except Exception as local_e:
+                    log.warning(f"本地缓存也不可用: {local_e}")
+            return model
+
+    # 如果所有尝试都失败了
+    return model
 
 
 def generate_openai_batch_embeddings(

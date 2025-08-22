@@ -81,8 +81,11 @@ from open_webui.routers import (
     dreamwork,
     kling,
     jimeng,
+    google_video,
     storage,
     flux,
+    kling_lip_sync,
+    inpainting,
 )
 
 from open_webui.routers.retrieval import (
@@ -1261,7 +1264,12 @@ app.include_router(credit.router, prefix="/api/v1/credit", tags=["credit"])
 app.include_router(midjourney.router, prefix="/api/v1", tags=["midjourney"])
 app.include_router(dreamwork.router, prefix="/api/v1", tags=["dreamwork"])
 app.include_router(kling.router, prefix="/api/v1", tags=["kling"])
+app.include_router(
+    kling_lip_sync.router, prefix="/api/v1/kling-lip-sync", tags=["kling_lip_sync"]
+)
+app.include_router(inpainting.router, prefix="/api/v1/inpainting", tags=["inpainting"])
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
+app.include_router(google_video.router, prefix="/api/v1", tags=["google_video"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
 app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
 

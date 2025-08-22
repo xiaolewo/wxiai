@@ -146,6 +146,7 @@ class JimengApiClient:
             "duration": int(request.duration),
             "aspect_ratio": request.aspect_ratio,
             "cfg_scale": float(request.cfg_scale),
+            "watermark": request.watermark,
         }
 
         # 如果有图片URL，添加图生视频参数（即梦API只支持image_url，不支持base64）
