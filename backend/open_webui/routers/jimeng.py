@@ -97,12 +97,13 @@ async def get_jimeng_user_config(user=Depends(get_verified_user)):
         }
 
     # 只返回用户需要的配置，不包含敏感信息
+    # 使用 getattr 安全访问可能不存在的字段
     return {
         "enabled": config.enabled,
         "default_duration": config.default_duration,
         "default_aspect_ratio": config.default_aspect_ratio,
         "default_cfg_scale": config.default_cfg_scale,
-        "default_watermark": config.default_watermark,
+        "default_watermark": getattr(config, "default_watermark", False),
         "credits_per_5s": config.credits_per_5s,
         "credits_per_10s": config.credits_per_10s,
     }

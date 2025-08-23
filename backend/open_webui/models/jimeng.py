@@ -60,7 +60,7 @@ class JimengGenerateRequest(BaseModel):
         "16:9", description="画面比例: 1:1, 21:9, 16:9, 9:16, 4:3, 3:4"
     )
     cfg_scale: float = Field(0.5, description="CFG Scale")
-    watermark: bool = Field(False, description="是否包含水印", alias="wm")
+    watermark: bool = Field(False, description="是否包含水印")
 
     # 内部使用字段
     external_task_id: Optional[str] = None
@@ -161,9 +161,83 @@ class JimengConfig(Base):
 
     @classmethod
     def get_config(cls) -> Optional["JimengConfig"]:
-        """获取即梦配置"""
+        """获取即梦配置（安全查询，兼容缺失字段）"""
         with get_db() as db:
-            return db.query(cls).first()
+            try:
+                # 先尝试正常的ORM查询
+                return db.query(cls).first()
+            except Exception as e:
+                # 如果ORM查询失败（通常是因为字段缺失），使用原始SQL查询
+                print(f"⚠️  ORM查询失败，使用安全查询: {e}")
+                try:
+                    # 检查表是否存在
+                    import sqlalchemy as sa
+
+                    inspector = sa.inspect(db.bind)
+                    if not inspector.has_table("jimeng_config"):
+                        return None
+
+                    # 获取现有字段
+                    columns = [
+                        col["name"] for col in inspector.get_columns("jimeng_config")
+                    ]
+
+                    # 构造安全的查询字段列表
+                    safe_fields = []
+                    field_mapping = {
+                        "id": "id",
+                        "enabled": "enabled",
+                        "base_url": "base_url",
+                        "api_key": "api_key",
+                        "default_duration": "default_duration",
+                        "default_aspect_ratio": "default_aspect_ratio",
+                        "default_cfg_scale": "default_cfg_scale",
+                        "default_watermark": "default_watermark",  # 可能缺失
+                        "credits_per_5s": "credits_per_5s",
+                        "credits_per_10s": "credits_per_10s",
+                        "max_concurrent_tasks": "max_concurrent_tasks",
+                        "task_timeout": "task_timeout",
+                        "query_interval": "query_interval",
+                        "detected_api_path": "detected_api_path",
+                        "created_at": "created_at",
+                        "updated_at": "updated_at",
+                    }
+
+                    for field, attr in field_mapping.items():
+                        if field in columns:
+                            safe_fields.append(f"{field} as {attr}")
+
+                    if not safe_fields:
+                        return None
+
+                    # 执行安全查询
+                    sql = f"SELECT {', '.join(safe_fields)} FROM jimeng_config LIMIT 1"
+                    result = db.execute(sa.text(sql)).fetchone()
+
+                    if not result:
+                        return None
+
+                    # 手动构造配置对象
+                    config = cls()
+                    row_dict = dict(result._mapping)
+
+                    for attr, value in row_dict.items():
+                        if hasattr(config, attr):
+                            setattr(config, attr, value)
+
+                    # 设置缺失字段的默认值
+                    if (
+                        not hasattr(config, "default_watermark")
+                        or config.default_watermark is None
+                    ):
+                        config.default_watermark = False
+
+                    print(f"✅ 安全查询成功，字段: {list(row_dict.keys())}")
+                    return config
+
+                except Exception as safe_error:
+                    print(f"❌ 安全查询也失败: {safe_error}")
+                    return None
 
     @classmethod
     def save_config(cls, config_data: dict) -> "JimengConfig":
@@ -205,15 +279,23 @@ class JimengConfig(Base):
             "default_duration": self.default_duration,
             "default_aspect_ratio": self.default_aspect_ratio,
             "default_cfg_scale": self.default_cfg_scale,
-            "default_watermark": self.default_watermark,
+            "default_watermark": getattr(self, "default_watermark", False),
             "credits_per_5s": self.credits_per_5s,
             "credits_per_10s": self.credits_per_10s,
             "max_concurrent_tasks": self.max_concurrent_tasks,
             "task_timeout": self.task_timeout,
             "query_interval": self.query_interval,
             "detected_api_path": self.detected_api_path,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": (
+                self.created_at.isoformat()
+                if hasattr(self.created_at, "isoformat") and self.created_at
+                else str(self.created_at) if self.created_at else None
+            ),
+            "updated_at": (
+                self.updated_at.isoformat()
+                if hasattr(self.updated_at, "isoformat") and self.updated_at
+                else str(self.updated_at) if self.updated_at else None
+            ),
         }
 
 
@@ -426,7 +508,7 @@ class JimengTask(Base):
             "duration": self.duration,
             "aspect_ratio": self.aspect_ratio,
             "cfg_scale": self.cfg_scale,
-            "watermark": self.watermark,
+            "watermark": getattr(self, "watermark", False),
             "image_url": self.image_url,
             "input_image": self.input_image,
             "external_task_id": self.external_task_id,
@@ -435,13 +517,31 @@ class JimengTask(Base):
             "fail_reason": self.fail_reason,
             "credits_cost": self.credits_cost,
             "properties": self.properties,
-            "submit_time": self.submit_time.isoformat() if self.submit_time else None,
-            "start_time": self.start_time.isoformat() if self.start_time else None,
-            "complete_time": (
-                self.complete_time.isoformat() if self.complete_time else None
+            "submit_time": (
+                self.submit_time.isoformat()
+                if hasattr(self.submit_time, "isoformat") and self.submit_time
+                else str(self.submit_time) if self.submit_time else None
             ),
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "start_time": (
+                self.start_time.isoformat()
+                if hasattr(self.start_time, "isoformat") and self.start_time
+                else str(self.start_time) if self.start_time else None
+            ),
+            "complete_time": (
+                self.complete_time.isoformat()
+                if hasattr(self.complete_time, "isoformat") and self.complete_time
+                else str(self.complete_time) if self.complete_time else None
+            ),
+            "created_at": (
+                self.created_at.isoformat()
+                if hasattr(self.created_at, "isoformat") and self.created_at
+                else str(self.created_at) if self.created_at else None
+            ),
+            "updated_at": (
+                self.updated_at.isoformat()
+                if hasattr(self.updated_at, "isoformat") and self.updated_at
+                else str(self.updated_at) if self.updated_at else None
+            ),
             # 添加服务类型标识
             "serviceType": "jimeng",
         }
