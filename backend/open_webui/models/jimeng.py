@@ -37,6 +37,7 @@ class JimengConfigForm(BaseModel):
     default_duration: str = "5"
     default_aspect_ratio: str = "16:9"
     default_cfg_scale: float = 0.5
+    default_watermark: bool = False
     credits_per_5s: int = 30
     credits_per_10s: int = 60
     max_concurrent_tasks: int = 5
@@ -59,7 +60,7 @@ class JimengGenerateRequest(BaseModel):
         "16:9", description="画面比例: 1:1, 21:9, 16:9, 9:16, 4:3, 3:4"
     )
     cfg_scale: float = Field(0.5, description="CFG Scale")
-    watermark: bool = Field(False, description="生成视频是否包含水印")
+    watermark: bool = Field(False, description="是否包含水印", alias="wm")
 
     # 内部使用字段
     external_task_id: Optional[str] = None
@@ -92,6 +93,7 @@ class JimengTaskForm(BaseModel):
     duration: str
     aspect_ratio: str
     cfg_scale: float
+    watermark: bool = False
     image_url: Optional[str] = None
     input_image: Optional[str] = None
     external_task_id: Optional[str] = None
@@ -124,6 +126,9 @@ class JimengConfig(Base):
     )
     default_cfg_scale = Column(
         Float, default=0.5, nullable=False, comment="默认CFG Scale"
+    )
+    default_watermark = Column(
+        Boolean, default=False, nullable=False, comment="默认水印设置"
     )
 
     # 积分配置
@@ -200,6 +205,7 @@ class JimengConfig(Base):
             "default_duration": self.default_duration,
             "default_aspect_ratio": self.default_aspect_ratio,
             "default_cfg_scale": self.default_cfg_scale,
+            "default_watermark": self.default_watermark,
             "credits_per_5s": self.credits_per_5s,
             "credits_per_10s": self.credits_per_10s,
             "max_concurrent_tasks": self.max_concurrent_tasks,
@@ -228,6 +234,7 @@ class JimengTask(Base):
     duration = Column(String(10), nullable=False, comment="视频时长")
     aspect_ratio = Column(String(10), nullable=False, comment="画面比例")
     cfg_scale = Column(Float, nullable=False, comment="CFG Scale")
+    watermark = Column(Boolean, default=False, nullable=False, comment="是否包含水印")
 
     # 图生视频参数
     image_url = Column(Text, nullable=True, comment="输入图片URL(图生视频)")
@@ -275,6 +282,7 @@ class JimengTask(Base):
         aspect_ratio: str,
         cfg_scale: float,
         credits_cost: int,
+        watermark: bool = False,
         image_url: Optional[str] = None,
         input_image: Optional[str] = None,
         properties: Optional[Dict[str, Any]] = None,
@@ -291,6 +299,7 @@ class JimengTask(Base):
             duration=duration,
             aspect_ratio=aspect_ratio,
             cfg_scale=cfg_scale,
+            watermark=watermark,
             image_url=image_url,
             input_image=input_image,
             credits_cost=credits_cost,
@@ -417,6 +426,7 @@ class JimengTask(Base):
             "duration": self.duration,
             "aspect_ratio": self.aspect_ratio,
             "cfg_scale": self.cfg_scale,
+            "watermark": self.watermark,
             "image_url": self.image_url,
             "input_image": self.input_image,
             "external_task_id": self.external_task_id,
@@ -432,4 +442,6 @@ class JimengTask(Base):
             ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            # 添加服务类型标识
+            "serviceType": "jimeng",
         }

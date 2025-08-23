@@ -730,72 +730,6 @@
 					</Tooltip>
 				</div>
 
-				<div class="">
-					<Tooltip content="视频口型" placement="right">
-						<a
-							class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
-							href="/lip-sync"
-							on:click={async (e) => {
-								e.stopImmediatePropagation();
-								e.preventDefault();
-								goto('/lip-sync');
-								itemClickHandler();
-							}}
-							draggable="false"
-						>
-							<div class=" self-center flex items-center justify-center size-9">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="1.5"
-									stroke="currentColor"
-									class="size-4.5"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 0 1 6 0v8.25a3 3 0 0 1-3 3Z"
-									/>
-								</svg>
-							</div>
-						</a>
-					</Tooltip>
-				</div>
-
-				<div class="">
-					<Tooltip content="图像编辑" placement="right">
-						<a
-							class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
-							href="/image-edit"
-							on:click={async (e) => {
-								e.stopImmediatePropagation();
-								e.preventDefault();
-								goto('/image-edit');
-								itemClickHandler();
-							}}
-							draggable="false"
-						>
-							<div class=" self-center flex items-center justify-center size-9">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="1.5"
-									stroke="currentColor"
-									class="size-4.5"
-								>
-									<path
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M18 12.75h.008v.008H18V12.75Z M21.75 12A9.75 9.75 0 1 1 12 2.25 9.75 9.75 0 0 1 21.75 12Z"
-									/>
-								</svg>
-							</div>
-						</a>
-					</Tooltip>
-				</div>
-
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools}
 					<div class="">
 						<Tooltip content={$i18n.t('Workspace')} placement="right">
@@ -1081,64 +1015,6 @@
 						</div>
 						<div class="flex self-center translate-y-[0.5px]">
 							<div class=" self-center text-sm font-primary">视频生成</div>
-						</div>
-					</a>
-				</div>
-
-				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
-					<a
-						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-						href="/lip-sync"
-						on:click={itemClickHandler}
-						draggable="false"
-					>
-						<div class="self-center">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="2"
-								stroke="currentColor"
-								class="size-4.5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 0 1 6 0v8.25a3 3 0 0 1-3 3Z"
-								/>
-							</svg>
-						</div>
-						<div class="flex self-center translate-y-[0.5px]">
-							<div class=" self-center text-sm font-primary">视频口型</div>
-						</div>
-					</a>
-				</div>
-
-				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
-					<a
-						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-						href="/image-edit"
-						on:click={itemClickHandler}
-						draggable="false"
-					>
-						<div class="self-center">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="2"
-								stroke="currentColor"
-								class="size-4.5"
-							>
-								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M18 12.75h.008v.008H18V12.75Z M21.75 12A9.75 9.75 0 1 1 12 2.25 9.75 9.75 0 0 1 21.75 12Z"
-								/>
-							</svg>
-						</div>
-						<div class="flex self-center translate-y-[0.5px]">
-							<div class=" self-center text-sm font-primary">图像编辑</div>
 						</div>
 					</a>
 				</div>

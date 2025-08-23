@@ -39,15 +39,15 @@
 		value: number;
 	};
 	type Data = {
-		total_tokens: number;
-		total_credit: number;
+		total_tokens: Number;
+		total_credit: Number;
 		model_cost_pie: Array<ChartItem>;
 		model_token_pie: Array<ChartItem>;
 		user_cost_pie: Array<ChartItem>;
 		user_token_pie: Array<ChartItem>;
-		total_payment: number;
-		user_payment_stats_x: Array<string>;
-		user_payment_stats_y: Array<number>;
+		total_payment: Number;
+		user_payment_stats_x: Array<String>;
+		user_payment_stats_y: Array<Number>;
 	};
 
 	let statsData: Data = {};

@@ -86,6 +86,7 @@
 	let fluxConfig: FluxConfig | null = null;
 
 	// 服务选择
+	type ImageService = 'midjourney' | 'dreamwork' | 'flux';
 	let selectedService: ImageService = 'midjourney';
 	let availableServices: { id: ImageService; name: string; icon: string; enabled: boolean }[] = [];
 
@@ -509,10 +510,9 @@
 				const mjHistory = await getUserTaskHistory($user.token, 1, 20);
 				if (mjHistory && mjHistory.data) {
 					console.log('📋 加载MidJourney历史记录:', mjHistory.data.length, '个任务');
-					// 为MidJourney任务添加serviceType标识和submitTime转换以便区分和排序
+					// 为MidJourney任务添加serviceType标识以便区分
 					const mjTasksWithType = mjHistory.data.map((task) => ({
 						...task,
-						submitTime: new Date(task.created_at).getTime(),
 						properties: {
 							...(task.properties || {}),
 							serviceType: task.properties?.serviceType || 'midjourney'
@@ -529,10 +529,9 @@
 				const dreamWorkHistory = await getDreamWorkUserTaskHistory($user.token, 1, 20);
 				if (dreamWorkHistory && dreamWorkHistory.data) {
 					console.log('🎨 加载DreamWork历史记录:', dreamWorkHistory.data.length, '个任务');
-					// 为DreamWork任务添加serviceType标识和submitTime转换以便区分和排序
+					// 为DreamWork任务添加serviceType标识以便区分
 					const dreamWorkTasksWithType = dreamWorkHistory.data.map((task) => ({
 						...task,
-						submitTime: new Date(task.created_at).getTime(),
 						properties: {
 							...(task.properties || {}),
 							serviceType: 'dreamwork'
@@ -1992,9 +1991,7 @@
 								? 'MidJourney'
 								: selectedService === 'dreamwork'
 									? '即梦 (DreamWork)'
-									: selectedService === 'flux'
-										? 'Flux AI'
-										: '未知服务'}
+									: 'Flux AI'}
 						</div>
 						{#if selectedService === 'midjourney'}
 							<div>消耗积分: {modeConfig[selectedMode].credits}积分/次</div>
@@ -2191,6 +2188,8 @@
 								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
 							>
 								<option value="1024x1024">1024x1024 (正方形)</option>
+								<option value="1024x576">1024x576 (16:9)</option>
+								<option value="576x1024">576x1024 (9:16)</option>
 								<option value="1024x768">1024x768 (4:3)</option>
 								<option value="768x1024">768x1024 (3:4)</option>
 								<option value="1216x832">1216x832 (3:2)</option>

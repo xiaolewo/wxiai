@@ -14,6 +14,7 @@ export interface JimengConfig {
 	defaultDuration: string;
 	defaultAspectRatio: string;
 	defaultCfgScale: number;
+	defaultWatermark: boolean;
 	creditsPer5s: number;
 	creditsPer10s: number;
 	maxConcurrentTasks: number;
@@ -29,6 +30,7 @@ export interface JimengGenerateRequest {
 	duration?: string; // '5' | '10'
 	aspectRatio?: string; // '1:1' | '21:9' | '16:9' | '9:16' | '4:3' | '3:4'
 	cfgScale?: number; // 0-1
+	watermark?: boolean; // 是否包含水印
 
 	// 回调和自定义ID
 	callbackUrl?: string;
@@ -48,6 +50,7 @@ export interface JimengTask {
 	duration: string;
 	aspectRatio: string;
 	cfgScale: number;
+	watermark: boolean;
 
 	// 图生视频参数
 	imageUrl?: string;

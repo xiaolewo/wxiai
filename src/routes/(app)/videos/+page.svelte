@@ -36,66 +36,55 @@
 		deleteJimengTask
 	} from '$lib/apis/jimeng';
 
-	// Import Google Video API functions
-	import {
-		type GoogleVideoTask,
-		type GoogleVideoConfig,
-		type GoogleVideoTextToVideoRequest,
-		type GoogleVideoImageToVideoRequest,
-		submitGoogleVideoTextToVideo,
-		submitGoogleVideoImageToVideo,
-		getGoogleVideoTaskStatus,
-		getGoogleVideoUserHistory,
-		getGoogleVideoUserCredits,
-		getGoogleVideoUserConfig,
-		deleteGoogleVideoTask,
-		validateImageCountForModel
-	} from '$lib/apis/google-video';
-
 	const i18n = getContext('i18n');
 
 	let loaded = false;
 	let isGenerating = false;
-	let currentTask: KlingTask | JimengTask | GoogleVideoTask | null = null;
-	let generatedVideo: KlingTask | JimengTask | GoogleVideoTask | null = null;
-	let taskHistory: (KlingTask | JimengTask | GoogleVideoTask)[] = [];
+	let currentTask: KlingTask | JimengTask | null = null;
+	let generatedVideo: KlingTask | JimengTask | null = null;
+	let taskHistory: (KlingTask | JimengTask)[] = [];
 	let userCredits = 0;
 	let loadingData = false;
 	let pollingInterval: NodeJS.Timeout | null = null;
 	let klingConfig: KlingConfig | null = null;
 	let jimengConfig: JimengConfig | null = null;
-	let googleVideoConfig: GoogleVideoConfig | null = null;
 
 	// Service selection
-	let selectedService: 'kling' | 'jimeng' | 'google-video' = 'kling';
+	let selectedService: 'kling' | 'jimeng' = 'kling';
+	let lastServiceSwitch = '';
+	let serviceSwitchTimeout: NodeJS.Timeout | null = null;
 
-	// 当服务切换时，重新加载配置和积分
-	let previousService = selectedService;
-	$: if (selectedService && loaded && selectedService !== previousService) {
-		(async () => {
-			console.log(`🎬 【服务切换】从 ${previousService} 切换到: ${selectedService}`);
-			previousService = selectedService;
+	// 当服务切换时，防抖处理
+	$: if (selectedService && loaded && selectedService !== lastServiceSwitch) {
+		console.log(`🎬 【服务切换】检测到切换: ${lastServiceSwitch} → ${selectedService}`);
+		lastServiceSwitch = selectedService;
 
-			await loadUserData();
+		// 清除之前的延时器
+		if (serviceSwitchTimeout) {
+			clearTimeout(serviceSwitchTimeout);
+		}
 
-			// 切换到Google Video时，初始化enhance_prompt设置
-			if (selectedService === 'google-video' && googleVideoConfig) {
-				googleVideoEnhancePrompt = googleVideoConfig.default_enhance_prompt || false;
+		// 延迟执行，避免频繁触发
+		serviceSwitchTimeout = setTimeout(async () => {
+			console.log(`🎬 【服务切换】执行切换逻辑到: ${selectedService}`);
+
+			// 确保配置已加载，如果没有则加载
+			if (selectedService === 'jimeng' && !jimengConfig) {
+				await loadJimengConfig();
+			} else if (selectedService === 'kling' && !klingConfig) {
+				await loadKlingConfig();
 			}
 
-			// 切换服务时清空图片
-			if (selectedService !== 'google-video') {
-				googleVideoImages = [];
-			} else {
-				inputImage = null;
-				imageTail = null;
-			}
+			// 立即刷新一次积分
+			await refreshCredits();
 
-			// 暂时禁用积分自动刷新
-			// if (!creditRefreshInterval) {
-			//	startCreditRefresh();
-			// }
-		})();
+			// 根据选择的服务设置水印默认值
+			if (selectedService === 'jimeng' && jimengConfig?.defaultWatermark !== undefined) {
+				watermark = jimengConfig.defaultWatermark;
+			} else if (selectedService === 'kling') {
+				watermark = false; // 可灵服务没有水印功能
+			}
+		}, 100); // 100ms防抖
 	}
 
 	// 基础参数
@@ -105,15 +94,12 @@
 	let selectedDuration = '5';
 	let selectedAspectRatio = '16:9';
 	let cfgScale = 0.5;
-	let jimengWatermark = false; // 即梦水印选项
 	let selectedModel = 'kling-v1'; // 选择的模型版本
-	let selectedGoogleVideoModel = 'veo3'; // 选择的Google Video模型
-	let googleVideoEnhancePrompt = false; // Google Video提示词增强功能
+	let watermark = false; // 水印设置
 
 	// 图生视频参数
 	let inputImage: string | null = null; // base64数据
 	let imageTail: string | null = null; // 尾帧图片
-	let googleVideoImages: string[] = []; // Google Video图生视频图片数组
 	let selectedGenerationType: 'text-to-video' | 'image-to-video' = 'text-to-video';
 
 	// 图生视频高级功能
@@ -164,87 +150,41 @@
 	$: currentModelOptions =
 		selectedGenerationType === 'text-to-video' ? textToVideoModelOptions : imageToVideoModelOptions;
 
-	// Google Video模型选项
-	const googleVideoTextToVideoModels = [
-		{ value: 'veo3', label: 'Veo 3.0', description: '最新版本，支持120秒高清视频' },
-		{ value: 'veo3-fast', label: 'Veo 3.0 Fast', description: '快速生成，适合预览和迭代' },
-		{ value: 'veo3-pro', label: 'Veo 3.0 Pro', description: '专业版本，最高质量输出' },
-		{
-			value: 'veo3-pro-frames',
-			label: 'Veo 3.0 Pro Frames',
-			description: '支持图生视频的专业版本'
-		},
-		{ value: 'veo2', label: 'Veo 2.0', description: '经典版本，稳定可靠' },
-		{ value: 'veo2-fast', label: 'Veo 2.0 Fast', description: '快速版本，成本较低' },
-		{ value: 'veo2-pro', label: 'Veo 2.0 Pro', description: '专业版本，质量与速度平衡' },
-		{ value: 'veo3-fast-frames', label: 'Veo 3.0 Fast Frames', description: '快速帧处理版本' },
-		{ value: 'veo2-fast-frames', label: 'Veo 2.0 Fast Frames', description: '经典快速帧处理版本' },
-		{
-			value: 'veo2-fast-components',
-			label: 'Veo 2.0 Fast Components',
-			description: '组件化快速生成'
+	// 图生视频模式选项 - 可灵服务才显示首尾帧模式
+	$: imageVideoModeOptions = (() => {
+		const baseOptions = [
+			{ value: 'basic', label: '基础模式', desc: '仅使用首帧图片' },
+			{ value: 'brush', label: '笔刷模式', desc: '使用静态或动态笔刷控制' },
+			{ value: 'camera', label: '摄像机控制', desc: '使用摄像机运镜控制' }
+		];
+
+		// 首尾帧模式仅在可灵服务下可用
+		if (selectedService === 'kling') {
+			// 在基础模式后插入首尾帧模式
+			baseOptions.splice(1, 0, {
+				value: 'first-last',
+				label: '首尾帧模式',
+				desc: '同时使用首帧和尾帧图片 (自动使用V1.6专家模式)'
+			});
 		}
-	];
 
-	const googleVideoImageToVideoModels = [
-		{
-			value: 'veo3-pro-frames',
-			label: 'Veo 3.0 Pro Frames',
-			description: '最高质量图生视频，限1张图片（首帧）',
-			maxImages: 1,
-			imageType: '首帧'
-		},
-		{
-			value: 'veo3-fast-frames',
-			label: 'Veo 3.0 Fast Frames',
-			description: '快速图生视频，限1张图片（首帧）',
-			maxImages: 1,
-			imageType: '首帧'
-		},
-		{
-			value: 'veo2-fast-frames',
-			label: 'Veo 2.0 Fast Frames',
-			description: '经典图生视频，支持2张图片（首尾帧）',
-			maxImages: 2,
-			imageType: '首尾帧'
-		},
-		{
-			value: 'veo2-fast-components',
-			label: 'Veo 2.0 Fast Components',
-			description: '组件化生成，支持3张图片（视频元素）',
-			maxImages: 3,
-			imageType: '视频元素'
-		}
-	];
-
-	// 根据生成类型获取Google Video模型选项
-	$: currentGoogleVideoModelOptions =
-		selectedGenerationType === 'text-to-video'
-			? googleVideoTextToVideoModels
-			: googleVideoImageToVideoModels;
-
-	// 获取当前Google Video模型的最大图片数量
-	$: currentGoogleVideoMaxImages = (() => {
-		if (selectedService !== 'google-video' || selectedGenerationType !== 'image-to-video') return 0;
-		const model = googleVideoImageToVideoModels.find((m) => m.value === selectedGoogleVideoModel);
-		return model?.maxImages || 1;
+		return baseOptions;
 	})();
 
-	// 当模型切换时，调整图片数组大小
-	$: if (selectedService === 'google-video' && selectedGenerationType === 'image-to-video') {
-		const maxImages = currentGoogleVideoMaxImages;
-		if (googleVideoImages.length > maxImages) {
-			googleVideoImages = googleVideoImages.slice(0, maxImages);
+	// 当选择首尾帧模式时，自动设置模型和视频模式
+	$: {
+		if (selectedImageVideoMode === 'first-last' && selectedService === 'kling') {
+			// 自动设置为可灵V1.6模型和专家模式
+			if (selectedModel !== 'kling-v1-6') {
+				selectedModel = 'kling-v1-6';
+				console.log('🎬 【首尾帧模式】自动切换到可灵V1.6模型');
+			}
+			if (selectedMode !== 'pro') {
+				selectedMode = 'pro';
+				console.log('🎬 【首尾帧模式】自动切换到专家模式');
+			}
 		}
 	}
-
-	// 图生视频模式选项
-	const imageVideoModeOptions = [
-		{ value: 'basic', label: '基础模式', desc: '仅使用首帧图片' },
-		{ value: 'first-last', label: '首尾帧模式', desc: '同时使用首帧和尾帧图片' },
-		{ value: 'brush', label: '笔刷模式', desc: '使用静态或动态笔刷控制' },
-		{ value: 'camera', label: '摄像机控制', desc: '使用摄像机运镜控制' }
-	];
 
 	// 视频模式选项
 	const modeOptions = [
@@ -313,24 +253,6 @@
 		return true;
 	});
 
-	// 启动积分刷新timer的函数
-	const startCreditRefresh = () => {
-		// 先清理旧的timer
-		if (creditRefreshInterval) {
-			clearInterval(creditRefreshInterval);
-			creditRefreshInterval = null;
-		}
-
-		// 设置新的timer，降低刷新频率从30秒到5分钟
-		creditRefreshInterval = setInterval(async () => {
-			if (!isGenerating && $user?.token) {
-				await refreshCredits();
-			}
-		}, 300000); // 5分钟 = 300000毫秒
-
-		console.log('🎬 【积分刷新】设置定期刷新: 每5分钟');
-	};
-
 	onMount(async () => {
 		console.log('🎬 【可灵视频页面】onMount执行');
 
@@ -343,8 +265,25 @@
 
 		await loadUserData();
 
-		// 启动积分刷新（已优化频率和逻辑）
-		startCreditRefresh();
+		// 清除可能存在的旧定时器
+		if (creditRefreshInterval) {
+			clearInterval(creditRefreshInterval);
+		}
+
+		// 设置积分余额定期刷新 (每30秒)
+		creditRefreshInterval = setInterval(async () => {
+			console.log('⏰ 【定时刷新】30秒定时器触发，检查条件...');
+			if (!isGenerating && $user?.token) {
+				console.log('⏰ 【定时刷新】条件满足，执行积分刷新');
+				await refreshCredits();
+			} else {
+				console.log(
+					`⏰ 【定时刷新】跳过: isGenerating=${isGenerating}, hasToken=${!!$user?.token}`
+				);
+			}
+		}, 30000);
+
+		console.log('🎬 【积分刷新】设置定期刷新: 每30秒');
 	});
 
 	const loadKlingConfig = async () => {
@@ -368,6 +307,10 @@
 			const config = await getJimengUserConfig($user.token);
 			if (config) {
 				jimengConfig = config;
+				// 如果当前选择的是即梦服务，设置默认水印值
+				if (selectedService === 'jimeng' && config.defaultWatermark !== undefined) {
+					watermark = config.defaultWatermark;
+				}
 				console.log('🌟 即梦配置已加载:', config);
 			}
 		} catch (error) {
@@ -375,139 +318,67 @@
 		}
 	};
 
-	const loadGoogleVideoConfig = async () => {
-		if (!$user?.token) return;
-
-		try {
-			const config = await getGoogleVideoUserConfig($user.token);
-			if (config) {
-				googleVideoConfig = config;
-				console.log('🎬 谷歌视频配置已加载:', config);
-			}
-		} catch (error) {
-			console.error('加载谷歌视频配置失败:', error);
-		}
-	};
-
 	const loadUserData = async () => {
-		console.log('🎬 【数据加载】loadUserData开始，当前服务:', selectedService);
+		console.log('🎬 【数据加载调试】loadUserData开始');
 
 		if (!$user?.token) {
-			console.error('🎬 【数据加载】没有token，无法加载数据');
+			console.error('🎬 【数据加载调试】没有token，无法加载数据');
 			return;
 		}
 
 		loadingData = true;
 		try {
 			// 加载所有配置
-			await Promise.all([loadKlingConfig(), loadJimengConfig(), loadGoogleVideoConfig()]);
+			await Promise.all([loadKlingConfig(), loadJimengConfig()]);
 
-			// 检查当前选择的服务是否可用（只提示，不自动切换）
-			const currentConfig =
-				selectedService === 'kling'
-					? klingConfig
-					: selectedService === 'jimeng'
-						? jimengConfig
-						: googleVideoConfig;
+			// 检查当前选择的服务是否可用
+			const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
 			if (!currentConfig?.enabled) {
-				const serviceName =
-					selectedService === 'kling' ? '可灵' : selectedService === 'jimeng' ? '即梦' : '谷歌视频';
-				console.warn(`${serviceName}服务未启用，请联系管理员配置或手动切换到其他服务`);
-				// 移除自动切换逻辑，避免无限循环
-			}
+				const serviceName = selectedService === 'kling' ? '可灵' : '即梦';
+				toast.error(`${serviceName}视频服务未启用，请联系管理员配置或切换到其他服务`);
 
-			// 加载用户积分（只在服务已配置时加载）
-			if (currentConfig?.enabled) {
-				const getCreditsFunction =
-					selectedService === 'kling'
-						? getKlingUserCredits
-						: selectedService === 'jimeng'
-							? getJimengUserCredits
-							: getGoogleVideoUserCredits;
-				const credits = await getCreditsFunction($user.token);
-				if (credits) {
-					userCredits = credits.balance || 0;
-					const serviceName =
-						selectedService === 'kling'
-							? '可灵'
-							: selectedService === 'jimeng'
-								? '即梦'
-								: '谷歌视频';
-					console.log(`🎬 【${serviceName}】积分余额加载:`, userCredits);
-				} else {
-					const serviceName =
-						selectedService === 'kling'
-							? '可灵'
-							: selectedService === 'jimeng'
-								? '即梦'
-								: '谷歌视频';
-					console.warn(`🎬 【${serviceName}】积分余额加载失败`);
+				// 尝试切换到可用的服务
+				if (selectedService === 'kling' && jimengConfig?.enabled) {
+					selectedService = 'jimeng';
+					toast.info('已自动切换到即梦视频服务');
+				} else if (selectedService === 'jimeng' && klingConfig?.enabled) {
+					selectedService = 'kling';
+					toast.info('已自动切换到可灵视频服务');
 				}
-			} else {
-				// 服务未配置时设置积分为0，避免调用API
-				userCredits = 0;
-				const serviceName =
-					selectedService === 'kling' ? '可灵' : selectedService === 'jimeng' ? '即梦' : '谷歌视频';
-				console.log(`🎬 【${serviceName}】服务未配置，积分设置为0`);
 			}
 
-			// 加载用户历史记录 - 混合显示三种服务的记录（只加载已配置的服务）
-			const [klingHistory, jimengHistory, googleVideoHistory] = await Promise.all([
+			// 加载用户积分
+			const getCreditsFunction =
+				selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
+			const credits = await getCreditsFunction($user.token);
+			if (credits) {
+				userCredits = credits.balance || 0;
+				console.log(
+					`🎬 【${selectedService === 'kling' ? '可灵' : '即梦'}】积分余额加载:`,
+					userCredits
+				);
+			} else {
+				console.warn(`🎬 【${selectedService === 'kling' ? '可灵' : '即梦'}】积分余额加载失败`);
+			}
+
+			// 加载用户历史记录 - 混合显示两种服务的记录
+			const [klingHistory, jimengHistory] = await Promise.all([
 				klingConfig?.enabled
-					? getKlingUserTaskHistory($user.token, 1, 10).catch((e) => {
-							console.warn('可灵历史记录加载失败:', e);
-							return { data: [] };
-						})
+					? getKlingUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] },
 				jimengConfig?.enabled
-					? getJimengUserTaskHistory($user.token, 1, 10).catch((e) => {
-							console.warn('即梦历史记录加载失败:', e);
-							return { data: [] };
-						})
-					: { data: [] },
-				googleVideoConfig?.enabled
-					? getGoogleVideoUserHistory(1, 10, $user.token)
-							.then((res) => ({ data: res.tasks }))
-							.catch((e) => {
-								console.warn('谷歌视频历史记录加载失败:', e);
-								return { data: [] };
-							})
+					? getJimengUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] }
 			]);
 
-			// 合并和排序历史记录
-			const allTasks = [
-				...(klingHistory.data || []).map((task) => ({
-					...task,
-					submitTime: task.created_at,
-					createdAt: task.created_at,
-					serviceType: task.properties?.serviceType || ('kling' as const)
-				})),
-				...(jimengHistory.data || []).map((task) => ({
-					...task,
-					submitTime: task.created_at,
-					createdAt: task.created_at,
-					serviceType: task.properties?.serviceType || ('jimeng' as const)
-				})),
-				...(googleVideoHistory.data || []).map((task) => ({
-					...task,
-					serviceType: 'google-video' as const,
-					status:
-						task.status?.toLowerCase() === 'success'
-							? 'succeed'
-							: task.status?.toLowerCase() === 'failure'
-								? 'failed'
-								: task.status?.toLowerCase() || 'submitted',
-					action: task.task_type === 'image_to_video' ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
-					submitTime: task.created_at,
-					createdAt: task.created_at,
-					videoUrl: task.video_url
-				}))
-			].sort((a, b) => {
-				const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
-				const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
-				return timeB - timeA; // 降序排列，最新的在前
-			});
+			// 合并和排序历史记录（后端已经包含serviceType字段）
+			const allTasks = [...(klingHistory.data || []), ...(jimengHistory.data || [])].sort(
+				(a, b) => {
+					const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
+					const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
+					return timeB - timeA; // 降序排列，最新的在前
+				}
+			);
 
 			taskHistory = allTasks;
 			console.log('🎬 加载历史记录:', taskHistory.length, '个任务');
@@ -534,75 +405,31 @@
 	// 专门的积分刷新函数
 	const refreshCredits = async () => {
 		if (!$user?.token) {
-			console.log('💰 【积分刷新】用户未登录，跳过积分刷新');
+			console.log('💰 【积分刷新】跳过: 没有用户token');
 			return;
 		}
 
-		// 如果正在生成视频，跳过积分刷新，避免过度调用API
-		if (isGenerating) {
-			console.log('💰 【积分刷新】正在生成视频，跳过积分刷新');
-			return;
-		}
-
-		// 检查当前服务是否已配置
-		const currentConfig =
-			selectedService === 'kling'
-				? klingConfig
-				: selectedService === 'jimeng'
-					? jimengConfig
-					: googleVideoConfig;
-
-		if (!currentConfig?.enabled) {
-			console.log('💰 【积分刷新】当前服务未配置，跳过积分刷新');
-			return;
-		}
-
-		const serviceName =
-			selectedService === 'kling' ? '可灵' : selectedService === 'jimeng' ? '即梦' : '谷歌视频';
-
-		// 减少调试日志输出
-		console.log(`💰 【积分刷新】刷新${serviceName}积分`);
-
+		console.log(`💰 【积分刷新】开始获取${selectedService === 'kling' ? '可灵' : '即梦'}积分...`);
 		try {
 			const getCreditsFunction =
-				selectedService === 'kling'
-					? getKlingUserCredits
-					: selectedService === 'jimeng'
-						? getJimengUserCredits
-						: getGoogleVideoUserCredits;
-
+				selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
 			const credits = await getCreditsFunction($user.token);
-
-			if (credits && credits.success) {
+			if (credits) {
 				const oldBalance = userCredits;
 				userCredits = credits.balance || 0;
-
-				// 成功获取积分，重置失败计数
-				creditRefreshFailCount = 0;
-
-				// 只在积分发生变化时才打印日志
-				if (oldBalance !== userCredits) {
-					console.log(`💰 【积分刷新】${serviceName}积分: ${oldBalance} → ${userCredits}`);
-				}
-			} else {
-				// 如果返回值为空或不成功，也当作失败处理
-				throw new Error(`${serviceName}积分API返回空值或失败`);
-			}
-		} catch (error) {
-			creditRefreshFailCount++;
-			console.warn(
-				`💰 【积分刷新】获取${serviceName}积分失败(${creditRefreshFailCount}/${MAX_CREDIT_REFRESH_FAILS}):`,
-				error
-			);
-
-			// 如果连续失败超过阈值，暂停积分刷新以避免无限循环
-			if (creditRefreshFailCount >= MAX_CREDIT_REFRESH_FAILS && creditRefreshInterval) {
-				clearInterval(creditRefreshInterval);
-				creditRefreshInterval = null;
 				console.log(
-					`⏸️ 【积分刷新】由于连续失败${creditRefreshFailCount}次，已暂停${serviceName}积分自动刷新`
+					`💰 【积分刷新】${selectedService === 'kling' ? '可灵' : '即梦'}积分: ${oldBalance} → ${userCredits}`
+				);
+			} else {
+				console.log(
+					`💰 【积分刷新】${selectedService === 'kling' ? '可灵' : '即梦'}积分API返回空结果`
 				);
 			}
+		} catch (error) {
+			console.warn(
+				`💰 【积分刷新】获取${selectedService === 'kling' ? '可灵' : '即梦'}积分失败:`,
+				error
+			);
 		}
 	};
 
@@ -612,26 +439,16 @@
 			return;
 		}
 
-		const currentConfig =
-			selectedService === 'kling'
-				? klingConfig
-				: selectedService === 'jimeng'
-					? jimengConfig
-					: googleVideoConfig;
-		const serviceName =
-			selectedService === 'kling' ? '可灵' : selectedService === 'jimeng' ? '即梦' : '谷歌视频';
+		const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
+		const serviceName = selectedService === 'kling' ? '可灵' : '即梦';
 
 		// 生成前重新获取最新配置，确保积分设置是最新的
 		console.log(`🎬 【${serviceName}】生成前刷新配置和积分...`);
-		await Promise.all([loadKlingConfig(), loadJimengConfig(), loadGoogleVideoConfig()]);
+		await Promise.all([loadKlingConfig(), loadJimengConfig()]);
 
 		// 重新获取积分余额以确保是最新的
 		const getCreditsFunction =
-			selectedService === 'kling'
-				? getKlingUserCredits
-				: selectedService === 'jimeng'
-					? getJimengUserCredits
-					: getGoogleVideoUserCredits;
+			selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
 		const latestCredits = await getCreditsFunction($user.token);
 		if (latestCredits) {
 			userCredits = latestCredits.balance || 0;
@@ -656,40 +473,9 @@
 
 		// 图生视频模式验证
 		if (selectedGenerationType === 'image-to-video') {
-			// Google Video特有的图片验证
-			if (selectedService === 'google-video') {
-				if (googleVideoImages.length === 0) {
-					toast.error('Google Video图生视频模式需要上传至少1张图片');
-					return;
-				}
-
-				const modelInfo = googleVideoImageToVideoModels.find(
-					(m) => m.value === selectedGoogleVideoModel
-				);
-				const requiredImages = modelInfo?.maxImages || 1;
-
-				if (googleVideoImages.length > requiredImages) {
-					toast.error(
-						`${modelInfo?.label || selectedGoogleVideoModel}模型最多支持${requiredImages}张图片`
-					);
-					return;
-				}
-
-				// 对于需要多张图片的模型，验证是否上传了足够的图片
-				if (selectedGoogleVideoModel === 'veo2-fast-frames' && googleVideoImages.length < 2) {
-					toast.error('veo2-fast-frames模型需要上传2张图片（首尾帧）');
-					return;
-				}
-				if (selectedGoogleVideoModel === 'veo2-fast-components' && googleVideoImages.length < 3) {
-					toast.error('veo2-fast-components模型需要上传3张图片（视频元素）');
-					return;
-				}
-			} else {
-				// 其他服务的图片验证
-				if (!inputImage) {
-					toast.error('图生视频模式需要上传输入图片');
-					return;
-				}
+			if (!inputImage) {
+				toast.error('图生视频模式需要上传输入图片');
+				return;
 			}
 
 			// 可灵特有的高级功能验证
@@ -711,11 +497,7 @@
 		isGenerating = true;
 		try {
 			// 构建生成请求 - 根据选择的服务
-			let request:
-				| KlingGenerateRequest
-				| JimengGenerateRequest
-				| GoogleVideoTextToVideoRequest
-				| GoogleVideoImageToVideoRequest;
+			let request: KlingGenerateRequest | JimengGenerateRequest;
 
 			if (selectedService === 'kling') {
 				request = {
@@ -727,30 +509,15 @@
 					duration: selectedDuration,
 					aspectRatio: selectedAspectRatio
 				} as KlingGenerateRequest;
-			} else if (selectedService === 'jimeng') {
+			} else {
 				// 即梦请求参数更简单
 				request = {
 					prompt: prompt.trim(),
 					duration: selectedDuration,
 					aspectRatio: selectedAspectRatio,
 					cfgScale: cfgScale,
-					watermark: jimengWatermark
+					watermark: watermark
 				} as JimengGenerateRequest;
-			} else {
-				// Google Video请求参数
-				if (selectedGenerationType === 'text-to-video') {
-					request = {
-						prompt: prompt.trim(),
-						model: selectedGoogleVideoModel,
-						enhance_prompt: googleVideoEnhancePrompt
-					} as GoogleVideoTextToVideoRequest;
-				} else {
-					request = {
-						prompt: prompt.trim(),
-						model: selectedGoogleVideoModel,
-						enhance_prompt: googleVideoEnhancePrompt
-					} as GoogleVideoImageToVideoRequest;
-				}
 			}
 
 			// 如果是图生视频，添加图片和相关参数
@@ -764,13 +531,10 @@
 
 					if (selectedService === 'kling') {
 						(request as KlingGenerateRequest).image = base64Data;
-					} else if (selectedService === 'jimeng') {
+					} else {
 						// 即梦支持两种方式：image (base64) 或 imageUrl
 						// 这里使用 base64 方式
 						(request as JimengGenerateRequest).image = base64Data;
-					} else {
-						// Google Video 图生视频
-						(request as GoogleVideoImageToVideoRequest).images = googleVideoImages;
 					}
 				}
 
@@ -874,18 +638,9 @@
 				model:
 					selectedService === 'kling'
 						? (request as KlingGenerateRequest).modelName
-						: selectedService === 'google-video'
-							? selectedGoogleVideoModel
-							: 'jimeng-default',
-				hasInputImage: !!(selectedService === 'google-video'
-					? (request as GoogleVideoImageToVideoRequest).images?.length
-					: (request as any).image),
-				prompt: request.prompt,
-				...(selectedService === 'google-video' && {
-					enhance_prompt: (
-						request as GoogleVideoTextToVideoRequest | GoogleVideoImageToVideoRequest
-					).enhance_prompt
-				})
+						: 'jimeng-default',
+				hasInputImage: !!request.image,
+				prompt: request.prompt
 			});
 
 			// 调用对应的API
@@ -895,17 +650,6 @@
 					selectedGenerationType === 'image-to-video'
 						? await submitKlingImageToVideoTask($user.token, request as KlingGenerateRequest)
 						: await submitKlingTextToVideoTask($user.token, request as KlingGenerateRequest);
-			} else if (selectedService === 'google-video') {
-				result =
-					selectedGenerationType === 'image-to-video'
-						? await submitGoogleVideoImageToVideo(
-								request as GoogleVideoImageToVideoRequest,
-								$user.token
-							)
-						: await submitGoogleVideoTextToVideo(
-								request as GoogleVideoTextToVideoRequest,
-								$user.token
-							);
 			} else {
 				result =
 					selectedGenerationType === 'image-to-video'
@@ -917,11 +661,7 @@
 				// 提交成功，立即查询真实积分余额（后端已扣除）
 				try {
 					const getCreditsFunction =
-						selectedService === 'kling'
-							? getKlingUserCredits
-							: selectedService === 'jimeng'
-								? getJimengUserCredits
-								: getGoogleVideoUserCredits;
+						selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
 					const credits = await getCreditsFunction($user.token);
 					if (credits) {
 						userCredits = credits.balance || 0;
@@ -931,26 +671,17 @@
 					console.warn(`🎬 【${serviceName}】更新积分余额失败:`, error);
 				}
 
-				// 创建任务记录 - 根据服务类型使用不同参数
+				// 创建任务记录 - 兼容两种服务
 				const baseTask = {
 					id: result.task_id,
 					userId: $user.id,
 					action: selectedGenerationType === 'image-to-video' ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
 					status: 'submitted',
 					prompt: prompt.trim(),
-					// Google Video不需要这些参数，设为默认值
-					duration: selectedService === 'google-video' ? '120' : selectedDuration,
-					aspectRatio: selectedService === 'google-video' ? '16:9' : selectedAspectRatio,
-					cfgScale: selectedService === 'google-video' ? 0.5 : cfgScale,
-					watermark: selectedService === 'jimeng' ? jimengWatermark : undefined,
-					inputImage:
-						selectedGenerationType === 'image-to-video'
-							? selectedService === 'google-video'
-								? googleVideoImages.length > 0
-									? googleVideoImages[0]
-									: undefined
-								: inputImage
-							: undefined,
+					duration: selectedDuration,
+					aspectRatio: selectedAspectRatio,
+					cfgScale: cfgScale,
+					inputImage: selectedGenerationType === 'image-to-video' ? inputImage : undefined,
 					creditsCost: requiredCredits,
 					submitTime: new Date().toISOString(),
 					progress: '0%',
@@ -966,13 +697,6 @@
 						mode: selectedMode,
 						modelName: selectedModel
 					} as KlingTask & { serviceType: 'kling' };
-				} else if (selectedService === 'google-video') {
-					currentTask = {
-						...baseTask,
-						model: selectedGoogleVideoModel,
-						task_type:
-							selectedGenerationType === 'image-to-video' ? 'image_to_video' : 'text_to_video'
-					} as GoogleVideoTask & { serviceType: 'google-video' };
 				} else {
 					currentTask = {
 						...baseTask
@@ -1002,12 +726,7 @@
 
 	// 计算所需积分 - 响应式计算属性
 	$: requiredCredits = (() => {
-		const currentConfig =
-			selectedService === 'kling'
-				? klingConfig
-				: selectedService === 'jimeng'
-					? jimengConfig
-					: googleVideoConfig;
+		const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
 		if (!currentConfig) {
 			console.log(`💰 【积分计算】配置未加载，使用默认值: 50`);
 			return 50;
@@ -1040,7 +759,7 @@
 				`💰 【可灵积分计算】默认配置: ${selectedMode}-${selectedDuration} = ${credits}积分`
 			);
 			return credits;
-		} else if (selectedService === 'jimeng') {
+		} else {
 			// 即梦的积分配置更简单
 			const config = currentConfig as JimengConfig;
 			let credits = 50;
@@ -1049,43 +768,12 @@
 
 			console.log(`💰 【即梦积分计算】${selectedDuration}秒 = ${credits}积分`);
 			return credits;
-		} else if (selectedService === 'google-video') {
-			// Google Video的积分配置
-			const config = currentConfig as GoogleVideoConfig;
-			if (
-				config.model_credits_config &&
-				selectedGoogleVideoModel &&
-				config.model_credits_config[selectedGoogleVideoModel]
-			) {
-				const credits = config.model_credits_config[selectedGoogleVideoModel];
-				console.log(`💰 【谷歌视频积分计算】${selectedGoogleVideoModel} = ${credits}积分`);
-				return credits;
-			}
-
-			// 默认积分配置
-			const defaultCredits = {
-				veo3: 100,
-				'veo3-fast': 80,
-				'veo3-pro': 150,
-				'veo3-pro-frames': 200,
-				veo2: 80,
-				'veo2-fast': 60,
-				'veo2-pro': 120,
-				'veo3-fast-frames': 160,
-				'veo2-fast-frames': 120,
-				'veo2-fast-components': 100
-			};
-			const credits = defaultCredits[selectedGoogleVideoModel] || 100;
-			console.log(`💰 【谷歌视频积分计算】默认配置: ${selectedGoogleVideoModel} = ${credits}积分`);
-			return credits;
 		}
-
-		return 50;
 	})();
 
 	// 轮询任务状态
-	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng' | 'google-video') => {
-		const serviceName = service === 'kling' ? '可灵' : service === 'jimeng' ? '即梦' : '谷歌视频';
+	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng') => {
+		const serviceName = service === 'kling' ? '可灵' : '即梦';
 		console.log(`🎬 【${serviceName}轮询】开始轮询任务:`, taskId);
 
 		if (!$user?.token) {
@@ -1098,7 +786,7 @@
 			clearInterval(pollingInterval);
 		}
 
-		const maxAttempts = 225; // 最多轮询225次 (约30分钟，8秒间隔)
+		const maxAttempts = 120; // 最多轮询120次 (约20分钟)
 		let attempts = 0;
 
 		pollingInterval = setInterval(async () => {
@@ -1107,12 +795,8 @@
 				console.log(`🎬 【${serviceName}轮询】第${attempts}次查询任务状态: ${taskId}`);
 
 				const getTaskStatusFunction =
-					service === 'kling'
-						? getKlingTaskStatus
-						: service === 'jimeng'
-							? getJimengTaskStatus
-							: getGoogleVideoTaskStatus;
-				let task = await getTaskStatusFunction($user.token, taskId);
+					service === 'kling' ? getKlingTaskStatus : getJimengTaskStatus;
+				const task = await getTaskStatusFunction($user.token, taskId);
 
 				if (task) {
 					console.log(`🎬 【${serviceName}轮询】任务状态更新:`, {
@@ -1122,54 +806,30 @@
 						hasVideo: !!task.videoUrl
 					});
 
-					// 更新前端状态
+					// 更新前端状态（后端已返回serviceType）
 					if (currentTask && currentTask.id === taskId) {
-						currentTask = { ...task, serviceType: currentTask.serviceType };
+						currentTask = { ...task };
 					}
 
-					// 更新历史记录中的任务
-					taskHistory = taskHistory.map((t) =>
-						t.id === taskId ? { ...task, serviceType: t.serviceType } : t
-					);
+					// 更新历史记录中的任务（后端已返回serviceType）
+					taskHistory = taskHistory.map((t) => (t.id === taskId ? { ...task } : t));
 
 					// 检查完成
 					if (task.status === 'succeed' || task.videoUrl) {
 						console.log(`🎉 ${serviceName}视频任务完成!`);
-
-						// 任务完成后，立即再查询一次以获取最新的云存储URL
-						try {
-							console.log(`🔄 【${serviceName}】任务完成，获取最新状态...`);
-							const finalTask = await getTaskStatusFunction($user.token, taskId);
-							if (finalTask && finalTask.videoUrl) {
-								task = { ...finalTask, serviceType: task.serviceType };
-								console.log(`✅ 【${serviceName}】获取到最新视频URL: ${finalTask.videoUrl}`);
-							}
-						} catch (error) {
-							console.warn(`⚠️ 【${serviceName}】获取最新状态失败:`, error);
-						}
-
 						generatedVideo = { ...task };
 						isGenerating = false;
 						currentTask = null;
-
-						// 更新历史记录中的最终任务状态
-						taskHistory = taskHistory.map((t) =>
-							t.id === taskId ? { ...task, serviceType: t.serviceType } : t
-						);
 
 						if (pollingInterval) {
 							clearInterval(pollingInterval);
 							pollingInterval = null;
 						}
 
-						// 更新积分余额（只更新一次，避免频繁调用）
+						// 更新积分余额
 						try {
 							const getCreditsFunction =
-								service === 'kling'
-									? getKlingUserCredits
-									: service === 'jimeng'
-										? getJimengUserCredits
-										: getGoogleVideoUserCredits;
+								service === 'kling' ? getKlingUserCredits : getJimengUserCredits;
 							const credits = await getCreditsFunction($user.token);
 							if (credits) {
 								const oldBalance = userCredits;
@@ -1215,14 +875,11 @@
 			} catch (error) {
 				console.error(`🎬 【${serviceName}轮询】轮询出错:`, error);
 			}
-		}, 8000); // 每8秒轮询一次，提高响应速度
+		}, 10000); // 每10秒轮询一次
 	};
 
 	// 图片上传处理
-	const handleImageUpload = async (
-		event: Event,
-		type: 'input' | 'tail' | 'static_mask' | 'google-video'
-	) => {
+	const handleImageUpload = async (event: Event, type: 'input' | 'tail' | 'static_mask') => {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
@@ -1253,36 +910,14 @@
 			} else if (type === 'static_mask') {
 				staticMask = base64;
 				console.log('🎬 【可灵】静态笔刷上传成功:', file.name);
-			} else if (type === 'google-video') {
-				// Google Video多图片上传
-				if (googleVideoImages.length >= currentGoogleVideoMaxImages) {
-					const model = googleVideoImageToVideoModels.find(
-						(m) => m.value === selectedGoogleVideoModel
-					);
-					toast.error(
-						`${model?.label || selectedGoogleVideoModel}模型最多支持${currentGoogleVideoMaxImages}张图片`
-					);
-					return;
-				}
-				googleVideoImages = [...googleVideoImages, base64];
-				console.log(
-					'🎬 【谷歌视频】图片上传成功:',
-					file.name,
-					`(${googleVideoImages.length}/${currentGoogleVideoMaxImages})`
-				);
 			}
 		} catch (error) {
-			console.error('🎬 图片上传失败:', error);
+			console.error('🎬 【可灵】图片上传失败:', error);
 			toast.error('图片上传失败');
 		}
 
 		// 清空input值，允许重复上传同一文件
 		target.value = '';
-	};
-
-	// Google Video删除图片
-	const removeGoogleVideoImage = (index: number) => {
-		googleVideoImages = googleVideoImages.filter((_, i) => i !== index);
 	};
 
 	// 文件转Base64
@@ -1296,7 +931,7 @@
 	};
 
 	// 删除任务
-	const handleDeleteTask = async (task: KlingTask | JimengTask | GoogleVideoTask) => {
+	const handleDeleteTask = async (task: KlingTask | JimengTask) => {
 		if (!$user?.token) {
 			toast.error('请先登录');
 			return;
@@ -1308,17 +943,11 @@
 
 			// 确定服务类型
 			const taskServiceType = task.serviceType || 'kling'; // 默认为kling
-			const serviceName =
-				taskServiceType === 'kling' ? '可灵' : taskServiceType === 'jimeng' ? '即梦' : '谷歌视频';
+			const serviceName = taskServiceType === 'kling' ? '可灵' : '即梦';
 
 			console.log(`🗑️ 删除${serviceName}任务: ${task.id}`);
 
-			const deleteFunction =
-				taskServiceType === 'kling'
-					? deleteKlingTask
-					: taskServiceType === 'jimeng'
-						? deleteJimengTask
-						: deleteGoogleVideoTask;
+			const deleteFunction = taskServiceType === 'kling' ? deleteKlingTask : deleteJimengTask;
 			const success = await deleteFunction($user.token, task.id);
 
 			if (success) {
@@ -1376,11 +1005,11 @@
 	};
 
 	// 视频查看模态框
-	let selectedVideoForViewing: KlingTask | JimengTask | GoogleVideoTask | null = null;
+	let selectedVideoForViewing: KlingTask | JimengTask | null = null;
 	let isVideoModalOpen = false;
 
 	// 打开视频查看模态框
-	const openVideoModal = (task: KlingTask | JimengTask | GoogleVideoTask) => {
+	const openVideoModal = (task: KlingTask | JimengTask) => {
 		selectedVideoForViewing = task;
 		isVideoModalOpen = true;
 	};
@@ -1412,7 +1041,7 @@
 	};
 
 	// 使用相同参数重新生成
-	const regenerateWithSameParams = async (task: KlingTask | JimengTask | GoogleVideoTask) => {
+	const regenerateWithSameParams = async (task: KlingTask | JimengTask) => {
 		if (!task.prompt) {
 			toast.error('无法获取原始提示词');
 			return;
@@ -1428,38 +1057,22 @@
 		selectedAspectRatio = task.aspectRatio;
 		cfgScale = task.cfgScale || 0.5;
 
-		// 即梦特有参数
-		if (taskServiceType === 'jimeng') {
-			jimengWatermark = (task as JimengTask).watermark || false;
-		}
-
 		// 可灵特有参数
 		if (taskServiceType === 'kling') {
 			selectedMode = task.mode || 'std';
 			negativePrompt = task.negativePrompt || '';
 		}
 
-		// Google Video特有参数
-		if (taskServiceType === 'google-video') {
-			selectedGoogleVideoModel = (task as GoogleVideoTask).model || 'veo3';
-			// Note: enhance_prompt is not stored in task history, use default from config
-			googleVideoEnhancePrompt = googleVideoConfig?.default_enhance_prompt || false;
+		// 即梦特有参数
+		if (taskServiceType === 'jimeng') {
+			watermark = task.watermark || false;
 		}
 
 		if (task.action === 'IMAGE_TO_VIDEO') {
 			selectedGenerationType = 'image-to-video';
-			if (taskServiceType === 'google-video') {
-				// Google Video的图片数组（从任务历史中恢复可能有限）
-				googleVideoImages = task.inputImage ? [task.inputImage] : [];
-				inputImage = null;
-			} else {
-				inputImage = task.inputImage || null;
-				googleVideoImages = [];
-			}
+			inputImage = task.inputImage || null;
 		} else {
 			selectedGenerationType = 'text-to-video';
-			inputImage = null;
-			googleVideoImages = [];
 		}
 
 		// 开始生成
@@ -1469,8 +1082,6 @@
 
 	// 积分余额定期刷新
 	let creditRefreshInterval: NodeJS.Timeout | null = null;
-	let creditRefreshFailCount = 0;
-	const MAX_CREDIT_REFRESH_FAILS = 3;
 
 	// 组件销毁时清理资源
 	import { onDestroy } from 'svelte';
@@ -1482,6 +1093,10 @@
 		if (creditRefreshInterval) {
 			clearInterval(creditRefreshInterval);
 			creditRefreshInterval = null;
+		}
+		if (serviceSwitchTimeout) {
+			clearTimeout(serviceSwitchTimeout);
+			serviceSwitchTimeout = null;
 		}
 	});
 </script>
@@ -1510,7 +1125,7 @@
 						<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							🎬 视频生成服务
 						</h3>
-						<div class="grid grid-cols-3 gap-2 mb-3">
+						<div class="grid grid-cols-2 gap-2 mb-3">
 							<button
 								class="px-3 py-2 text-sm rounded border transition-colors {selectedService ===
 								'kling'
@@ -1529,15 +1144,6 @@
 							>
 								🌟 即梦 AI
 							</button>
-							<button
-								class="px-3 py-2 text-sm rounded border transition-colors {selectedService ===
-								'google-video'
-									? 'bg-blue-500 text-white border-blue-500'
-									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-								on:click={() => (selectedService = 'google-video')}
-							>
-								📹 谷歌视频
-							</button>
 						</div>
 
 						<!-- 当前选择的服务状态 -->
@@ -1553,7 +1159,7 @@
 									<div class="text-xl">🎬</div>
 								</div>
 							</div>
-						{:else if selectedService === 'jimeng'}
+						{:else}
 							<div class="rounded-lg p-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
 								<div class="flex items-center justify-between">
 									<div>
@@ -1565,71 +1171,19 @@
 									<div class="text-xl">🌟</div>
 								</div>
 							</div>
-						{:else}
-							<div class="rounded-lg p-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
-								<div class="flex items-center justify-between">
-									<div>
-										<div class="font-medium">谷歌视频</div>
-										<div class="text-xs opacity-75">
-											{googleVideoConfig?.enabled ? '已启用' : '未配置'}
-										</div>
-									</div>
-									<div class="text-xl">📹</div>
-								</div>
-							</div>
-						{/if}
-
-						<!-- Google Video特有提示 -->
-						{#if selectedService === 'google-video' && googleVideoConfig?.enabled}
-							<div
-								class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mt-3"
-							>
-								<div class="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">
-									💡 谷歌视频服务提示
-								</div>
-								<div class="text-xs text-blue-600 dark:text-blue-400 space-y-1">
-									<div>• 支持最高120秒高质量视频生成</div>
-									<div>• 图生视频模型对图片数量有限制</div>
-									<div>• 建议使用详细的英文提示词获得最佳效果</div>
-									{#if googleVideoConfig?.default_enhance_prompt}
-										<div>• 已启用中文提示词自动翻译</div>
-									{/if}
-								</div>
-							</div>
 						{/if}
 					</div>
 
 					<!-- 当前服务信息 -->
 					<div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-						<div>
-							当前服务: {selectedService === 'kling'
-								? '可灵'
-								: selectedService === 'jimeng'
-									? '即梦'
-									: '谷歌视频'}视频生成
-						</div>
+						<div>当前服务: {selectedService === 'kling' ? '可灵' : '即梦'}视频生成</div>
 						<div>消耗积分: {requiredCredits}积分/次</div>
 						<div class="flex justify-between items-center">
-							<div class="flex items-center gap-2">
-								<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
-								{#if creditRefreshInterval}
-									<div
-										class="w-2 h-2 bg-green-500 rounded-full animate-pulse"
-										title="积分自动刷新正常"
-									></div>
-								{:else}
-									<div class="w-2 h-2 bg-red-500 rounded-full" title="积分自动刷新已暂停"></div>
-								{/if}
-							</div>
+							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
 							<button
 								class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded transition-colors"
 								on:click={async () => {
 									await Promise.all([loadUserData(), refreshCredits()]);
-									// 重新启用积分自动刷新（如果之前因为错误被暂停）
-									creditRefreshFailCount = 0; // 重置失败计数
-									if (!creditRefreshInterval) {
-										startCreditRefresh(); // 确保积分刷新timer在运行
-									}
 									toast.success('配置和积分已刷新');
 								}}
 								disabled={loadingData}
@@ -1684,16 +1238,10 @@
 								on:click={generateVideo}
 								disabled={isGenerating ||
 									!prompt.trim() ||
-									!(selectedService === 'kling'
-										? klingConfig?.enabled
-										: selectedService === 'jimeng'
-											? jimengConfig?.enabled
-											: googleVideoConfig?.enabled)}
+									!(selectedService === 'kling' ? klingConfig?.enabled : jimengConfig?.enabled)}
 								class="px-4 py-1 {selectedService === 'kling'
 									? 'bg-purple-500 hover:bg-purple-600'
-									: selectedService === 'jimeng'
-										? 'bg-green-500 hover:bg-green-600'
-										: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
+									: 'bg-green-500 hover:bg-green-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
 									<Spinner className="size-3" />
@@ -1730,136 +1278,48 @@
 							</div>
 						{/if}
 
-						<!-- 输入图片 -->
-						{#if selectedService === 'google-video'}
-							<!-- Google Video多图片上传 -->
-							<div>
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-									上传图片 ({googleVideoImages.length}/{currentGoogleVideoMaxImages})
-								</label>
-								{#if currentGoogleVideoModelOptions.find((m) => m.value === selectedGoogleVideoModel)}
-									<div class="text-xs text-blue-600 dark:text-blue-400 mb-2">
-										{currentGoogleVideoModelOptions.find(
-											(m) => m.value === selectedGoogleVideoModel
-										)?.description}
+						<!-- 输入图片（首帧） -->
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+								{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
+									? '首帧图片'
+									: '输入图片'}
+							</label>
+							<div
+								class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+							>
+								{#if inputImage}
+									<div class="relative">
+										<img src={inputImage} alt="输入图片" class="w-full h-32 object-cover rounded" />
+										<button
+											on:click={() => (inputImage = null)}
+											class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+											title="删除图片"
+										>
+											×
+										</button>
 									</div>
-								{/if}
-
-								<!-- 已上传的图片列表 -->
-								{#if googleVideoImages.length > 0}
-									<div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-3">
-										{#each googleVideoImages as image, index}
-											<div class="relative">
-												<img
-													src={image}
-													alt="图片{index + 1}"
-													class="w-full h-24 object-cover rounded border"
-												/>
-												<button
-													on:click={() => removeGoogleVideoImage(index)}
-													class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors"
-													title="删除图片"
-												>
-													×
-												</button>
-												<div
-													class="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 rounded"
-												>
-													{selectedGoogleVideoModel === 'veo2-fast-frames'
-														? index === 0
-															? '首帧'
-															: '尾帧'
-														: selectedGoogleVideoModel === 'veo2-fast-components'
-															? `元素${index + 1}`
-															: '首帧'}
-												</div>
-											</div>
-										{/each}
-									</div>
-								{/if}
-
-								<!-- 上传按钮 -->
-								{#if googleVideoImages.length < currentGoogleVideoMaxImages}
-									<div
-										class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-									>
-										<div class="text-center">
-											<input
-												type="file"
-												id="google-video-image"
-												accept="image/*"
-												class="hidden"
-												on:change={(e) => handleImageUpload(e, 'google-video')}
-											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('google-video-image')?.click()}
-												class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
-											>
-												{googleVideoImages.length === 0 ? '选择图片' : '添加图片'}
-											</button>
-											<div class="text-xs text-gray-500 mt-2">
-												支持 JPG、PNG、WebP，最大 10MB
-												{#if selectedGoogleVideoModel === 'veo2-fast-frames'}
-													<br />需要上传首帧和尾帧图片
-												{:else if selectedGoogleVideoModel === 'veo2-fast-components'}
-													<br />需要上传3张视频元素图片
-												{:else}
-													<br />需要上传1张首帧图片
-												{/if}
-											</div>
-										</div>
+								{:else}
+									<div class="text-center">
+										<input
+											type="file"
+											id="input-image"
+											accept="image/*"
+											class="hidden"
+											on:change={(e) => handleImageUpload(e, 'input')}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('input-image')?.click()}
+											class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+										>
+											选择图片
+										</button>
+										<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
 									</div>
 								{/if}
 							</div>
-						{:else}
-							<!-- 可灵和即梦的单图片上传 -->
-							<div>
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-									{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
-										? '首帧图片'
-										: '输入图片'}
-								</label>
-								<div
-									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-								>
-									{#if inputImage}
-										<div class="relative">
-											<img
-												src={inputImage}
-												alt="输入图片"
-												class="w-full h-32 object-cover rounded"
-											/>
-											<button
-												on:click={() => (inputImage = null)}
-												class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
-												title="删除图片"
-											>
-												×
-											</button>
-										</div>
-									{:else}
-										<div class="text-center">
-											<input
-												type="file"
-												id="input-image"
-												accept="image/*"
-												class="hidden"
-												on:change={(e) => handleImageUpload(e, 'input')}
-											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('input-image')?.click()}
-												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
-											>
-												选择图片
-											</button>
-											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
-										</div>
-									{/if}
-								</div>
-							</div>
-						{/if}
+						</div>
 
 						<!-- 可灵特有的尾帧图片 (首尾帧模式) -->
 						{#if selectedService === 'kling' && selectedImageVideoMode === 'first-last'}
@@ -2264,7 +1724,7 @@
 							<div>视频参数</div>
 						</div>
 
-						<!-- 模型版本选择 -->
+						<!-- 可灵特有的模型版本选择 -->
 						{#if selectedService === 'kling'}
 							<div>
 								<div class="mb-1 text-xs text-gray-500">模型版本</div>
@@ -2277,158 +1737,102 @@
 									{/each}
 								</select>
 							</div>
-						{:else if selectedService === 'google-video'}
+						{/if}
+
+						<div class="grid {selectedService === 'kling' ? 'grid-cols-2' : 'grid-cols-1'} gap-3">
+							<!-- 可灵特有的视频模式 -->
+							{#if selectedService === 'kling'}
+								<div>
+									<div class="mb-1 text-xs text-gray-500">视频模式</div>
+									<select
+										bind:value={selectedMode}
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									>
+										{#each modeOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+							{/if}
+
 							<div>
-								<div class="mb-1 text-xs text-gray-500">Google Video模型</div>
+								<div class="mb-1 text-xs text-gray-500">视频时长</div>
 								<select
-									bind:value={selectedGoogleVideoModel}
+									bind:value={selectedDuration}
 									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
 								>
-									{#each currentGoogleVideoModelOptions as option}
+									{#each durationOptions as option}
 										<option value={option.value}>{option.label}</option>
 									{/each}
 								</select>
-								<div class="mt-1 text-xs text-gray-500">
-									{currentGoogleVideoModelOptions.find((m) => m.value === selectedGoogleVideoModel)
-										?.description || ''}
-								</div>
 							</div>
-						{/if}
 
-						<!-- 只对可灵和即梦显示传统视频参数 -->
-						{#if selectedService !== 'google-video'}
-							<div class="grid {selectedService === 'kling' ? 'grid-cols-2' : 'grid-cols-1'} gap-3">
-								<!-- 可灵特有的视频模式 -->
-								{#if selectedService === 'kling'}
-									<div>
-										<div class="mb-1 text-xs text-gray-500">视频模式</div>
-										<select
-											bind:value={selectedMode}
-											class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+							<div>
+								<div class="mb-1 text-xs text-gray-500">画面比例</div>
+								<select
+									bind:value={selectedAspectRatio}
+									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+								>
+									{#each aspectRatioOptions as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
+
+							<div>
+								<div class="mb-1 text-xs text-gray-500">
+									CFG Scale
+									<Tooltip content="生成自由度，值越大越符合提示词 (0-1)">
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke-width="1.5"
+											stroke="currentColor"
+											class="w-3 h-3 inline ml-1"
 										>
-											{#each modeOptions as option}
-												<option value={option.value}>{option.label}</option>
-											{/each}
-										</select>
-									</div>
-								{/if}
-
-								<div>
-									<div class="mb-1 text-xs text-gray-500">视频时长</div>
-									<select
-										bind:value={selectedDuration}
-										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-									>
-										{#each durationOptions as option}
-											<option value={option.value}>{option.label}</option>
-										{/each}
-									</select>
-								</div>
-
-								<div>
-									<div class="mb-1 text-xs text-gray-500">画面比例</div>
-									<select
-										bind:value={selectedAspectRatio}
-										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-									>
-										{#each aspectRatioOptions as option}
-											<option value={option.value}>{option.label}</option>
-										{/each}
-									</select>
-								</div>
-
-								<div>
-									<div class="mb-1 text-xs text-gray-500">
-										CFG Scale
-										<Tooltip content="生成自由度，值越大越符合提示词 (0-1)">
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												fill="none"
-												viewBox="0 0 24 24"
-												stroke-width="1.5"
-												stroke="currentColor"
-												class="w-3 h-3 inline ml-1"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-												/>
-											</svg>
-										</Tooltip>
-									</div>
-									<input
-										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-										type="number"
-										min="0"
-										max="1"
-										step="0.1"
-										bind:value={cfgScale}
-									/>
-								</div>
-
-								<!-- 即梦水印选项 -->
-								{#if selectedService === 'jimeng'}
-									<div>
-										<div class="mb-1 text-xs text-gray-500">水印选项</div>
-										<div class="flex items-center space-x-2">
-											<input
-												id="jimeng-watermark"
-												type="checkbox"
-												bind:checked={jimengWatermark}
-												class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
 											/>
-											<label
-												for="jimeng-watermark"
-												class="text-sm text-gray-900 dark:text-gray-300"
-											>
-												生成视频包含水印
-											</label>
-										</div>
-									</div>
-								{/if}
+										</svg>
+									</Tooltip>
+								</div>
+								<input
+									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									type="number"
+									min="0"
+									max="1"
+									step="0.1"
+									bind:value={cfgScale}
+								/>
 							</div>
-						{/if}
+						</div>
 					</div>
 
-					<!-- Google Video特有的提示词增强 -->
-					{#if selectedService === 'google-video'}
-						<div
-							class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3"
-						>
-							<div class="flex items-center space-x-3">
+					<!-- 即梦特有的水印设置 -->
+					{#if selectedService === 'jimeng'}
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+								水印设置
+							</label>
+							<div class="flex items-center space-x-2">
 								<input
 									type="checkbox"
-									id="google-enhance-prompt"
-									bind:checked={googleVideoEnhancePrompt}
-									class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+									id="watermark-checkbox"
+									bind:checked={watermark}
+									class="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500 dark:focus:ring-green-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
 								/>
 								<label
-									for="google-enhance-prompt"
-									class="text-sm font-medium text-gray-700 dark:text-gray-300"
+									for="watermark-checkbox"
+									class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
 								>
-									提示词增强（中文转英文）
+									在生成的视频中包含水印
 								</label>
-								<Tooltip content="Google Video只支持英文提示词，开启此选项可自动将中文转换为英文">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke-width="1.5"
-										stroke="currentColor"
-										class="w-3 h-3 inline ml-1"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-										/>
-									</svg>
-								</Tooltip>
 							</div>
-							<div class="text-xs text-blue-600 dark:text-blue-400 mt-2">
-								注意：Google Video API仅支持 prompt（提示词）、model（模型）和
-								enhance_prompt（提示词增强）参数，不支持时长、比例和CFG Scale设置。
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+								启用后，生成的视频将包含服务提供商的水印
 							</div>
 						</div>
 					{/if}
@@ -2780,23 +2184,10 @@
 							{#if generatedVideo.videoUrl}
 								<div class="relative mb-2">
 									<video
-										src={generatedVideo.cloud_video_url || generatedVideo.videoUrl}
+										src={generatedVideo.videoUrl}
 										controls
 										class="w-full h-32 object-cover rounded cursor-pointer"
 										on:click={() => openVideoModal(generatedVideo)}
-										on:error={(e) => {
-											// 如果云存储URL加载失败，自动切换到原始URL
-											if (
-												generatedVideo.cloud_video_url &&
-												e.target.src === generatedVideo.cloud_video_url
-											) {
-												console.warn(
-													'🔄 云存储视频加载失败，切换到原始URL:',
-													generatedVideo.cloud_video_url
-												);
-												e.target.src = generatedVideo.videoUrl;
-											}
-										}}
 									>
 										您的浏览器不支持视频播放
 									</video>
@@ -2941,12 +2332,6 @@
 											>
 												即梦 AI
 											</span>
-										{:else if task.serviceType === 'google-video'}
-											<span
-												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-blue-500 to-indigo-500"
-											>
-												谷歌视频
-											</span>
 										{:else}
 											<span
 												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -2960,21 +2345,11 @@
 									{#if task.videoUrl}
 										<div class="relative aspect-video">
 											<video
-												src={task.cloud_video_url || task.videoUrl}
+												src={task.videoUrl}
 												class="w-full h-full object-cover cursor-pointer"
 												on:click={() => openVideoModal(task)}
 												muted
 												preload="metadata"
-												on:error={(e) => {
-													// 如果云存储URL加载失败，自动切换到原始URL
-													if (task.cloud_video_url && e.target.src === task.cloud_video_url) {
-														console.warn(
-															'🔄 历史视频云存储加载失败，切换到原始URL:',
-															task.cloud_video_url
-														);
-														e.target.src = task.videoUrl;
-													}
-												}}
 											>
 												您的浏览器不支持视频播放
 											</video>
@@ -2988,10 +2363,7 @@
 															on:click|stopPropagation={() => {
 																const serviceName =
 																	task?.serviceType === 'jimeng' ? 'jimeng' : 'kling';
-																downloadVideo(
-																	task.cloud_video_url || task.videoUrl,
-																	`${serviceName}-${task.id}.mp4`
-																);
+																downloadVideo(task.videoUrl, `${serviceName}-${task.id}.mp4`);
 															}}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
 														>
@@ -3071,11 +2443,10 @@
 											class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2"
 										>
 											<span>
-												{task.serviceType === 'jimeng'
-													? '即梦'
-													: task.serviceType === 'google-video'
-														? '谷歌视频'
-														: '可灵'} ({task.action === 'IMAGE_TO_VIDEO' ? '图生视频' : '文生视频'})
+												{task.serviceType === 'jimeng' ? '即梦' : '可灵'} ({task.action ===
+												'IMAGE_TO_VIDEO'
+													? '图生视频'
+													: '文生视频'})
 											</span>
 											<span
 												>{new Date(
@@ -3089,8 +2460,6 @@
 											<span class="text-gray-600 dark:text-gray-400">
 												{#if task.serviceType === 'jimeng'}
 													{task.duration}秒 • {task.aspectRatio}
-												{:else if task.serviceType === 'google-video'}
-													{task.model || 'veo3'} • {task.duration}秒 • {task.aspectRatio}
 												{:else}
 													{task.mode || 'std'} • {task.duration}秒 • {task.aspectRatio}
 												{/if}
@@ -3158,12 +2527,6 @@
 							>
 								即梦 AI
 							</span>
-						{:else if selectedVideoForViewing?.serviceType === 'google-video'}
-							<span
-								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-blue-500 to-indigo-500"
-							>
-								谷歌视频
-							</span>
 						{:else}
 							<span
 								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -3193,23 +2556,10 @@
 				<!-- 视频显示区域 -->
 				<div class="relative">
 					<video
-						src={selectedVideoForViewing.cloud_video_url || selectedVideoForViewing.videoUrl}
+						src={selectedVideoForViewing.videoUrl}
 						controls
 						class="w-full max-h-[70vh] object-contain"
 						autoplay
-						on:error={(e) => {
-							// 如果云存储URL加载失败，自动切换到原始URL
-							if (
-								selectedVideoForViewing.cloud_video_url &&
-								e.target.src === selectedVideoForViewing.cloud_video_url
-							) {
-								console.warn(
-									'🔄 模态框视频云存储加载失败，切换到原始URL:',
-									selectedVideoForViewing.cloud_video_url
-								);
-								e.target.src = selectedVideoForViewing.videoUrl;
-							}
-						}}
 					>
 						您的浏览器不支持视频播放
 					</video>
@@ -3229,8 +2579,6 @@
 						<div class="text-xs text-gray-500 dark:text-gray-400">
 							{#if selectedVideoForViewing?.serviceType === 'jimeng'}
 								{selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
-							{:else if selectedVideoForViewing?.serviceType === 'google-video'}
-								{selectedVideoForViewing?.model || 'veo3'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{:else}
 								{selectedVideoForViewing?.mode || 'std'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{/if}
@@ -3241,13 +2589,9 @@
 						<button
 							on:click={() => {
 								const serviceName =
-									selectedVideoForViewing?.serviceType === 'jimeng'
-										? 'jimeng'
-										: selectedVideoForViewing?.serviceType === 'google-video'
-											? 'google-video'
-											: 'kling';
+									selectedVideoForViewing?.serviceType === 'jimeng' ? 'jimeng' : 'kling';
 								downloadVideo(
-									selectedVideoForViewing.cloud_video_url || selectedVideoForViewing.videoUrl,
+									selectedVideoForViewing.videoUrl,
 									`${serviceName}-${selectedVideoForViewing.id}.mp4`
 								);
 							}}

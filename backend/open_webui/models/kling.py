@@ -393,6 +393,8 @@ class KlingTask(Base):
             "updated_at": (
                 self.updated_at.isoformat() if self.updated_at is not None else None
             ),
+            # 添加服务类型标识
+            "serviceType": "kling",
         }
 
 

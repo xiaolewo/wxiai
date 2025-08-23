@@ -77,7 +77,7 @@ class DreamWorkApiClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 print(f"🎨 【DreamWork API】发送请求到: {url}")
                 response = await client.post(url, json=request_data, headers=headers)
                 print(f"🎨 【DreamWork API】响应状态: {response.status_code}")
@@ -111,13 +111,6 @@ class DreamWorkApiClient:
                             error_message = error_json["message"]
                         elif "detail" in error_json:
                             error_message = error_json["detail"]
-
-                        # 特殊处理upstream error
-                        if "upstream error" in error_message.lower():
-                            error_message = "DreamWork服务暂时不可用，请稍后重试"
-                            print(
-                                f"🎨 【DreamWork API】检测到upstream error，建议用户稍后重试"
-                            )
 
                         raise ValueError(
                             f"DreamWork API错误 ({response.status_code}): {error_message}"
@@ -246,7 +239,7 @@ class DreamWorkApiClient:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 print(f"🎨 【DreamWork API】发送请求到: {url}")
                 response = await client.post(url, json=request_data, headers=headers)
                 print(f"🎨 【DreamWork API】响应状态: {response.status_code}")
@@ -280,13 +273,6 @@ class DreamWorkApiClient:
                             error_message = error_json["message"]
                         elif "detail" in error_json:
                             error_message = error_json["detail"]
-
-                        # 特殊处理upstream error
-                        if "upstream error" in error_message.lower():
-                            error_message = "DreamWork服务暂时不可用，请稍后重试"
-                            print(
-                                f"🎨 【DreamWork API】检测到upstream error，建议用户稍后重试"
-                            )
 
                         raise ValueError(
                             f"DreamWork API错误 ({response.status_code}): {error_message}"

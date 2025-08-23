@@ -70,6 +70,7 @@ async def get_jimeng_config(user=Depends(get_admin_user)):
             "default_duration": "5",
             "default_aspect_ratio": "16:9",
             "default_cfg_scale": 0.5,
+            "default_watermark": False,
             "credits_per_5s": 30,
             "credits_per_10s": 60,
             "max_concurrent_tasks": 5,
@@ -90,6 +91,7 @@ async def get_jimeng_user_config(user=Depends(get_verified_user)):
             "default_duration": "5",
             "default_aspect_ratio": "16:9",
             "default_cfg_scale": 0.5,
+            "default_watermark": False,
             "credits_per_5s": 30,
             "credits_per_10s": 60,
         }
@@ -100,6 +102,7 @@ async def get_jimeng_user_config(user=Depends(get_verified_user)):
         "default_duration": config.default_duration,
         "default_aspect_ratio": config.default_aspect_ratio,
         "default_cfg_scale": config.default_cfg_scale,
+        "default_watermark": config.default_watermark,
         "credits_per_5s": config.credits_per_5s,
         "credits_per_10s": config.credits_per_10s,
     }
@@ -124,6 +127,7 @@ async def save_jimeng_config(config_data: dict, user=Depends(get_admin_user)):
         config_data.setdefault("default_duration", "5")
         config_data.setdefault("default_aspect_ratio", "16:9")
         config_data.setdefault("default_cfg_scale", 0.5)
+        config_data.setdefault("default_watermark", False)
         config_data.setdefault("credits_per_5s", 30)
         config_data.setdefault("credits_per_10s", 60)
         config_data.setdefault("max_concurrent_tasks", 5)
