@@ -50,6 +50,74 @@ logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 ####################################
 
 
+# 自动检查并添加即梦缺失字段
+def _ensure_jimeng_fields():
+    """确保即梦表包含所有必需的字段，如果缺失则自动添加"""
+    try:
+        from open_webui.internal.db import get_db
+        import sqlalchemy as sa
+        from sqlalchemy import text
+
+        log.info("🎬 检查即梦表字段...")
+
+        with get_db() as db:
+            inspector = sa.inspect(db.bind)
+
+            # 检查 jimeng_tasks 表
+            if inspector.has_table("jimeng_tasks"):
+                columns = inspector.get_columns("jimeng_tasks")
+                column_names = [col["name"] for col in columns]
+
+                # 添加 watermark 字段
+                if "watermark" not in column_names:
+                    log.info("➕ 添加 watermark 字段到 jimeng_tasks...")
+                    db.execute(
+                        text(
+                            "ALTER TABLE jimeng_tasks ADD COLUMN watermark BOOLEAN NOT NULL DEFAULT FALSE"
+                        )
+                    )
+                    db.commit()
+                    log.info("✅ watermark 字段添加成功")
+
+                # 添加 cloud_video_url 字段
+                if "cloud_video_url" not in column_names:
+                    log.info("➕ 添加 cloud_video_url 字段到 jimeng_tasks...")
+                    db.execute(
+                        text("ALTER TABLE jimeng_tasks ADD COLUMN cloud_video_url TEXT")
+                    )
+                    db.commit()
+                    log.info("✅ cloud_video_url 字段添加成功")
+
+            # 检查 jimeng_config 表
+            if inspector.has_table("jimeng_config"):
+                config_columns = inspector.get_columns("jimeng_config")
+                config_column_names = [col["name"] for col in config_columns]
+
+                # 添加 default_watermark 字段
+                if "default_watermark" not in config_column_names:
+                    log.info("➕ 添加 default_watermark 字段到 jimeng_config...")
+                    db.execute(
+                        text(
+                            "ALTER TABLE jimeng_config ADD COLUMN default_watermark BOOLEAN NOT NULL DEFAULT FALSE"
+                        )
+                    )
+                    db.commit()
+                    log.info("✅ default_watermark 字段添加成功")
+
+        log.info("🎬 即梦字段检查完成")
+
+    except Exception as e:
+        # 如果是只读数据库等问题，记录警告但不抛出异常
+        if (
+            "readonly database" in str(e).lower()
+            or "database is locked" in str(e).lower()
+        ):
+            log.warning(f"⚠️  数据库只读，跳过即梦字段检查: {e}")
+        else:
+            log.warning(f"⚠️  即梦字段检查失败: {e}")
+        # 不抛出异常，让应用正常启动
+
+
 # Function to run the alembic migrations
 def run_migrations():
     log.info("Running migrations")
@@ -91,6 +159,12 @@ def run_migrations():
             log.info("Tables created successfully")
         except Exception as create_error:
             log.exception(f"Error creating tables directly: {create_error}")
+
+    # 自动检查并添加即梦缺失字段
+    try:
+        _ensure_jimeng_fields()
+    except Exception as field_error:
+        log.warning(f"Failed to ensure Jimeng fields: {field_error}")
 
 
 # Delay migration execution to avoid circular imports
