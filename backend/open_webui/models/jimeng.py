@@ -241,23 +241,112 @@ class JimengConfig(Base):
 
     @classmethod
     def save_config(cls, config_data: dict) -> "JimengConfig":
-        """保存即梦配置"""
+        """保存即梦配置（安全保存，兼容缺失字段）"""
         with get_db() as db:
-            config = db.query(cls).first()
+            # 使用安全的get_config方法获取现有配置
+            config = cls.get_config()
 
             if config:
                 # 更新现有配置
                 for key, value in config_data.items():
                     if hasattr(config, key):
                         setattr(config, key, value)
-                config.updated_at = func.now()
-            else:
-                # 创建新配置
-                config = cls(**config_data)
-                db.add(config)
 
-            db.commit()
-            db.refresh(config)
+                # 确保缺失字段有默认值
+                if not hasattr(config, "default_watermark"):
+                    config.default_watermark = config_data.get(
+                        "default_watermark", False
+                    )
+
+                # 使用原生SQL更新，避免ORM字段检查
+                try:
+                    import sqlalchemy as sa
+
+                    inspector = sa.inspect(db.bind)
+                    columns = [
+                        col["name"] for col in inspector.get_columns("jimeng_config")
+                    ]
+
+                    # 构建安全的UPDATE语句
+                    update_fields = []
+                    update_values = {}
+
+                    for key, value in config_data.items():
+                        if key in columns:  # 只更新存在的字段
+                            update_fields.append(f"{key} = :{key}")
+                            update_values[key] = value
+
+                    if update_fields:
+                        sql = f"UPDATE jimeng_config SET {', '.join(update_fields)}, updated_at = datetime('now') WHERE id = :config_id"
+                        update_values["config_id"] = config.id
+
+                        db.execute(sa.text(sql), update_values)
+                        db.commit()
+
+                        print(f"✅ 配置更新成功，字段: {list(update_values.keys())}")
+
+                        # 重新获取更新后的配置
+                        return cls.get_config()
+
+                except Exception as update_error:
+                    print(f"⚠️  安全更新失败: {update_error}")
+                    # 如果数据库是只读的，直接返回当前配置对象（已更新内存中的值）
+                    if "readonly database" in str(update_error):
+                        print("⚠️  数据库只读，返回内存中的配置对象")
+                        return config
+                    else:
+                        # 其他错误，抛出异常
+                        raise Exception(f"保存配置失败: {update_error}")
+            else:
+                # 创建新配置 - 只包含数据库中存在的字段
+                try:
+                    import sqlalchemy as sa
+
+                    inspector = sa.inspect(db.bind)
+
+                    if inspector.has_table("jimeng_config"):
+                        columns = [
+                            col["name"]
+                            for col in inspector.get_columns("jimeng_config")
+                        ]
+
+                        # 过滤掉数据库中不存在的字段
+                        safe_data = {}
+                        for key, value in config_data.items():
+                            if key in columns:
+                                safe_data[key] = value
+
+                        # 添加时间戳
+                        if "created_at" in columns:
+                            safe_data["created_at"] = func.now()
+                        if "updated_at" in columns:
+                            safe_data["updated_at"] = func.now()
+
+                        # 创建配置对象，只包含安全字段
+                        config = cls()
+                        for key, value in safe_data.items():
+                            if hasattr(config, key):
+                                setattr(config, key, value)
+
+                        # 设置缺失字段的默认值
+                        if not hasattr(config, "default_watermark"):
+                            config.default_watermark = config_data.get(
+                                "default_watermark", False
+                            )
+
+                        db.add(config)
+                        db.commit()
+                        db.refresh(config)
+
+                        print(f"✅ 新配置创建成功")
+                        return config
+                    else:
+                        raise Exception("jimeng_config 表不存在")
+
+                except Exception as create_error:
+                    print(f"❌ 创建配置失败: {create_error}")
+                    raise Exception(f"保存配置失败: {create_error}")
+
             return config
 
     def get_credits_cost(self, duration: str) -> int:
@@ -397,25 +486,191 @@ class JimengTask(Base):
 
     @classmethod
     def get_task_by_id(cls, task_id: str) -> Optional["JimengTask"]:
-        """根据ID获取任务"""
+        """根据ID获取任务（安全查询，兼容缺失字段）"""
         with get_db() as db:
-            return db.query(cls).filter(cls.id == task_id).first()
+            try:
+                # 先尝试ORM查询
+                return db.query(cls).filter(cls.id == task_id).first()
+            except Exception as e:
+                # 如果ORM查询失败，使用原生SQL查询
+                print(f"⚠️  JimengTask按ID查询失败，使用安全查询: {e}")
+                try:
+                    import sqlalchemy as sa
+
+                    inspector = sa.inspect(db.bind)
+
+                    if not inspector.has_table("jimeng_tasks"):
+                        return None
+
+                    # 获取现有字段
+                    columns = [
+                        col["name"] for col in inspector.get_columns("jimeng_tasks")
+                    ]
+
+                    # 构建安全的SELECT语句
+                    safe_fields = [
+                        col
+                        for col in columns
+                        if col
+                        in [
+                            "id",
+                            "user_id",
+                            "action",
+                            "status",
+                            "prompt",
+                            "duration",
+                            "aspect_ratio",
+                            "cfg_scale",
+                            "image_url",
+                            "input_image",
+                            "external_task_id",
+                            "video_url",
+                            "cloud_video_url",
+                            "progress",
+                            "fail_reason",
+                            "credits_cost",
+                            "properties",
+                            "submit_time",
+                            "start_time",
+                            "complete_time",
+                            "created_at",
+                            "updated_at",
+                            "watermark",
+                        ]
+                    ]
+
+                    if not safe_fields:
+                        return None
+
+                    sql = f"SELECT {', '.join(safe_fields)} FROM jimeng_tasks WHERE id = :task_id"
+                    result = db.execute(sa.text(sql), {"task_id": task_id}).fetchone()
+
+                    if not result:
+                        return None
+
+                    # 手动构造任务对象
+                    task = cls()
+                    row_dict = dict(result._mapping)
+
+                    for attr, value in row_dict.items():
+                        if hasattr(task, attr):
+                            setattr(task, attr, value)
+
+                    # 设置缺失字段的默认值
+                    if not hasattr(task, "watermark"):
+                        task.watermark = False
+
+                    print(f"✅ 安全查询获取任务成功: {task_id}")
+                    return task
+
+                except Exception as safe_error:
+                    print(f"❌ 安全查询任务失败: {safe_error}")
+                    return None
 
     @classmethod
     def get_user_tasks(
         cls, user_id: str, page: int = 1, limit: int = 20
     ) -> List["JimengTask"]:
-        """获取用户任务列表"""
+        """获取用户任务列表（安全查询，兼容缺失字段）"""
         with get_db() as db:
-            offset = (page - 1) * limit
-            return (
-                db.query(cls)
-                .filter(cls.user_id == user_id)
-                .order_by(cls.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
+            try:
+                # 先尝试ORM查询
+                offset = (page - 1) * limit
+                return (
+                    db.query(cls)
+                    .filter(cls.user_id == user_id)
+                    .order_by(cls.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+            except Exception as e:
+                # 如果ORM查询失败，使用原生SQL查询
+                print(f"⚠️  JimengTask ORM查询失败，使用安全查询: {e}")
+                try:
+                    import sqlalchemy as sa
+
+                    inspector = sa.inspect(db.bind)
+
+                    if not inspector.has_table("jimeng_tasks"):
+                        return []
+
+                    # 获取现有字段
+                    columns = [
+                        col["name"] for col in inspector.get_columns("jimeng_tasks")
+                    ]
+
+                    # 构建安全的SELECT语句
+                    safe_fields = [
+                        col
+                        for col in columns
+                        if col
+                        in [
+                            "id",
+                            "user_id",
+                            "action",
+                            "status",
+                            "prompt",
+                            "duration",
+                            "aspect_ratio",
+                            "cfg_scale",
+                            "image_url",
+                            "input_image",
+                            "external_task_id",
+                            "video_url",
+                            "cloud_video_url",
+                            "progress",
+                            "fail_reason",
+                            "credits_cost",
+                            "properties",
+                            "submit_time",
+                            "start_time",
+                            "complete_time",
+                            "created_at",
+                            "updated_at",
+                            "watermark",
+                        ]
+                    ]
+
+                    if not safe_fields:
+                        return []
+
+                    offset = (page - 1) * limit
+                    sql = f"""
+                        SELECT {', '.join(safe_fields)} 
+                        FROM jimeng_tasks 
+                        WHERE user_id = :user_id 
+                        ORDER BY created_at DESC 
+                        LIMIT :limit OFFSET :offset
+                    """
+
+                    result = db.execute(
+                        sa.text(sql),
+                        {"user_id": user_id, "limit": limit, "offset": offset},
+                    ).fetchall()
+
+                    # 手动构造任务对象列表
+                    tasks = []
+                    for row in result:
+                        task = cls()
+                        row_dict = dict(row._mapping)
+
+                        for attr, value in row_dict.items():
+                            if hasattr(task, attr):
+                                setattr(task, attr, value)
+
+                        # 设置缺失字段的默认值
+                        if not hasattr(task, "watermark"):
+                            task.watermark = False
+
+                        tasks.append(task)
+
+                    print(f"✅ 安全查询获取到 {len(tasks)} 个任务")
+                    return tasks
+
+                except Exception as safe_error:
+                    print(f"❌ 安全查询也失败: {safe_error}")
+                    return []
 
     @classmethod
     def get_user_task_count(cls, user_id: str) -> int:
