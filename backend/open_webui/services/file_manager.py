@@ -34,17 +34,29 @@ class GeneratedFileManager:
         Returns:
             TencentCOSService: COS服务实例，如果未配置返回None
         """
-        if self._cos_service is not None:
-            return self._cos_service
-
-        # 从数据库获取配置
+        # 每次都重新检查配置，避免配置更新后服务不可用的问题
         config = self.storage_config_table.get_config()
         if not config or not config.enabled:
             logger.warning("云存储配置未启用或不存在")
+            self._cos_service = None
             return None
 
-        # 创建COS服务实例
-        self._cos_service = TencentCOSService(config)
+        # 如果配置存在且启用，检查是否需要重新创建服务
+        if self._cos_service is None:
+            logger.info("创建新的COS服务实例")
+            self._cos_service = TencentCOSService(config)
+        else:
+            # 检查配置是否发生变化，如果变化则重新创建
+            current_config = self._cos_service.config
+            if (
+                current_config.secret_id != config.secret_id
+                or current_config.secret_key != config.secret_key
+                or current_config.region != config.region
+                or current_config.bucket != config.bucket
+            ):
+                logger.info("COS配置发生变化，重新创建服务实例")
+                self._cos_service = TencentCOSService(config)
+
         return self._cos_service
 
     async def save_generated_content(

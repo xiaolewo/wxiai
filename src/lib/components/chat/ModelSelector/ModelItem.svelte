@@ -203,10 +203,10 @@
 				{#if item.model?.info?.price?.request_price || item.model?.info?.price?.prompt_price || item.model?.info?.price?.prompt_cache_price || item.model?.info?.price?.completion_price}
 					<Tooltip
 						content={item.model?.info?.price?.request_price
-							? `${$i18n.t('Price For 1M Requests')}: ${item.model?.info?.price?.request_price ?? 0}`
-							: `${$i18n.t('Prompt Price For 1M Tokens')}: ${item.model?.info?.price?.prompt_price ?? 0}<br/>` +
-								`${$i18n.t('Prompt Cache Price For 1M Tokens')}: ${item.model?.info?.price?.prompt_cache_price ?? 0}<br/>` +
-								`${$i18n.t('Completion Price For 1M Tokens')}: ${item.model?.info?.price?.completion_price ?? 0}<br/>`}
+							? `${$i18n.t('Price For 1M Requests')}: ${item.model?.info?.price?.request_price ?? 0}${$i18n.t('Credit')}`
+							: `${$i18n.t('Prompt Price For 1M Tokens')}: ${item.model?.info?.price?.prompt_price ?? 0}${$i18n.t('Credit')}<br/>` +
+								`${$i18n.t('Prompt Cache Price For 1M Tokens')}: ${item.model?.info?.price?.prompt_cache_price ?? 0}${$i18n.t('Credit')}<br/>` +
+								`${$i18n.t('Completion Price For 1M Tokens')}: ${item.model?.info?.price?.completion_price ?? 0}${$i18n.t('Credit')}<br/>`}
 					>
 						<div class=" translate-y-[1px]">
 							<svg

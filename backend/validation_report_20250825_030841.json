@@ -1,0 +1,34 @@
+{
+	"timestamp": "2025-08-25T03:08:41.792352",
+	"overall_status": "failed",
+	"results": {
+		"database": {
+			"status": "passed",
+			"details": ["数据库结构验证通过"]
+		},
+		"backend_api": {
+			"status": "failed",
+			"details": [
+				"文件 open_webui/routers/kling_lip_sync.py 缺少端点: /tasks",
+				"文件 open_webui/routers/kling_lip_sync.py 缺少端点: /tasks/{task_id}",
+				"文件 open_webui/routers/kling_lip_sync.py 缺少端点: /test-connection"
+			]
+		},
+		"frontend_files": {
+			"status": "failed",
+			"details": [
+				"文件 src/lib/apis/kling-lip-sync/index.ts 缺少函数: createKlingLipSyncTask",
+				"文件 src/routes/(app)/lip-sync/+page.svelte 缺少UI元素: <form"
+			]
+		},
+		"configuration": {
+			"status": "failed",
+			"details": ["❌ Alembic配置文件不存在", "✅ 验证脚本存在", "✅ 测试文件存在"]
+		},
+		"integration": {
+			"status": "failed",
+			"details": ["无法导入音色选项"]
+		}
+	},
+	"failed_components": ["backend_api", "frontend_files", "configuration", "integration"]
+}

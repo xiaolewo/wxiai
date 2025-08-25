@@ -27,7 +27,7 @@ class Credit(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(String, unique=True, nullable=False)
-    credit = Column(Numeric(precision=24, scale=12))
+    credit = Column(Numeric(precision=8, scale=0))
 
     updated_at = Column(BigInteger)
     created_at = Column(BigInteger)
@@ -38,7 +38,7 @@ class CreditLog(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(String, index=True, nullable=False)
-    credit = Column(Numeric(precision=24, scale=12))
+    credit = Column(Numeric(precision=8, scale=0))
     detail = Column(JSON, nullable=True)
 
     created_at = Column(BigInteger, index=True)
@@ -49,7 +49,7 @@ class TradeTicket(Base):
 
     id = Column(String, primary_key=True)
     user_id = Column(String, index=True, nullable=False)
-    amount = Column(Numeric(precision=24, scale=12))
+    amount = Column(Numeric(precision=8, scale=0))
     detail = Column(JSON, nullable=True)
 
     created_at = Column(BigInteger, index=True)
@@ -61,7 +61,7 @@ class RedemptionCode(Base):
     code = Column(String, primary_key=True)
     purpose = Column(String, index=True)
     user_id = Column(String, index=True, nullable=True)
-    amount = Column(Numeric(precision=24, scale=12))
+    amount = Column(Numeric(precision=8, scale=0))
 
     created_at = Column(BigInteger, index=True)
     expired_at = Column(BigInteger, index=True, nullable=True)

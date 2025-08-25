@@ -91,27 +91,15 @@ def get_feature_price(features: Union[set, list]) -> Decimal:
     for feature in features:
         match feature:
             case "image_generation":
-                price += (
-                    Decimal(USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE.value) / 1000 / 1000
-                )
+                price += Decimal(USAGE_CALCULATE_FEATURE_IMAGE_GEN_PRICE.value) / 1000
             case "code_interpreter":
                 price += (
-                    Decimal(USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE.value)
-                    / 1000
-                    / 1000
+                    Decimal(USAGE_CALCULATE_FEATURE_CODE_EXECUTE_PRICE.value) / 1000
                 )
             case "web_search":
-                price += (
-                    Decimal(USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE.value)
-                    / 1000
-                    / 1000
-                )
+                price += Decimal(USAGE_CALCULATE_FEATURE_WEB_SEARCH_PRICE.value) / 1000
             case "direct_tool_servers":
-                price += (
-                    Decimal(USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE.value)
-                    / 1000
-                    / 1000
-                )
+                price += Decimal(USAGE_CALCULATE_FEATURE_TOOL_SERVER_PRICE.value) / 1000
     return price
 
 

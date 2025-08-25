@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import math
 from decimal import Decimal
 from typing import List, Union
 
@@ -146,6 +147,10 @@ class CreditDeduct:
         credit_deduct.run(xxx)
     """
 
+    def round_credit(self, value: Decimal) -> Decimal:
+        """将积分值精确到整数"""
+        return Decimal(str(int(round(float(value)))))
+
     def __init__(
         self,
         user: UserModel,
@@ -202,8 +207,7 @@ class CreditDeduct:
                         "features": list(self.features),
                         "custom_fee": float(self.custom_price),
                         "custom_fee_detail": {
-                            k: float(v / 1000 / 1000)
-                            for k, v in self.custom_fees.items()
+                            k: float(v) for k, v in self.custom_fees.items()
                         },
                         "is_calculate": not self.is_official_usage,
                         **self.usage.model_dump(exclude_unset=True, exclude_none=True),
@@ -245,23 +249,22 @@ class CreditDeduct:
             cache_tokens = self.usage.input_tokens_details.cached_tokens or 0
         # check cache price
         if cache_tokens > 0 and self.prompt_cache_unit_price > 0:
-            return (
-                (
-                    self.prompt_cache_unit_price * cache_tokens
-                    + self.prompt_unit_price * (self.usage.prompt_tokens - cache_tokens)
-                )
-                / 1000
-                / 1000
+            return self.prompt_cache_unit_price * math.ceil(
+                cache_tokens / 1000
+            ) + self.prompt_unit_price * math.ceil(
+                (self.usage.prompt_tokens - cache_tokens) / 1000
             )
-        return self.prompt_unit_price * self.usage.prompt_tokens / 1000 / 1000
+        return self.prompt_unit_price * math.ceil(self.usage.prompt_tokens / 1000)
 
     @property
     def completion_price(self) -> Decimal:
-        return self.completion_unit_price * self.usage.completion_tokens / 1000 / 1000
+        return self.completion_unit_price * math.ceil(
+            self.usage.completion_tokens / 1000
+        )
 
     @property
     def request_price(self) -> Decimal:
-        return self.request_unit_price / 1000 / 1000
+        return self.request_unit_price
 
     @property
     def feature_price(self) -> Decimal:
@@ -269,7 +272,7 @@ class CreditDeduct:
 
     @property
     def custom_price(self) -> Decimal:
-        return Decimal(sum(v for _, v in self.custom_fees.items())) / 1000 / 1000
+        return Decimal(sum(v for _, v in self.custom_fees.items()))
 
     @property
     def total_price(self) -> Decimal:
@@ -282,7 +285,8 @@ class CreditDeduct:
                 + self.feature_price
                 + self.custom_price
             )
-        return max(total_price, Decimal(USAGE_CALCULATE_MINIMUM_COST.value))
+        final_price = max(total_price, Decimal(USAGE_CALCULATE_MINIMUM_COST.value))
+        return self.round_credit(final_price)
 
     def add_usage_to_resp(self, response: dict) -> dict:
         if not isinstance(response, dict):
@@ -301,9 +305,7 @@ class CreditDeduct:
                 "feature_price": float(self.feature_price),
                 "features": list(self.features),
                 "custom_fee": float(self.custom_price),
-                "custom_fee_detail": {
-                    k: float(v / 1000 / 1000) for k, v in self.custom_fees.items()
-                },
+                "custom_fee_detail": {k: float(v) for k, v in self.custom_fees.items()},
                 "is_calculate": not self.is_official_usage,
                 "is_error": self.is_error,
             },

@@ -16,6 +16,7 @@
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
 	import Kling from './Settings/Kling.svelte';
+	import KlingLipSync from './Settings/KlingLipSync.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
@@ -57,6 +58,7 @@
 			'dreamwork',
 			'flux',
 			'kling',
+			'kling-lip-sync',
 			'jimeng',
 			'storage',
 			'pipelines',
@@ -550,6 +552,39 @@
 		</button>
 
 		<button
+			id="kling-lip-sync"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'kling-lip-sync'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/kling-lip-sync');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+					<path
+						d="M8 14s1.5 2 4 2 4-2 4-2"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
+					<circle cx="9" cy="9" r="1" />
+					<circle cx="15" cy="9" r="1" />
+				</svg>
+			</div>
+			<div class=" self-center">可灵对口型</div>
+		</button>
+
+		<button
 			id="jimeng"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'jimeng'
@@ -759,6 +794,12 @@
 			/>
 		{:else if selectedTab === 'kling'}
 			<Kling
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'kling-lip-sync'}
+			<KlingLipSync
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

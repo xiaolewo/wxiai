@@ -134,19 +134,22 @@ def run_migrations():
         migrations_path = OPEN_WEBUI_DIR / "migrations"
         alembic_cfg.set_main_option("script_location", str(migrations_path))
 
-        # 先尝试升级到最新的合并点
+        # 直接升级到最新的head
         try:
-            command.upgrade(alembic_cfg, "merge_heads_final")
-        except Exception as merge_error:
-            log.warning(
-                f"Failed to upgrade to merge point, trying heads: {merge_error}"
-            )
-            # 如果合并点不存在，尝试升级到所有heads
+            command.upgrade(alembic_cfg, "head")
+            log.info("Successfully upgraded to latest migration head")
+        except Exception as head_error:
+            log.warning(f"Failed to upgrade to head, trying alternatives: {head_error}")
+            # 如果单个head失败，尝试升级到所有heads
             try:
                 command.upgrade(alembic_cfg, "heads")
-            except Exception:
-                # 最后尝试升级到head（可能会失败如果有多个heads）
-                command.upgrade(alembic_cfg, "head")
+                log.info("Successfully upgraded to all migration heads")
+            except Exception as heads_error:
+                log.warning(
+                    f"Failed to upgrade to heads, trying merge point: {heads_error}"
+                )
+                # 最后尝试升级到合并点
+                command.upgrade(alembic_cfg, "merge_heads_final")
         log.info("Migrations completed successfully")
     except Exception as e:
         log.exception(f"Error running migrations: {e}")

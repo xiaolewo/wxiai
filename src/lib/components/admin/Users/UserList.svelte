@@ -430,7 +430,7 @@
 						</td>
 						<td class=" px-3 py-1"> {user.email} </td>
 
-						<td class=" px-3 py-1"> {user.credit} </td>
+						<td class=" px-3 py-1"> {Math.round(user.credit ?? 0)} </td>
 
 						<td class=" px-3 py-1">
 							{dayjs(user.last_active_at * 1000).fromNow()}

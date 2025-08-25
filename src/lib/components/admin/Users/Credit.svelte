@@ -365,15 +365,15 @@
 	>
 		<div class="flex flex-col items-center w-full">
 			<span class="text-gray-500 text-xs mb-1">{$i18n.t('Total Payment')}</span>
-			<div class="text-blue-600 font-medium">{statsData.total_payment ?? 0}</div>
+			<div class="text-blue-600 font-medium">{Math.round(statsData.total_payment ?? 0)}</div>
 		</div>
 		<div class="flex flex-col items-center border-x border-gray-200 w-full">
 			<span class="text-gray-500 text-xs mb-1">{$i18n.t('Total Credit Cost')}</span>
-			<div class="text-green-600 font-medium">{statsData.total_credit ?? 0}</div>
+			<div class="text-green-600 font-medium">{Math.round(statsData.total_credit ?? 0)}</div>
 		</div>
 		<div class="flex flex-col items-center w-full">
 			<span class="text-gray-500 text-xs mb-1">{$i18n.t('Total Token Cost')}</span>
-			<div class="text-purple-600 font-medium">{statsData.total_tokens ?? 0}</div>
+			<div class="text-purple-600 font-medium">{Math.round(statsData.total_tokens ?? 0)}</div>
 		</div>
 	</div>
 

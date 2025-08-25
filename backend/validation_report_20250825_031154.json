@@ -1,0 +1,31 @@
+{
+	"timestamp": "2025-08-25T03:11:54.029413",
+	"overall_status": "passed",
+	"results": {
+		"database": {
+			"status": "passed",
+			"details": ["数据库结构验证通过"]
+		},
+		"backend_api": {
+			"status": "passed",
+			"details": ["后端API文件验证通过"]
+		},
+		"frontend_files": {
+			"status": "passed",
+			"details": ["前端文件验证通过"]
+		},
+		"configuration": {
+			"status": "passed",
+			"details": [
+				"✅ Alembic配置文件存在",
+				"✅ 验证脚本存在",
+				"✅ 测试文件存在",
+				"配置完整性验证通过"
+			]
+		},
+		"integration": {
+			"status": "passed",
+			"details": ["✅ 音色选项文件存在，包含中英文音色选项", "集成功能验证通过"]
+		}
+	}
+}

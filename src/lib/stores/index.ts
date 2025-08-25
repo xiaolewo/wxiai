@@ -287,3 +287,10 @@ type SessionUser = {
 	profile_image_url: string;
 	credit: number;
 };
+
+// 积分格式化函数
+export const formatCredit = (credit: number | string): number => {
+	const num = parseFloat(String(credit));
+	if (isNaN(num)) return 0;
+	return Math.round(num);
+};

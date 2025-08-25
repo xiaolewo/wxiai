@@ -201,6 +201,41 @@ class TencentCOSService:
             # 使用默认域名
             return f"https://{self.config.bucket}.cos.{self.config.region}.myqcloud.com/{object_key}"
 
+    def get_presigned_url(self, object_key: str, expires_in: int = 3600) -> str:
+        """获取预签名URL，用于临时访问私有文件
+
+        Args:
+            object_key: COS对象键
+            expires_in: URL过期时间（秒），默认1小时
+
+        Returns:
+            str: 预签名URL
+        """
+        try:
+            if not self.is_available():
+                return self._get_public_url(object_key)
+
+            # 使用腾讯云COS SDK的预签名方法
+            presigned_url = self.client.get_presigned_download_url(
+                Bucket=self.config.bucket,
+                Key=object_key,
+                Expired=expires_in,  # 腾讯云COS使用Expired参数
+            )
+
+            logger.info(f"生成预签名URL成功: {object_key}")
+            logger.info(f"预签名URL: {presigned_url}")
+
+            # 简单验证URL格式
+            if not presigned_url.startswith(("http://", "https://")):
+                logger.error(f"预签名URL格式不正确: {presigned_url}")
+                return self._get_public_url(object_key)
+
+            return presigned_url
+
+        except Exception as e:
+            logger.warning(f"生成预签名URL失败: {str(e)}，回退到公共URL")
+            return self._get_public_url(object_key)
+
     async def upload_file_from_bytes(
         self,
         file_data: bytes,
@@ -242,25 +277,29 @@ class TencentCOSService:
                 if not content_type:
                     content_type = "application/octet-stream"
 
-            # 上传文件
+            # 上传文件并设置为公共读取
             response = self.client.put_object(
                 Bucket=self.config.bucket,
                 Body=file_data,
                 Key=object_key,
                 ContentType=content_type,
                 StorageClass="STANDARD",  # 存储类型
+                ACL="public-read",  # 设置为公共读取
             )
 
-            # 生成访问URL
+            # 生成公共访问URL
             public_url = self._get_public_url(object_key)
 
+            # 既然设置了ACL为公共读取，直接使用公共URL
             logger.info(f"文件上传成功: {object_key}")
+            logger.info(f"公共访问URL: {public_url}")
 
             return {
                 "success": True,
                 "message": "文件上传成功",
                 "cloud_path": object_key,
-                "cloud_url": public_url,
+                "cloud_url": public_url,  # 使用公共URL，因为已设置为ACL公共读取
+                "public_url": public_url,  # 公共URL
                 "file_size": file_size,
                 "content_type": content_type,
                 "etag": response.get("ETag", ""),
@@ -318,13 +357,20 @@ class TencentCOSService:
             logger.info(f"文件下载完成，大小: {len(file_data)} bytes")
 
             # 上传到COS
-            return await self.upload_file_from_bytes(
+            result = await self.upload_file_from_bytes(
                 file_data=file_data,
                 filename=filename,
                 file_type=file_type,
                 user_id=user_id,
                 content_type=content_type,
             )
+
+            # 如果上传成功，确保返回的URL是预签名URL
+            if result.get("success") and result.get("cloud_path"):
+                # 文件已设置为公共读取，直接使用公共URL
+                logger.info(f"上传成功，使用公共URL: {result.get('cloud_url')}")
+
+            return result
 
         except requests.exceptions.RequestException as e:
             error_msg = f"下载文件失败: {str(e)}"

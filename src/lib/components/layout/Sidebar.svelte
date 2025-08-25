@@ -1019,6 +1019,38 @@
 					</a>
 				</div>
 
+				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
+					<a
+						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+						href="/lip-sync"
+						on:click={itemClickHandler}
+						draggable="false"
+					>
+						<div class="self-center">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+								stroke="currentColor"
+								class="size-4.5"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"
+								/>
+								<path stroke-linecap="round" stroke-linejoin="round" d="M8 14s1.5 2 4 2 4-2 4-2" />
+								<circle cx="9" cy="9" r="1" />
+								<circle cx="15" cy="9" r="1" />
+							</svg>
+						</div>
+						<div class="flex self-center translate-y-[0.5px]">
+							<div class=" self-center text-sm font-primary">视频口型</div>
+						</div>
+					</a>
+				</div>
+
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools}
 					<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
 						<a

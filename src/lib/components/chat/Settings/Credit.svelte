@@ -185,13 +185,13 @@
 		const usage = log?.detail?.usage ?? {};
 		if (usage && Object.keys(usage).length > 0) {
 			if (usage.total_price !== undefined && usage.total_price !== null) {
-				return `-${Math.round(usage.total_price * 1e6) / 1e6}`;
+				return `-${Math.round(usage.total_price)}`;
 			}
 			if (usage.request_unit_price) {
-				return `-${usage.request_unit_price / 1e6}`;
+				return `-${Math.round(usage.request_unit_price)}`;
 			}
 			if (usage.prompt_unit_price || usage.completion_unit_price) {
-				return `-${Math.round(usage.prompt_tokens * usage.prompt_unit_price + usage.completion_tokens * usage.completion_unit_price) / 1e6}`;
+				return `-${Math.round(usage.prompt_tokens * usage.prompt_unit_price + usage.completion_tokens * usage.completion_unit_price)}`;
 			}
 		}
 		return log?.detail?.desc;
@@ -272,7 +272,7 @@
 						</button>
 					</div>
 					<div class="flex items-center">
-						<div>{credit}</div>
+						<div>{Math.round(credit)}</div>
 						<button class="ml-1" on:click={() => doInit()}>
 							<svg
 								viewBox="0 0 1024 1024"
@@ -419,7 +419,7 @@
 													class="px-3 py-1.5 text-left font-medium text-gray-900 dark:text-white w-fit"
 												>
 													<div class="line-clamp-1">
-														{parseFloat(log.credit).toFixed(6)}
+														{Math.round(parseFloat(log.credit))}
 													</div>
 												</td>
 												<td
