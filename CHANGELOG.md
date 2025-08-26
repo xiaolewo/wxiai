@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.23] - 2025-08-25
+
+### Added
+
+- ✨ **Kling Lip Sync Integration**: Added complete Kling lip sync functionality with video/audio upload support, cloud storage integration, and real-time task polling
+- 📁 **Cloud Storage Auto-Migration**: Implemented automatic cloud storage migration for generated videos from external APIs
+- 🎨 **Improved Task History UI**: Redesigned task cards with responsive grid layout and proper video aspect ratios
+
+### Fixed
+
+- 🔧 **Database Migration System**: Fixed critical issues with Alembic migration chain that prevented automatic table creation on fresh deployments
+- 📦 **Cloud Storage Service Caching**: Resolved caching issues in file manager that prevented COS service from updating after configuration changes
+- 🛠️ **Migration Format Standardization**: Updated migration files to match working format used by other features (Jimeng, Flux)
+- ⚡ **Task Polling Optimization**: Fixed infinite polling issues by ensuring proper task completion status updates
+
+### Documentation
+
+- 📚 **Jimeng API Documentation**: Consolidated and restructured Jimeng platform integration docs into single comprehensive guide
+- 🔗 **Migration Records**: Updated migration tracking and deployment procedures
+
+### Technical Details
+
+- **Migration Chain Fix**: Updated kling_lip_sync migration to use proper Alembic format with correct type annotations and imports
+- **File Manager Enhancement**: Modified `GeneratedFileManager._get_cos_service()` to dynamically check configuration instead of caching stale instances
+- **Database Schema**: All kling_lip_sync tables now create automatically through standard migration process
+- **UI Components**: Redesigned task cards from 2-column grid to responsive layout with proper aspect ratios
+
 ## [0.6.22] - 2025-08-11
 
 ### Added

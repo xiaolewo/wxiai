@@ -1051,6 +1051,36 @@
 					</a>
 				</div>
 
+				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
+					<a
+						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+						href="/image-editing"
+						on:click={itemClickHandler}
+						draggable="false"
+					>
+						<div class="self-center">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+								stroke="currentColor"
+								class="size-4.5"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+								/>
+								<path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4-4 4 4 4-4 4 4" />
+							</svg>
+						</div>
+						<div class="flex self-center translate-y-[0.5px]">
+							<div class=" self-center text-sm font-primary">图像编辑</div>
+						</div>
+					</a>
+				</div>
+
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools}
 					<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
 						<a

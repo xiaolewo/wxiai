@@ -81,6 +81,7 @@ from open_webui.routers import (
     dreamwork,
     kling,
     kling_lip_sync,
+    jimeng_inpainting,
     jimeng,
     storage,
     flux,
@@ -99,6 +100,25 @@ from open_webui.models.functions import Functions
 from open_webui.models.models import Models
 from open_webui.models.users import Users
 from open_webui.models.chats import Chats
+
+# 导入新功能模型以确保表结构被注册到 Base.metadata
+try:
+    from open_webui.models.jimeng_inpainting import (
+        JimengInpaintingConfig,
+        JimengInpaintingTask,
+        JimengInpaintingCredit,
+    )
+except ImportError as e:
+    logger.warning(f"Failed to import jimeng_inpainting models: {e}")
+
+try:
+    from open_webui.models.kling_lip_sync import (
+        KlingLipSyncConfig,
+        KlingLipSyncTask,
+        KlingLipSyncCredit,
+    )
+except ImportError as e:
+    logger.warning(f"Failed to import kling_lip_sync models: {e}")
 
 from open_webui.config import (
     # Ollama
@@ -1264,6 +1284,11 @@ app.include_router(dreamwork.router, prefix="/api/v1", tags=["dreamwork"])
 app.include_router(kling.router, prefix="/api/v1", tags=["kling"])
 app.include_router(
     kling_lip_sync.router, prefix="/api/v1/kling-lip-sync", tags=["kling-lip-sync"]
+)
+app.include_router(
+    jimeng_inpainting.router,
+    prefix="/api/v1/jimeng-inpainting",
+    tags=["jimeng-inpainting"],
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])

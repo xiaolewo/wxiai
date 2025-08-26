@@ -149,19 +149,97 @@ def run_migrations():
                     f"Failed to upgrade to heads, trying merge point: {heads_error}"
                 )
                 # 最后尝试升级到合并点
-                command.upgrade(alembic_cfg, "merge_heads_final")
+                try:
+                    command.upgrade(alembic_cfg, "g3h4i5j6k7l8")
+                    log.info("Successfully upgraded to merge point g3h4i5j6k7l8")
+                except Exception as merge_error:
+                    log.warning(f"Failed to upgrade to merge point: {merge_error}")
+                    # 如果合并点也失败，尝试其他已知的最新迁移点
+                    try:
+                        command.upgrade(alembic_cfg, "f2g3h4i5j6k7")  # 即梦涂抹消除迁移
+                        log.info("Successfully upgraded to f2g3h4i5j6k7")
+                    except Exception:
+                        pass
         log.info("Migrations completed successfully")
     except Exception as e:
         log.exception(f"Error running migrations: {e}")
-        # Create tables directly if migration fails
-        try:
-            log.info("Attempting to create tables directly")
-            from open_webui.internal.db import engine, Base
 
-            Base.metadata.create_all(bind=engine)
-            log.info("Tables created successfully")
-        except Exception as create_error:
-            log.exception(f"Error creating tables directly: {create_error}")
+    # 使用标准方式创建表 - 与可灵对口型保持一致
+    try:
+        log.info("Ensuring all tables exist using standard SQLAlchemy approach")
+        from open_webui.internal.db import engine, Base
+
+        # 确保所有模型都被导入，这样Base.metadata会自动注册表结构
+        try:
+            from open_webui.models.jimeng_inpainting import (
+                JimengInpaintingConfig,
+                JimengInpaintingTask,
+                JimengInpaintingCredit,
+            )
+
+            log.info("Jimeng inpainting models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import jimeng_inpainting models: {e}")
+
+        try:
+            from open_webui.models.kling_lip_sync import (
+                KlingLipSyncConfig,
+                KlingLipSyncTask,
+                KlingLipSyncCredit,
+            )
+
+            log.info("Kling lip sync models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import kling_lip_sync models: {e}")
+
+        # 使用标准SQLAlchemy方式创建所有表
+        Base.metadata.create_all(bind=engine)
+        log.info("All tables ensured using Base.metadata.create_all()")
+
+        # 确保默认配置存在（就像迁移文件一样）
+        try:
+            from sqlalchemy import text
+
+            with engine.connect() as conn:
+                # 检查并插入即梦涂抹消除默认配置
+                result = conn.execute(
+                    text("SELECT COUNT(*) FROM jimeng_inpainting_config")
+                )
+                if result.fetchone()[0] == 0:
+                    conn.execute(
+                        text(
+                            """
+                        INSERT INTO jimeng_inpainting_config 
+                        (enabled, base_url, credits_cost, default_steps, default_strength, default_scale, default_quality) 
+                        VALUES (0, 'https://visual.volcengineapi.com', 30, 30, 0.8, 7.0, 'M')
+                    """
+                        )
+                    )
+                    log.info("Inserted default configuration for Jimeng inpainting")
+
+                # 检查并插入可灵对口型默认配置（如果需要）
+                result = conn.execute(
+                    text("SELECT COUNT(*) FROM kling_lip_sync_config")
+                )
+                if result.fetchone()[0] == 0:
+                    conn.execute(
+                        text(
+                            """
+                        INSERT INTO kling_lip_sync_config 
+                        (enabled, base_url, default_voice_id, default_voice_language, default_voice_speed, credits_cost) 
+                        VALUES (0, 'https://api.kling.com', 'genshin_vindi2', 'zh', 1.0, 50)
+                    """
+                        )
+                    )
+                    log.info("Inserted default configuration for Kling lip sync")
+
+                conn.commit()
+
+        except Exception as config_error:
+            log.warning(f"Failed to ensure default configurations: {config_error}")
+
+    except Exception as create_error:
+        log.exception(f"Error ensuring tables: {create_error}")
 
     # 自动检查并添加即梦缺失字段
     try:

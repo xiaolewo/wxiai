@@ -17,6 +17,7 @@
 	import Flux from './Settings/Flux.svelte';
 	import Kling from './Settings/Kling.svelte';
 	import KlingLipSync from './Settings/KlingLipSync.svelte';
+	import JimengInpainting from './Settings/JimengInpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
@@ -59,6 +60,7 @@
 			'flux',
 			'kling',
 			'kling-lip-sync',
+			'jimeng-inpainting',
 			'jimeng',
 			'storage',
 			'pipelines',
@@ -585,6 +587,41 @@
 		</button>
 
 		<button
+			id="jimeng-inpainting"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'jimeng-inpainting'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/jimeng-inpainting');
+			}}
+		>
+			<div class="mr-2 self-center">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+						clip-rule="evenodd"
+					/>
+					<path
+						d="M4 16l4-4 4 4 4-4 4 4"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						fill="none"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">图像编辑</div>
+		</button>
+
+		<button
 			id="jimeng"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'jimeng'
@@ -800,6 +837,12 @@
 			/>
 		{:else if selectedTab === 'kling-lip-sync'}
 			<KlingLipSync
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'jimeng-inpainting'}
+			<JimengInpainting
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

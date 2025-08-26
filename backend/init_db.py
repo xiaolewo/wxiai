@@ -89,6 +89,32 @@ def ensure_database_initialized():
                 )
                 return False
 
+            # 检查即梦涂抹消除表
+            result = conn.execute(
+                text(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%jimeng_inpainting%'"
+                )
+            )
+            jimeng_inpainting_tables = [row[0] for row in result]
+            expected_jimeng_inpainting_tables = [
+                "jimeng_inpainting_config",
+                "jimeng_inpainting_tasks",
+                "jimeng_inpainting_credits",
+            ]
+            missing_jimeng_inpainting_tables = [
+                t
+                for t in expected_jimeng_inpainting_tables
+                if t not in jimeng_inpainting_tables
+            ]
+
+            if not missing_jimeng_inpainting_tables:
+                log.info("✅ 即梦涂抹消除表存在")
+            else:
+                log.error(
+                    f"❌ 即梦涂抹消除表缺失: {missing_jimeng_inpainting_tables}，找到的表: {jimeng_inpainting_tables}"
+                )
+                return False
+
         log.info("🎉 数据库初始化检查完成，所有表都存在")
         return True
 
@@ -159,6 +185,28 @@ def test_kling_lip_sync_models():
         return False
 
 
+def test_jimeng_inpainting_models():
+    """测试即梦涂抹消除模型是否正常工作"""
+    log.info("测试即梦涂抹消除模型...")
+
+    try:
+        from open_webui.models.jimeng_inpainting import JimengInpaintingTable
+
+        # 测试实例化和配置获取
+        table = JimengInpaintingTable()
+        config = table.get_config()
+        if config:
+            log.info("✅ 即梦涂抹消除配置存在")
+        else:
+            log.info("✅ 即梦涂抹消除配置不存在（正常，首次运行）")
+
+        return True
+
+    except Exception as e:
+        log.error(f"❌ 即梦涂抹消除模型测试失败: {e}")
+        return False
+
+
 if __name__ == "__main__":
     log.info("🚀 开始数据库初始化和测试...")
 
@@ -168,6 +216,7 @@ if __name__ == "__main__":
         ("配置加载测试", test_config_loading),
         ("Jimeng模型测试", test_jimeng_models),
         ("可灵对口型模型测试", test_kling_lip_sync_models),
+        ("即梦涂抹消除模型测试", test_jimeng_inpainting_models),
     ]
 
     failed_checks = []
