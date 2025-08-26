@@ -25,6 +25,7 @@
 		base_url: 'https://visual.volcengineapi.com',
 		api_key: '',
 		credits_cost: 30,
+		edit_credits_cost: 40,
 		default_steps: 30,
 		default_strength: 0.8,
 		default_scale: 7.0,
@@ -300,8 +301,8 @@
 
 					<div>
 						<div class="mb-1 text-xs text-gray-500">
-							积分消耗
-							<Tooltip content="每次涂抹消除消耗的积分数量">
+							涂抹消除积分
+							<Tooltip content="每次涂抹消除功能消耗的积分数量，用于去除图片中不需要的元素">
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
 									fill="none"
@@ -323,6 +324,34 @@
 							type="number"
 							min="1"
 							bind:value={jimengInpaintingConfig.credits_cost}
+						/>
+					</div>
+
+					<div>
+						<div class="mb-1 text-xs text-gray-500">
+							涂抹编辑积分
+							<Tooltip content="每次涂抹编辑功能消耗的积分数量，用于根据提示词生成新内容">
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke-width="1.5"
+									stroke="currentColor"
+									class="w-3 h-3 inline ml-1"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l-.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+									/>
+								</svg>
+							</Tooltip>
+						</div>
+						<input
+							class="w-full rounded-lg py-2 px-4 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+							type="number"
+							min="1"
+							bind:value={jimengInpaintingConfig.edit_credits_cost}
 						/>
 					</div>
 				</div>

@@ -110,6 +110,7 @@ class TaskSubmitResponse(BaseModel):
 class UserConfigResponse(BaseModel):
     enabled: bool
     credits_cost: int
+    edit_credits_cost: int
     default_steps: int
     default_strength: float
     default_scale: float
@@ -141,6 +142,7 @@ async def get_jimeng_inpainting_config():
                 "base_url": config.base_url,
                 "api_key": config.api_key,
                 "credits_cost": config.credits_cost,
+                "edit_credits_cost": config.edit_credits_cost,
                 "default_steps": config.default_steps,
                 "default_strength": config.default_strength,
                 "default_scale": config.default_scale,
@@ -153,6 +155,7 @@ async def get_jimeng_inpainting_config():
                 "base_url": "https://visual.volcengineapi.com",
                 "api_key": "",
                 "credits_cost": 30,
+                "edit_credits_cost": 40,
                 "default_steps": 30,
                 "default_strength": 0.8,
                 "default_scale": 7.0,
@@ -225,6 +228,7 @@ async def get_user_jimeng_inpainting_config(
             return UserConfigResponse(
                 enabled=config.enabled,
                 credits_cost=config.credits_cost,
+                edit_credits_cost=config.edit_credits_cost,
                 default_steps=config.default_steps,
                 default_strength=config.default_strength,
                 default_scale=config.default_scale,
@@ -234,6 +238,7 @@ async def get_user_jimeng_inpainting_config(
             return UserConfigResponse(
                 enabled=False,
                 credits_cost=30,
+                edit_credits_cost=40,
                 default_steps=30,
                 default_strength=0.8,
                 default_scale=7.0,
@@ -248,17 +253,17 @@ async def get_user_jimeng_inpainting_config(
 async def submit_jimeng_inpainting_task(
     request: JimengInpaintingRequestModel, user=Depends(get_current_user)
 ) -> TaskSubmitResponse:
-    """提交涂抹消除任务"""
+    """提交涂抹消除/编辑任务"""
     try:
         # 检查服务是否启用
         config = JimengInpaintingConfigs.get_config()
         if not config or not config.enabled:
-            raise HTTPException(status_code=400, detail="即梦涂抹消除服务未启用")
+            raise HTTPException(status_code=400, detail="即梦图像编辑服务未启用")
 
         # 初始化服务
         jimeng_inpainting_service.initialize(config)
         if not jimeng_inpainting_service.is_available():
-            raise HTTPException(status_code=400, detail="即梦涂抹消除服务不可用")
+            raise HTTPException(status_code=400, detail="即梦图像编辑服务不可用")
 
         # 验证请求参数
         if not request.original_image_url or not request.original_image_url.strip():
@@ -267,8 +272,17 @@ async def submit_jimeng_inpainting_task(
         if not request.mask_image_url or not request.mask_image_url.strip():
             raise HTTPException(status_code=400, detail="请上传遮罩图片")
 
-        # 验证积分
-        credits_cost = config.credits_cost
+        # 验证编辑模式的提示词
+        if request.mode == "edit" and (
+            not request.custom_prompt or not request.custom_prompt.strip()
+        ):
+            raise HTTPException(status_code=400, detail="编辑模式需要输入提示词")
+
+        # 根据模式计算积分消耗
+        if request.mode == "edit":
+            credits_cost = config.edit_credits_cost
+        else:
+            credits_cost = config.credits_cost
         if not validate_user_credits(user.id, credits_cost):
             raise HTTPException(
                 status_code=400, detail=f"积分不足，需要 {credits_cost} 积分"
@@ -283,6 +297,10 @@ async def submit_jimeng_inpainting_task(
             "user_id": user.id,
             "status": "processing",  # 即梦API直接处理，设为processing
             "progress": "50%",
+            "mode": request.mode or "remove",
+            "custom_prompt": (
+                request.custom_prompt.strip() if request.custom_prompt else None
+            ),
             "original_image_url": request.original_image_url.strip(),
             "mask_image_url": request.mask_image_url.strip(),
             "steps": request.steps or config.default_steps,
@@ -296,18 +314,19 @@ async def submit_jimeng_inpainting_task(
 
         # 保存任务到数据库
         task = JimengInpaintingTasks.create_task(task_data)
-        logger.info(f"🎨 【即梦涂抹消除用户】创建任务: {task_id} (用户: {user.id})")
+        mode_text = "涂抹编辑" if request.mode == "edit" else "涂抹消除"
+        logger.info(f"🎨 【即梦{mode_text}用户】创建任务: {task_id} (用户: {user.id})")
 
         # 扣除积分
         try:
-            deduct_user_credits(user.id, credits_cost, "涂抹消除处理", task_id)
+            deduct_user_credits(user.id, credits_cost, f"{mode_text}处理", task_id)
 
             # 记录积分消耗
             JimengInpaintingCredits.create_credit_record(
                 user.id, task_id, credits_cost, "deduct"
             )
             logger.info(
-                f"🎨 【即梦涂抹消除用户】扣除积分: {credits_cost} (任务: {task_id})"
+                f"🎨 【即梦{mode_text}用户】扣除积分: {credits_cost} (任务: {task_id})"
             )
 
         except Exception as credit_error:
@@ -328,7 +347,7 @@ async def submit_jimeng_inpainting_task(
                 }
             )
 
-            logger.info(f"🎨 【即梦涂抹消除后端】API请求数据: {api_request}")
+            logger.info(f"🎨 【即梦{mode_text}后端】API请求数据: {api_request}")
 
             result = await jimeng_inpainting_service.submit_task(api_request)
 
@@ -390,10 +409,10 @@ async def submit_jimeng_inpainting_task(
                     "finish_time": datetime.now(),
                 }
                 JimengInpaintingTasks.update_task(task_id, updates)
-                logger.info(f"🎨 【即梦涂抹消除用户】任务完成: {task_id}")
+                logger.info(f"🎨 【即梦{mode_text}用户】任务完成: {task_id}")
 
                 return TaskSubmitResponse(
-                    success=True, task_id=task_id, message="涂抹消除处理完成"
+                    success=True, task_id=task_id, message=f"{mode_text}处理完成"
                 )
             else:
                 # 任务处理失败，退还积分
@@ -413,7 +432,7 @@ async def submit_jimeng_inpainting_task(
                 )
 
                 logger.error(
-                    f"🎨 【即梦涂抹消除用户】任务处理失败: {result.get('message')}"
+                    f"🎨 【即梦{mode_text}用户】任务处理失败: {result.get('message')}"
                 )
                 raise HTTPException(
                     status_code=400, detail=result.get("message", "任务处理失败")
@@ -440,13 +459,13 @@ async def submit_jimeng_inpainting_task(
                 },
             )
 
-            logger.error(f"🎨 【即梦涂抹消除用户】API调用异常: {str(api_error)}")
+            logger.error(f"🎨 【即梦{mode_text}用户】API调用异常: {str(api_error)}")
             raise HTTPException(status_code=500, detail="处理任务时发生异常")
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"提交即梦涂抹消除任务失败: {str(e)}")
+        logger.error(f"提交即梦图像编辑任务失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"提交任务失败: {str(e)}")
 
 

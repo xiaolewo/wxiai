@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class JimengInpaintingAPI:
-    """即梦涂抹消除API客户端"""
+    """即梦涂抹消除/编辑API客户端"""
 
     def __init__(self, base_url: str, api_key: str):
         self.base_url = base_url.rstrip("/")
@@ -23,13 +23,9 @@ class JimengInpaintingAPI:
     async def test_connection(self) -> Dict[str, Any]:
         """测试API连接"""
         try:
-            # 构建测试请求（使用即梦API的涂抹消除接口测试）
-            # 如果base_url是官方地址，直接使用；如果是第三方，添加/volcv/v1路径
-            if "visual.volcengineapi.com" in self.base_url:
-                url = f"{self.base_url}?Action=Img2ImgInpainting&Version=2022-08-31"
-            else:
-                # 第三方平台格式
-                url = f"{self.base_url}/volcv/v1?Action=Img2ImgInpainting&Version=2022-08-31"
+            # 构建测试请求（使用第三方平台格式）
+            # 统一使用第三方平台格式进行连接测试
+            url = f"{self.base_url}/volcv/v1?Action=CVProcess&Version=2022-08-31"
 
             # 测试用的最小数据 - 使用空白base64图片进行测试
             # 1x1像素的透明PNG图片的base64
@@ -82,7 +78,7 @@ class JimengInpaintingAPI:
                                 "status": "error",
                                 "message": f"连接失败: {message}",
                             }
-                        except:
+                        except Exception:
                             return {
                                 "status": "error",
                                 "message": f"连接失败: HTTP {response.status}",
@@ -91,33 +87,52 @@ class JimengInpaintingAPI:
         except aiohttp.ClientTimeout:
             return {"status": "error", "message": "连接超时，请检查网络和API地址"}
         except Exception as e:
-            logger.error(f"测试即梦涂抹消除API连接失败: {str(e)}")
+            logger.error(f"测试即梦图像编辑API连接失败: {str(e)}")
             return {"status": "error", "message": f"连接异常: {str(e)}"}
 
     async def _download_image_to_base64(self, image_url: str) -> str:
         """从URL下载图片文件并转换为base64"""
+        logger.info(f"🎨 【即梦图像编辑】开始下载图片: {image_url}")
         try:
-            async with aiohttp.ClientSession() as session:
+            import aiohttp
+            import ssl
+
+            # 创建SSL上下文，禁用证书验证
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+            # 创建连接器
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
+            async with aiohttp.ClientSession(connector=connector) as session:
                 async with session.get(
-                    image_url, timeout=aiohttp.ClientTimeout(total=30)
+                    image_url, headers=headers, timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
                     if response.status == 200:
                         image_data = await response.read()
                         base64_data = base64.b64encode(image_data).decode("utf-8")
                         logger.info(
-                            f"🎨 【即梦涂抹消除】图片文件下载成功，大小: {len(image_data)} bytes, base64长度: {len(base64_data)}"
+                            f"🎨 【即梦图像编辑】图片文件下载成功，大小: {len(image_data)} bytes, base64长度: {len(base64_data)}"
                         )
                         return base64_data
                     else:
                         raise Exception(f"下载图片文件失败: HTTP {response.status}")
+
         except Exception as e:
-            logger.error(f"🎨 【即梦涂抹消除】下载图片文件失败: {str(e)}")
-            raise
+            logger.error(f"🎨 【即梦图像编辑】下载图片文件失败: {str(e)}")
+            raise e
 
     async def submit_inpainting_task(self, request_data: dict) -> Dict[str, Any]:
-        """提交涂抹消除任务"""
+        """提交涂抹消除/编辑任务"""
         try:
-            logger.info(f"🎨 【即梦涂抹消除API】收到request_data: {request_data}")
+            mode = request_data.get("mode", "remove")
+            mode_text = "涂抹编辑" if mode == "edit" else "涂抹消除"
+            logger.info(f"🎨 【即梦{mode_text}API】收到request_data: {request_data}")
 
             # 下载图片并转换为base64
             original_base64 = await self._download_image_to_base64(
@@ -127,18 +142,34 @@ class JimengInpaintingAPI:
                 request_data["mask_image_url"]
             )
 
-            # 构建请求数据，按照即梦API文档格式
-            data = {
-                "req_key": "i2i_inpainting",
-                "binary_data_base64": [original_base64, mask_base64],
-                "return_url": request_data.get("return_url", True),
-                "steps": request_data.get("steps", 30),
-                "strength": request_data.get("strength", 0.8),
-                "scale": request_data.get("scale", 7.0),
-                "seed": request_data.get("seed", 0),
-                "dilate_size": request_data.get("dilate_size", 15),
-                "quality": request_data.get("quality", "M"),
-            }
+            # 根据模式构建请求数据
+            if mode == "edit":
+                # 涂抹编辑模式 - 根据官方文档的正确格式
+                data = {
+                    "req_key": "i2i_inpainting_edit",  # 编辑专用key
+                    "binary_data_base64": [original_base64, mask_base64],
+                    "custom_prompt": request_data.get(
+                        "custom_prompt", ""
+                    ),  # 使用custom_prompt而不是prompt
+                    "scale": request_data.get("scale", 5),  # 编辑模式默认值为5
+                    "seed": request_data.get("seed", -1),  # 编辑模式默认值为-1
+                    "steps": request_data.get("steps", 25),  # 编辑模式默认值为25
+                    "return_url": request_data.get("return_url", True),
+                    "quality": request_data.get("quality", "M"),
+                }
+            else:
+                # 涂抹消除模式 - 原有逻辑
+                data = {
+                    "req_key": "i2i_inpainting",  # 消除模式key
+                    "binary_data_base64": [original_base64, mask_base64],
+                    "return_url": request_data.get("return_url", True),
+                    "steps": request_data.get("steps", 30),
+                    "strength": request_data.get("strength", 0.8),
+                    "scale": request_data.get("scale", 7.0),
+                    "seed": request_data.get("seed", 0),
+                    "dilate_size": request_data.get("dilate_size", 15),
+                    "quality": request_data.get("quality", "M"),
+                }
 
             # 打印请求信息（隐藏base64数据）
             log_data = {
@@ -149,11 +180,17 @@ class JimengInpaintingAPI:
                 ],
             }
             logger.info(
-                f"🎨 【即梦涂抹消除】提交任务完整请求: {json.dumps(log_data, ensure_ascii=False)}"
+                f"🎨 【即梦{mode_text}】提交任务完整请求: {json.dumps(log_data, ensure_ascii=False)}"
             )
 
-            # 构建API URL
+            # 统一使用第三方平台格式构建API URL
             url = f"{self.base_url}/volcv/v1?Action=CVProcess&Version=2022-08-31"
+
+            logger.info(f"🎨 【即梦{mode_text}】API请求URL: {url}")
+            logger.info(f"🎨 【即梦{mode_text}】请求头: {self.headers}")
+            logger.info(
+                f"🎨 【即梦{mode_text}】模式: {mode}, req_key: {data.get('req_key')}, 提示词: {data.get('custom_prompt', 'N/A')}"
+            )
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -164,8 +201,22 @@ class JimengInpaintingAPI:
                 ) as response:
                     result = await response.json()
 
+                    logger.info(f"🎨 【即梦{mode_text}】HTTP状态码: {response.status}")
                     logger.info(
-                        f"🎨 【即梦涂抹消除】API响应: {json.dumps(result, ensure_ascii=False)}"
+                        f"🎨 【即梦{mode_text}】API响应: {json.dumps(result, ensure_ascii=False)}"
+                    )
+
+                    # 检查响应中的具体错误信息
+                    if result.get("code") != 10000:
+                        logger.error(
+                            f"🎨 【即梦{mode_text}】API返回错误码: {result.get('code')}, 消息: {result.get('message', 'Unknown error')}"
+                        )
+
+                    # 检查是否有image_urls
+                    data_section = result.get("data", {})
+                    image_urls = data_section.get("image_urls", [])
+                    logger.info(
+                        f"🎨 【即梦{mode_text}】返回图片数量: {len(image_urls)}"
                     )
 
                     if response.status == 200 and result.get("code") == 10000:
@@ -177,7 +228,7 @@ class JimengInpaintingAPI:
                             return {
                                 "success": True,
                                 "result_image_url": image_urls[0],
-                                "message": "涂抹消除成功",
+                                "message": f"{mode_text}成功",
                                 "request_id": result.get("request_id"),
                             }
                         else:
@@ -195,21 +246,21 @@ class JimengInpaintingAPI:
                         elif result.get("code") == 50511:
                             error_msg = "输出图片后审核未通过，请调整参数重试"
 
-                        logger.error(f"🎨 【即梦涂抹消除】提交任务失败: {error_msg}")
+                        logger.error(f"🎨 【即梦{mode_text}】提交任务失败: {error_msg}")
                         return {"success": False, "message": error_msg}
 
         except aiohttp.ClientTimeout:
             error_msg = "请求超时，图片处理耗时较长，请稍后重试"
-            logger.error(f"🎨 【即梦涂抹消除】提交任务超时")
+            logger.error(f"🎨 【即梦{mode_text}】提交任务超时")
             return {"success": False, "message": error_msg}
         except Exception as e:
             error_msg = f"API调用异常: {str(e)}"
-            logger.error(f"🎨 【即梦涂抹消除】提交任务异常: {error_msg}")
+            logger.error(f"🎨 【即梦{mode_text}】提交任务异常: {error_msg}")
             return {"success": False, "message": error_msg}
 
 
 class JimengInpaintingService:
-    """即梦涂抹消除服务管理器"""
+    """即梦涂抹消除/编辑服务管理器"""
 
     def __init__(self):
         self.api_client = None
@@ -220,10 +271,10 @@ class JimengInpaintingService:
         self.config = config
         if config and config.enabled and config.api_key:
             self.api_client = JimengInpaintingAPI(config.base_url, config.api_key)
-            logger.info("🎨 【即梦涂抹消除】服务初始化成功")
+            logger.info("🎨 【即梦图像编辑】服务初始化成功")
         else:
             self.api_client = None
-            logger.warning("🎨 【即梦涂抹消除】服务未启用或配置不完整")
+            logger.warning("🎨 【即梦图像编辑】服务未启用或配置不完整")
 
     def is_available(self) -> bool:
         """检查服务是否可用"""

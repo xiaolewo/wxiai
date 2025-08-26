@@ -104,6 +104,59 @@ def _ensure_jimeng_fields():
                     db.commit()
                     log.info("✅ default_watermark 字段添加成功")
 
+            # 检查 jimeng_inpainting_config 表 - 涂抹消除配置表
+            if inspector.has_table("jimeng_inpainting_config"):
+                inpainting_config_columns = inspector.get_columns(
+                    "jimeng_inpainting_config"
+                )
+                inpainting_config_column_names = [
+                    col["name"] for col in inpainting_config_columns
+                ]
+
+                # 添加 edit_credits_cost 字段
+                if "edit_credits_cost" not in inpainting_config_column_names:
+                    log.info(
+                        "➕ 添加 edit_credits_cost 字段到 jimeng_inpainting_config..."
+                    )
+                    db.execute(
+                        text(
+                            "ALTER TABLE jimeng_inpainting_config ADD COLUMN edit_credits_cost INTEGER DEFAULT 40"
+                        )
+                    )
+                    db.commit()
+                    log.info("✅ edit_credits_cost 字段添加成功")
+
+            # 检查 jimeng_inpainting_tasks 表 - 涂抹消除任务表
+            if inspector.has_table("jimeng_inpainting_tasks"):
+                inpainting_task_columns = inspector.get_columns(
+                    "jimeng_inpainting_tasks"
+                )
+                inpainting_task_column_names = [
+                    col["name"] for col in inpainting_task_columns
+                ]
+
+                # 添加 mode 字段
+                if "mode" not in inpainting_task_column_names:
+                    log.info("➕ 添加 mode 字段到 jimeng_inpainting_tasks...")
+                    db.execute(
+                        text(
+                            "ALTER TABLE jimeng_inpainting_tasks ADD COLUMN mode VARCHAR(20) DEFAULT 'remove' NOT NULL"
+                        )
+                    )
+                    db.commit()
+                    log.info("✅ mode 字段添加成功")
+
+                # 添加 custom_prompt 字段
+                if "custom_prompt" not in inpainting_task_column_names:
+                    log.info("➕ 添加 custom_prompt 字段到 jimeng_inpainting_tasks...")
+                    db.execute(
+                        text(
+                            "ALTER TABLE jimeng_inpainting_tasks ADD COLUMN custom_prompt TEXT"
+                        )
+                    )
+                    db.commit()
+                    log.info("✅ custom_prompt 字段添加成功")
+
         log.info("🎬 即梦字段检查完成")
 
     except Exception as e:
@@ -210,8 +263,8 @@ def run_migrations():
                         text(
                             """
                         INSERT INTO jimeng_inpainting_config 
-                        (enabled, base_url, credits_cost, default_steps, default_strength, default_scale, default_quality) 
-                        VALUES (0, 'https://visual.volcengineapi.com', 30, 30, 0.8, 7.0, 'M')
+                        (enabled, base_url, credits_cost, edit_credits_cost, default_steps, default_strength, default_scale, default_quality) 
+                        VALUES (0, 'https://visual.volcengineapi.com', 30, 40, 30, 0.8, 7.0, 'M')
                     """
                         )
                     )

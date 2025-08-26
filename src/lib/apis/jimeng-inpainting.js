@@ -330,6 +330,8 @@ export async function uploadImageForInpainting(token, file) {
  * @typedef {Object} JimengInpaintingRequest
  * @property {string} original_image_url - 原始图片URL
  * @property {string} mask_image_url - 遮罩图片URL
+ * @property {string} [mode="remove"] - 功能模式: 'remove'(涂抹消除) 或 'edit'(涂抹编辑)
+ * @property {string} [custom_prompt] - 涂抹编辑模式的提示词（仅在mode="edit"时使用）
  * @property {number} [steps=30] - 采样步数
  * @property {number} [strength=0.8] - 消除强度
  * @property {number} [scale=7.0] - 文本描述程度
@@ -345,6 +347,8 @@ export async function uploadImageForInpainting(token, file) {
  * @property {string} user_id - 用户ID
  * @property {string} status - 任务状态: submitted/processing/succeed/failed
  * @property {string} progress - 进度百分比
+ * @property {string} mode - 功能模式: 'remove'(涂抹消除) 或 'edit'(涂抹编辑)
+ * @property {string} [custom_prompt] - 涂抹编辑模式的提示词
  * @property {string} original_image_url - 原始图片URL
  * @property {string} mask_image_url - 遮罩图片URL
  * @property {number} steps - 采样步数

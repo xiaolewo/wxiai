@@ -66,7 +66,15 @@
 	let dilateSize = 15;
 	let quality = 'M';
 
+	// 模式和提示词
+	let mode = 'remove'; // 'remove' 或 'edit'
+	let customPrompt = '';
+
 	let requiredCredits = 30;
+	let editCredits = 40;
+
+	// 计算当前所需积分
+	$: currentRequiredCredits = mode === 'edit' ? editCredits : requiredCredits;
 
 	// ======================== 生命周期 ========================
 	onMount(async () => {
@@ -99,6 +107,7 @@
 			scale = config.default_scale;
 			quality = config.default_quality;
 			requiredCredits = config.credits_cost;
+			editCredits = config.edit_credits_cost || 40;
 		} catch (error) {
 			console.error('加载配置失败:', error);
 			toast.error('加载配置失败');
@@ -160,9 +169,15 @@
 			}
 		}
 
+		// 验证编辑模式的提示词
+		if (mode === 'edit' && !customPrompt.trim()) {
+			toast.error('编辑模式需要输入提示词');
+			return;
+		}
+
 		// 检查积分
-		if (userCredits < requiredCredits) {
-			toast.error(`积分不足，需要 ${requiredCredits} 积分`);
+		if (userCredits < currentRequiredCredits) {
+			toast.error(`积分不足，需要 ${currentRequiredCredits} 积分`);
 			return;
 		}
 
@@ -172,6 +187,8 @@
 			const request: JimengInpaintingRequest = {
 				original_image_url: uploadedOriginalImageUrl.trim(),
 				mask_image_url: uploadedMaskImageUrl.trim(),
+				mode: mode,
+				custom_prompt: mode === 'edit' ? customPrompt.trim() : undefined,
 				steps: steps,
 				strength: strength,
 				scale: scale,
@@ -181,7 +198,7 @@
 				return_url: true
 			};
 
-			console.log('🎨 【即梦涂抹消除】提交任务:', request);
+			console.log(`🎨 【即梦${mode === 'edit' ? '涂抹编辑' : '涂抹消除'}】提交任务:`, request);
 
 			const result = await submitJimengInpaintingTask($user.token, request);
 
@@ -453,7 +470,7 @@
 				<div>
 					<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">🎨 图像编辑</h3>
 					<p class="text-xs text-gray-500 dark:text-gray-400 mb-4">
-						AI智能涂抹消除，去除图片中的不需要元素
+						AI智能图像编辑，支持涂抹消除和创意编辑
 					</p>
 				</div>
 
@@ -477,11 +494,56 @@
 						<div class="flex items-center justify-between mt-1">
 							<span class="text-xs text-gray-400"> 消耗积分 </span>
 							<span class="text-xs text-gray-600 dark:text-gray-400">
-								{requiredCredits}
+								{currentRequiredCredits}
 							</span>
 						</div>
 					</div>
 				{/if}
+
+				<!-- 模式选择 -->
+				<div
+					class="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600"
+				>
+					<div class="mb-2">
+						<span class="text-xs font-medium text-gray-700 dark:text-gray-300"> 功能模式 </span>
+					</div>
+					<div class="space-y-2">
+						<label class="flex items-center cursor-pointer">
+							<input type="radio" bind:group={mode} value="remove" class="mr-2 text-blue-600" />
+							<div class="flex-1">
+								<div class="text-sm font-medium text-gray-700 dark:text-gray-300">🧹 涂抹消除</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">
+									去除图片中的不需要元素（{requiredCredits} 积分）
+								</div>
+							</div>
+						</label>
+						<label class="flex items-center cursor-pointer">
+							<input type="radio" bind:group={mode} value="edit" class="mr-2 text-blue-600" />
+							<div class="flex-1">
+								<div class="text-sm font-medium text-gray-700 dark:text-gray-300">✨ 涂抹编辑</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400">
+									根据提示词生成新内容（{editCredits} 积分）
+								</div>
+							</div>
+						</label>
+					</div>
+
+					<!-- 提示词输入框 - 仅在编辑模式下显示 -->
+					{#if mode === 'edit'}
+						<div class="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+							<label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+								提示词 <span class="text-red-500">*</span>
+							</label>
+							<textarea
+								bind:value={customPrompt}
+								placeholder="描述您想要生成的内容，例如：一只小狗、美丽的花朵、蓝天白云等..."
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+								rows="3"
+							></textarea>
+							<div class="text-xs text-gray-500 mt-1">建议控制在100字以内，内容简洁准确</div>
+						</div>
+					{/if}
+				</div>
 
 				<!-- 图片上传区域 -->
 				<div class="space-y-4">
@@ -629,7 +691,7 @@
 						></div>
 						处理中...
 					{:else}
-						🎨 开始涂抹消除
+						{mode === 'edit' ? '✨ 开始涂抹编辑' : '🧹 开始涂抹消除'}
 					{/if}
 				</button>
 
@@ -786,6 +848,25 @@
 
 									<!-- 任务详情 -->
 									<div class="space-y-2">
+										<!-- 模式显示 -->
+										<div class="text-xs">
+											<span
+												class={`px-2 py-1 rounded-full font-medium ${task.mode === 'edit' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'}`}
+											>
+												{task.mode === 'edit' ? '✨ 涂抹编辑' : '🧹 涂抹消除'}
+											</span>
+										</div>
+
+										<!-- 提示词显示 -->
+										{#if task.mode === 'edit' && task.custom_prompt}
+											<div
+												class="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-600 rounded p-2"
+											>
+												<div class="font-medium mb-1">提示词:</div>
+												<div class="italic">"{task.custom_prompt}"</div>
+											</div>
+										{/if}
+
 										<!-- 参数信息 -->
 										<div class="text-sm text-gray-600 dark:text-gray-400">
 											<div>步数: {task.steps} | 强度: {task.strength}</div>

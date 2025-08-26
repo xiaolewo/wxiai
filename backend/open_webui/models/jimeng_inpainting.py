@@ -19,7 +19,8 @@ class JimengInpaintingConfig(Base):
     enabled = Column(Boolean, default=False)
     base_url = Column(String(500), default="https://visual.volcengineapi.com")
     api_key = Column(Text)
-    credits_cost = Column(Integer, default=30)  # 每次涂抹消除消耗的积分
+    credits_cost = Column(Integer, default=30)  # 涂抹消除功能积分消耗
+    edit_credits_cost = Column(Integer, default=40)  # 涂抹编辑功能积分消耗
     default_steps = Column(Integer, default=30)
     default_strength = Column(Float, default=0.8)
     default_scale = Column(Float, default=7.0)
@@ -37,6 +38,10 @@ class JimengInpaintingTask(Base):
     # 任务状态
     status = Column(String(50), default="submitted", index=True)
     progress = Column(String(10), default="0%")
+
+    # 功能模式和提示词
+    mode = Column(String(20), default="remove", nullable=False)  # 'remove' 或 'edit'
+    custom_prompt = Column(Text, nullable=True)  # 涂抹编辑模式的提示词
 
     # 输入参数
     original_image_url = Column(Text, nullable=False)
@@ -85,7 +90,8 @@ class JimengInpaintingConfigModel(BaseModel):
     enabled: bool = False
     base_url: str = "https://visual.volcengineapi.com"
     api_key: str = ""
-    credits_cost: int = 30
+    credits_cost: int = 30  # 涂抹消除积分
+    edit_credits_cost: int = 40  # 涂抹编辑积分
     default_steps: int = 30
     default_strength: float = 0.8
     default_scale: float = 7.0
@@ -98,7 +104,8 @@ class JimengInpaintingConfigForm(BaseModel):
     enabled: bool = False
     base_url: str = "https://visual.volcengineapi.com"
     api_key: str = ""
-    credits_cost: int = 30
+    credits_cost: int = 30  # 涂抹消除积分
+    edit_credits_cost: int = 40  # 涂抹编辑积分
     default_steps: int = 30
     default_strength: float = 0.8
     default_scale: float = 7.0
@@ -108,6 +115,8 @@ class JimengInpaintingConfigForm(BaseModel):
 class JimengInpaintingRequestModel(BaseModel):
     original_image_url: str
     mask_image_url: str
+    mode: Optional[str] = "remove"  # 'remove' 或 'edit'
+    custom_prompt: Optional[str] = None  # 编辑模式的提示词
     steps: Optional[int] = 30
     strength: Optional[float] = 0.8
     scale: Optional[float] = 7.0
@@ -124,6 +133,8 @@ class JimengInpaintingTaskModel(BaseModel):
     user_id: str
     status: str
     progress: str = "0%"
+    mode: str = "remove"
+    custom_prompt: Optional[str] = None
     original_image_url: str
     mask_image_url: str
     steps: int
