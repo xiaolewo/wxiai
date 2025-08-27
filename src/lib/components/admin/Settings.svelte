@@ -18,6 +18,7 @@
 	import Kling from './Settings/Kling.svelte';
 	import KlingLipSync from './Settings/KlingLipSync.svelte';
 	import JimengInpainting from './Settings/JimengInpainting.svelte';
+	import JimengOutpainting from './Settings/JimengOutpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
@@ -61,6 +62,7 @@
 			'kling',
 			'kling-lip-sync',
 			'jimeng-inpainting',
+			'jimeng-outpainting',
 			'jimeng',
 			'storage',
 			'pipelines',
@@ -622,6 +624,35 @@
 		</button>
 
 		<button
+			id="jimeng-outpainting"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'jimeng-outpainting'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/jimeng-outpainting');
+			}}
+		>
+			<div class="mr-2 self-center">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M3.75 12a8.25 8.25 0 1 1 16.5 0 8.25 8.25 0 0 1-16.5 0ZM12 3.75a8.25 8.25 0 0 0-8.25 8.25v.75h16.5V12A8.25 8.25 0 0 0 12 3.75Z"
+						clip-rule="evenodd"
+					/>
+					<path d="M8.25 15.75h7.5v1.5h-7.5v-1.5Z" />
+					<path d="M9 18h6v1.5H9V18Z" />
+				</svg>
+			</div>
+			<div class=" self-center">智能扩图</div>
+		</button>
+
+		<button
 			id="jimeng"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'jimeng'
@@ -843,6 +874,12 @@
 			/>
 		{:else if selectedTab === 'jimeng-inpainting'}
 			<JimengInpainting
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'jimeng-outpainting'}
+			<JimengOutpainting
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

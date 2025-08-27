@@ -82,6 +82,7 @@ from open_webui.routers import (
     kling,
     kling_lip_sync,
     jimeng_inpainting,
+    jimeng_outpainting,
     jimeng,
     storage,
     flux,
@@ -119,6 +120,15 @@ try:
     )
 except ImportError as e:
     logger.warning(f"Failed to import kling_lip_sync models: {e}")
+
+try:
+    from open_webui.models.jimeng_outpainting import (
+        JimengOutpaintingConfig,
+        JimengOutpaintingTask,
+        JimengOutpaintingCredit,
+    )
+except ImportError as e:
+    logger.warning(f"Failed to import jimeng_outpainting models: {e}")
 
 from open_webui.config import (
     # Ollama
@@ -1289,6 +1299,11 @@ app.include_router(
     jimeng_inpainting.router,
     prefix="/api/v1/jimeng-inpainting",
     tags=["jimeng-inpainting"],
+)
+app.include_router(
+    jimeng_outpainting.router,
+    prefix="/api/v1/jimeng-outpainting",
+    tags=["jimeng-outpainting"],
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])

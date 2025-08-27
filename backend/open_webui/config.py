@@ -178,6 +178,18 @@ def run_migrations():
         # Import models here to avoid circular imports
         from open_webui.models import auths, kling, jimeng
 
+        # 导入所有即梦模型以确保表被正确注册
+        try:
+            from open_webui.models.jimeng_outpainting import (
+                JimengOutpaintingConfig,
+                JimengOutpaintingTask,
+                JimengOutpaintingCredit,
+            )
+
+            log.info("Jimeng outpainting models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import jimeng_outpainting models: {e}")
+
         from alembic import command
         from alembic.config import Config
 
@@ -235,6 +247,21 @@ def run_migrations():
             log.warning(f"Failed to import jimeng_inpainting models: {e}")
 
         try:
+            from open_webui.models.jimeng_outpainting import (
+                JimengOutpaintingConfig,
+                JimengOutpaintingTask,
+                JimengOutpaintingCredit,
+            )
+
+            log.info(
+                "Jimeng outpainting models imported successfully in table creation"
+            )
+        except ImportError as e:
+            log.warning(
+                f"Failed to import jimeng_outpainting models in table creation: {e}"
+            )
+
+        try:
             from open_webui.models.kling_lip_sync import (
                 KlingLipSyncConfig,
                 KlingLipSyncTask,
@@ -269,6 +296,29 @@ def run_migrations():
                         )
                     )
                     log.info("Inserted default configuration for Jimeng inpainting")
+
+                # 检查并插入即梦智能扩图默认配置
+                try:
+                    result = conn.execute(
+                        text("SELECT COUNT(*) FROM jimeng_outpainting_config")
+                    )
+                    if result.fetchone()[0] == 0:
+                        conn.execute(
+                            text(
+                                """
+                            INSERT INTO jimeng_outpainting_config 
+                            (enabled, base_url, credits_cost, default_steps, default_strength, default_scale, default_quality) 
+                            VALUES (0, 'https://visual.volcengineapi.com', 40, 30, 0.8, 7.0, 'M')
+                        """
+                            )
+                        )
+                        log.info(
+                            "Inserted default configuration for Jimeng outpainting"
+                        )
+                except Exception as outpainting_config_error:
+                    log.warning(
+                        f"Failed to insert jimeng_outpainting_config: {outpainting_config_error}"
+                    )
 
                 # 检查并插入可灵对口型默认配置（如果需要）
                 result = conn.execute(

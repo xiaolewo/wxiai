@@ -296,7 +296,7 @@
 
 {#if show}
 	<!-- 弹窗遮罩 -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+	<div class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
 		<!-- 弹窗内容 -->
 		<div
 			class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-[95vw] max-h-[95vh] flex flex-col"
