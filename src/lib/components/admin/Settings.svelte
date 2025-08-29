@@ -20,6 +20,7 @@
 	import JimengInpainting from './Settings/JimengInpainting.svelte';
 	import JimengOutpainting from './Settings/JimengOutpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
+	import Veo from './Settings/Veo.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
 	import Connections from './Settings/Connections.svelte';
@@ -64,6 +65,7 @@
 			'jimeng-inpainting',
 			'jimeng-outpainting',
 			'jimeng',
+			'veo',
 			'storage',
 			'pipelines',
 			'sms',
@@ -678,6 +680,31 @@
 		</button>
 
 		<button
+			id="veo"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'veo'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/veo');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25V21a.75.75 0 0 0 1.28.53l3-3a.75.75 0 0 0 .22-.53V16.5h5.25a2.25 2.25 0 0 0 2.25-2.25V3a2.25 2.25 0 0 0-2.25-2.25H6A2.25 2.25 0 0 0 3.75 3ZM6.75 6h10.5v1.5H6.75V6Zm0 3h7.5v1.5h-7.5V9Zm0 3h4.5v1.5h-4.5V12Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">🎯 Veo AI视频</div>
+		</button>
+
+		<button
 			id="storage"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'storage'
@@ -886,6 +913,12 @@
 			/>
 		{:else if selectedTab === 'jimeng'}
 			<Jimeng
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'veo'}
+			<Veo
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

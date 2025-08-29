@@ -68,7 +68,7 @@ class GeneratedFile(Base):
     # 关联信息
     source_type = Column(
         String(50), nullable=False
-    )  # 'midjourney', 'kling', 'jimeng', 'dreamwork'
+    )  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
     source_task_id = Column(String(255), nullable=True)  # 关联任务ID
 
     # 元数据和状态
@@ -145,7 +145,7 @@ class GeneratedFileForm(BaseModel):
     local_path: Optional[str] = None
     cloud_url: Optional[str] = None
     cloud_path: Optional[str] = None
-    source_type: str  # 'midjourney', 'kling', 'jimeng', 'dreamwork'
+    source_type: str  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
     source_task_id: Optional[str] = None
     file_metadata: Optional[Dict[str, Any]] = None
     status: str = "pending"
@@ -181,7 +181,7 @@ class UploadRequest(BaseModel):
     file_data: Optional[bytes] = None  # 用于直接上传
     filename: str
     file_type: str  # 'image', 'video'
-    source_type: str  # 'midjourney', 'kling', 'jimeng', 'dreamwork'
+    source_type: str  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
     source_task_id: Optional[str] = None
     file_metadata: Optional[Dict[str, Any]] = None
 
@@ -198,7 +198,9 @@ class FileListRequest(BaseModel):
     page: int = 1
     limit: int = 20
     file_type: Optional[str] = None  # 'image', 'video'
-    source_type: Optional[str] = None  # 'midjourney', 'kling', 'jimeng', 'dreamwork'
+    source_type: Optional[str] = (
+        None  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
+    )
     status: Optional[str] = None  # 'pending', 'uploaded', 'failed'
 
 

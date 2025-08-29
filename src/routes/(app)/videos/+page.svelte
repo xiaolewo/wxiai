@@ -36,21 +36,36 @@
 		deleteJimengTask
 	} from '$lib/apis/jimeng';
 
+	// Import Veo API functions
+	import {
+		type VeoTask,
+		type VeoUserConfig,
+		type VeoGenerateRequest,
+		submitVeoTextToVideoTask,
+		submitVeoImageToVideoTask,
+		getVeoTaskStatus,
+		getVeoUserTaskHistory,
+		getVeoUserCredits,
+		getVeoUserConfig,
+		deleteVeoTask
+	} from '$lib/apis/veo';
+
 	const i18n = getContext('i18n');
 
 	let loaded = false;
 	let isGenerating = false;
-	let currentTask: KlingTask | JimengTask | null = null;
-	let generatedVideo: KlingTask | JimengTask | null = null;
-	let taskHistory: (KlingTask | JimengTask)[] = [];
+	let currentTask: KlingTask | JimengTask | VeoTask | null = null;
+	let generatedVideo: KlingTask | JimengTask | VeoTask | null = null;
+	let taskHistory: (KlingTask | JimengTask | VeoTask)[] = [];
 	let userCredits = 0;
 	let loadingData = false;
 	let pollingInterval: NodeJS.Timeout | null = null;
 	let klingConfig: KlingConfig | null = null;
 	let jimengConfig: JimengConfig | null = null;
+	let veoConfig: VeoUserConfig | null = null;
 
 	// Service selection
-	let selectedService: 'kling' | 'jimeng' = 'kling';
+	let selectedService: 'kling' | 'jimeng' | 'veo' = 'kling';
 	let lastServiceSwitch = '';
 	let serviceSwitchTimeout: NodeJS.Timeout | null = null;
 
@@ -73,16 +88,45 @@
 				await loadJimengConfig();
 			} else if (selectedService === 'kling' && !klingConfig) {
 				await loadKlingConfig();
+			} else if (selectedService === 'veo' && !veoConfig) {
+				await loadVeoConfig();
 			}
 
 			// 立即刷新一次积分
 			await refreshCredits();
 
-			// 根据选择的服务设置水印默认值
+			// 根据选择的服务设置水印默认值和模型默认值
 			if (selectedService === 'jimeng' && jimengConfig?.defaultWatermark !== undefined) {
 				watermark = jimengConfig.defaultWatermark;
 			} else if (selectedService === 'kling') {
 				watermark = false; // 可灵服务没有水印功能
+				// 设置默认Kling模型
+				if (!selectedModel.startsWith('kling-') && !selectedModel.includes('pro')) {
+					selectedModel = 'kling-v1';
+				}
+			} else if (selectedService === 'veo') {
+				watermark = false; // Veo服务没有水印功能
+				// 设置默认Veo模型
+				const veoModels = [
+					'veo3',
+					'veo3-fast',
+					'veo3-pro',
+					'veo3-pro-frames',
+					'veo2',
+					'veo2-fast',
+					'veo2-fast-frames',
+					'veo2-fast-components',
+					'veo2-pro',
+					'veo3-fast-frames'
+				];
+				// 确保配置已加载后再设置默认模型
+				if (veoConfig?.default_model) {
+					selectedModel = veoConfig.default_model;
+					console.log(`🎯 【Veo模型】已设置默认模型: ${veoConfig.default_model}`);
+				} else if (!veoModels.includes(selectedModel)) {
+					selectedModel = 'veo3'; // 如果当前模型不是Veo模型，使用默认值
+					console.log(`🎯 【Veo模型】回退到默认模型: veo3`);
+				}
 			}
 		}, 100); // 100ms防抖
 	}
@@ -96,11 +140,18 @@
 	let cfgScale = 0.5;
 	let selectedModel = 'kling-v1'; // 选择的模型版本
 	let watermark = false; // 水印设置
+	let enhancePrompt = true; // Veo提示词优化
 
 	// 图生视频参数
 	let inputImage: string | null = null; // base64数据
 	let imageTail: string | null = null; // 尾帧图片
 	let selectedGenerationType: 'text-to-video' | 'image-to-video' = 'text-to-video';
+
+	// Veo专用图片输入
+	let veoImage1: string | null = null; // Veo第一张图片
+	let veoImage2: string | null = null; // Veo第二张图片（首尾帧模式）
+	let veoImage3: string | null = null; // Veo第三张图片（组件模式）
+	let selectedVeoImageMode: 'single' | 'frames' | 'components' = 'single'; // Veo图片模式
 
 	// 图生视频高级功能
 	let staticMask: string | null = null; // 静态笔刷
@@ -146,9 +197,119 @@
 		{ value: 'kling-v2-1-master', label: 'Kling V2.1 Master' }
 	];
 
-	// 根据生成类型获取当前可用的模型选项
-	$: currentModelOptions =
-		selectedGenerationType === 'text-to-video' ? textToVideoModelOptions : imageToVideoModelOptions;
+	// Veo模型选项
+	const veoModelOptions = [
+		{ value: 'veo3', label: 'Veo 3 (最新)', description: '最新版本', type: 'text' },
+		{
+			value: 'veo3-fast',
+			label: 'Veo 3 Fast',
+			description: '快速版本，生成速度更快',
+			type: 'text'
+		},
+		{ value: 'veo3-pro', label: 'Veo 3 Pro', description: '专业版本，质量更高', type: 'text' },
+		{
+			value: 'veo3-pro-frames',
+			label: 'Veo 3 Pro Frames',
+			description: '支持图生视频(单张图片)',
+			type: 'image'
+		},
+		{ value: 'veo2', label: 'Veo 2', description: '稳定版本，平衡速度与质量', type: 'text' },
+		{ value: 'veo2-fast', label: 'Veo 2 Fast', description: '快速版本', type: 'text' },
+		{
+			value: 'veo2-fast-frames',
+			label: 'Veo 2 Fast Frames',
+			description: '支持图生视频(首尾帧)',
+			type: 'image'
+		},
+		{
+			value: 'veo2-fast-components',
+			label: 'Veo 2 Fast Components',
+			description: '支持多图片输入(视频元素)',
+			type: 'image'
+		},
+		{ value: 'veo2-pro', label: 'Veo 2 Pro', description: '专业版本', type: 'text' },
+		{
+			value: 'veo3-fast-frames',
+			label: 'Veo 3 Fast Frames',
+			description: '支持图生视频的快速版本',
+			type: 'image'
+		}
+	];
+
+	// 根据生成类型和服务获取当前可用的模型选项
+	$: currentModelOptions = (() => {
+		if (selectedService === 'veo') {
+			// Veo根据生成类型过滤支持的模型
+			if (selectedGenerationType === 'text-to-video') {
+				return veoModelOptions.filter((option) => option.type === 'text');
+			} else {
+				return veoModelOptions.filter((option) => option.type === 'image');
+			}
+		} else if (selectedService === 'kling') {
+			return selectedGenerationType === 'text-to-video'
+				? textToVideoModelOptions
+				: imageToVideoModelOptions;
+		} else {
+			// Jimeng 暂时使用固定选项
+			return [{ value: 'jimeng-default', label: '即梦默认' }];
+		}
+	})();
+
+	// 验证并修正选中的模型 - 确保模型在当前可用选项中
+	$: if (currentModelOptions && currentModelOptions.length > 0 && selectedService && loaded) {
+		const availableValues = currentModelOptions.map((option) => option.value);
+		console.log(
+			`🔍 【模型验证】服务: ${selectedService}, 当前模型: ${selectedModel}, 可用模型: [${availableValues.join(', ')}]`
+		);
+
+		// 如果当前选中的模型不在可用选项中
+		if (!availableValues.includes(selectedModel)) {
+			console.log(`⚠️ 【模型验证】当前模型 "${selectedModel}" 不在可用选项中，需要修正`);
+
+			// 优先选择后端配置的默认模型
+			let newModel = null;
+
+			if (
+				selectedService === 'veo' &&
+				veoConfig?.default_model &&
+				availableValues.includes(veoConfig.default_model)
+			) {
+				newModel = veoConfig.default_model;
+				console.log(`🎯 【模型验证】使用Veo默认模型: ${newModel}`);
+			} else if (selectedService === 'kling' && availableValues.includes('kling-v1')) {
+				newModel = 'kling-v1';
+				console.log(`🎬 【模型验证】使用可灵默认模型: ${newModel}`);
+			} else if (selectedService === 'jimeng' && availableValues.includes('jimeng-default')) {
+				newModel = 'jimeng-default';
+				console.log(`🌟 【模型验证】使用即梦默认模型: ${newModel}`);
+			} else {
+				// 如果没有匹配的默认模型，使用第一个可用模型
+				newModel = availableValues[0];
+				console.log(`⚠️ 【模型验证】使用第一个可用模型: ${newModel}`);
+			}
+
+			if (newModel && newModel !== selectedModel) {
+				console.log(`🔄 【模型验证】模型修正: ${selectedModel} → ${newModel}`);
+				selectedModel = newModel;
+				console.log(`✅ 【模型验证】模型已修正为: ${selectedModel}`);
+			}
+		} else {
+			console.log(`✅ 【模型验证】当前模型 "${selectedModel}" 有效，无需修正`);
+		}
+	}
+
+	// 根据选择的Veo模型自动设置图片模式
+	$: if (selectedService === 'veo' && selectedGenerationType === 'image-to-video') {
+		if (selectedModel.includes('components')) {
+			selectedVeoImageMode = 'components'; // 三张图片模式
+		} else if (selectedModel === 'veo3-pro-frames') {
+			selectedVeoImageMode = 'single'; // veo3-pro-frames只支持单张图片
+		} else if (selectedModel.includes('frames')) {
+			selectedVeoImageMode = 'frames'; // 首尾帧模式（两张图片）
+		} else {
+			selectedVeoImageMode = 'single'; // 单张图片模式
+		}
+	}
 
 	// 图生视频模式选项 - 可灵服务才显示首尾帧模式
 	$: imageVideoModeOptions = (() => {
@@ -199,21 +360,27 @@
 	];
 
 	// 画面比例选项 - 根据选择的服务动态切换
-	$: aspectRatioOptions =
-		selectedService === 'kling'
-			? [
-					{ value: '16:9', label: '16:9 (横向)' },
-					{ value: '9:16', label: '9:16 (竖向)' },
-					{ value: '1:1', label: '1:1 (正方形)' }
-				]
-			: [
-					{ value: '1:1', label: '1:1 (正方形)' },
-					{ value: '21:9', label: '21:9 (超宽屏)' },
-					{ value: '16:9', label: '16:9 (横向)' },
-					{ value: '9:16', label: '9:16 (竖向)' },
-					{ value: '4:3', label: '4:3 (传统)' },
-					{ value: '3:4', label: '3:4 (竖向传统)' }
-				];
+	$: aspectRatioOptions = (() => {
+		if (selectedService === 'kling') {
+			return [
+				{ value: '16:9', label: '16:9 (横向)' },
+				{ value: '9:16', label: '9:16 (竖向)' },
+				{ value: '1:1', label: '1:1 (正方形)' }
+			];
+		} else if (selectedService === 'veo') {
+			return []; // Veo不支持自定义画面比例，由模型决定
+		} else {
+			// Jimeng
+			return [
+				{ value: '1:1', label: '1:1 (正方形)' },
+				{ value: '21:9', label: '21:9 (超宽屏)' },
+				{ value: '16:9', label: '16:9 (横向)' },
+				{ value: '9:16', label: '9:16 (竖向)' },
+				{ value: '4:3', label: '4:3 (传统)' },
+				{ value: '3:4', label: '3:4 (竖向传统)' }
+			];
+		}
+	})();
 
 	// 筛选后的历史记录
 	$: filteredTaskHistory = taskHistory.filter((task) => {
@@ -263,7 +430,17 @@
 		}
 		loaded = true;
 
+		// 初始模型状态调试信息
+		console.log(
+			`🔍 【初始状态】selectedService: ${selectedService}, selectedModel: ${selectedModel}`
+		);
+
 		await loadUserData();
+
+		// 数据加载完成后的状态调试信息
+		console.log(
+			`🔍 【数据加载后】selectedService: ${selectedService}, selectedModel: ${selectedModel}`
+		);
 
 		// 清除可能存在的旧定时器
 		if (creditRefreshInterval) {
@@ -318,6 +495,20 @@
 		}
 	};
 
+	const loadVeoConfig = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const config = await getVeoUserConfig($user.token);
+			if (config) {
+				veoConfig = config;
+				console.log('🎯 Veo配置已加载:', config);
+			}
+		} catch (error) {
+			console.error('加载Veo配置失败:', error);
+		}
+	};
+
 	const loadUserData = async () => {
 		console.log('🎬 【数据加载调试】loadUserData开始');
 
@@ -329,56 +520,123 @@
 		loadingData = true;
 		try {
 			// 加载所有配置
-			await Promise.all([loadKlingConfig(), loadJimengConfig()]);
+			await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig()]);
+
+			// 配置加载完成后，根据当前选择的服务设置正确的默认模型
+			if (selectedService === 'veo' && veoConfig?.default_model) {
+				selectedModel = veoConfig.default_model;
+				console.log(`🎯 【初始化】为Veo服务设置默认模型: ${veoConfig.default_model}`);
+			} else if (
+				selectedService === 'kling' &&
+				!selectedModel.startsWith('kling-') &&
+				!selectedModel.includes('pro')
+			) {
+				selectedModel = 'kling-v1';
+				console.log(`🎬 【初始化】为可灵服务设置默认模型: kling-v1`);
+			} else if (selectedService === 'jimeng') {
+				// 即梦服务使用固定模型
+				selectedModel = 'jimeng-default';
+				console.log(`🌟 【初始化】为即梦服务设置默认模型: jimeng-default`);
+			}
 
 			// 检查当前选择的服务是否可用
-			const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
+			let currentConfig = null;
+			let serviceName = '';
+
+			if (selectedService === 'kling') {
+				currentConfig = klingConfig;
+				serviceName = '可灵';
+			} else if (selectedService === 'jimeng') {
+				currentConfig = jimengConfig;
+				serviceName = '即梦';
+			} else if (selectedService === 'veo') {
+				currentConfig = veoConfig;
+				serviceName = 'Veo';
+			}
+
 			if (!currentConfig?.enabled) {
-				const serviceName = selectedService === 'kling' ? '可灵' : '即梦';
 				toast.error(`${serviceName}视频服务未启用，请联系管理员配置或切换到其他服务`);
 
 				// 尝试切换到可用的服务
-				if (selectedService === 'kling' && jimengConfig?.enabled) {
-					selectedService = 'jimeng';
-					toast.info('已自动切换到即梦视频服务');
-				} else if (selectedService === 'jimeng' && klingConfig?.enabled) {
-					selectedService = 'kling';
-					toast.info('已自动切换到可灵视频服务');
+				if (selectedService === 'kling' && (jimengConfig?.enabled || veoConfig?.enabled)) {
+					if (jimengConfig?.enabled) {
+						selectedService = 'jimeng';
+						selectedModel = 'jimeng-default';
+						toast.info('已自动切换到即梦视频服务');
+					} else if (veoConfig?.enabled) {
+						selectedService = 'veo';
+						selectedModel = veoConfig.default_model || 'veo3';
+						toast.info('已自动切换到Veo视频服务');
+					}
+				} else if (selectedService === 'jimeng' && (klingConfig?.enabled || veoConfig?.enabled)) {
+					if (klingConfig?.enabled) {
+						selectedService = 'kling';
+						selectedModel = 'kling-v1';
+						toast.info('已自动切换到可灵视频服务');
+					} else if (veoConfig?.enabled) {
+						selectedService = 'veo';
+						selectedModel = veoConfig.default_model || 'veo3';
+						toast.info('已自动切换到Veo视频服务');
+					}
+				} else if (selectedService === 'veo' && (klingConfig?.enabled || jimengConfig?.enabled)) {
+					if (klingConfig?.enabled) {
+						selectedService = 'kling';
+						selectedModel = 'kling-v1';
+						toast.info('已自动切换到可灵视频服务');
+					} else if (jimengConfig?.enabled) {
+						selectedService = 'jimeng';
+						selectedModel = 'jimeng-default';
+						toast.info('已自动切换到即梦视频服务');
+					}
 				}
 			}
 
 			// 加载用户积分
-			const getCreditsFunction =
-				selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
+			let getCreditsFunction;
+			let serviceDisplayName;
+
+			if (selectedService === 'kling') {
+				getCreditsFunction = getKlingUserCredits;
+				serviceDisplayName = '可灵';
+			} else if (selectedService === 'jimeng') {
+				getCreditsFunction = getJimengUserCredits;
+				serviceDisplayName = '即梦';
+			} else if (selectedService === 'veo') {
+				getCreditsFunction = getVeoUserCredits;
+				serviceDisplayName = 'Veo';
+			}
+
 			const credits = await getCreditsFunction($user.token);
 			if (credits) {
 				userCredits = credits.balance || 0;
-				console.log(
-					`🎬 【${selectedService === 'kling' ? '可灵' : '即梦'}】积分余额加载:`,
-					userCredits
-				);
+				console.log(`🎬 【${serviceDisplayName}】积分余额加载:`, userCredits);
 			} else {
-				console.warn(`🎬 【${selectedService === 'kling' ? '可灵' : '即梦'}】积分余额加载失败`);
+				console.warn(`🎬 【${serviceDisplayName}】积分余额加载失败`);
 			}
 
-			// 加载用户历史记录 - 混合显示两种服务的记录
-			const [klingHistory, jimengHistory] = await Promise.all([
+			// 加载用户历史记录 - 混合显示三种服务的记录
+			const [klingHistory, jimengHistory, veoHistory] = await Promise.all([
 				klingConfig?.enabled
 					? getKlingUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] },
 				jimengConfig?.enabled
 					? getJimengUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+					: { data: [] },
+				veoConfig?.enabled
+					? getVeoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] }
 			]);
 
 			// 合并和排序历史记录（后端已经包含serviceType字段）
-			const allTasks = [...(klingHistory.data || []), ...(jimengHistory.data || [])].sort(
-				(a, b) => {
-					const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
-					const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
-					return timeB - timeA; // 降序排列，最新的在前
-				}
-			);
+			const allTasks = [
+				...(klingHistory.data || []),
+				...(jimengHistory.data || []),
+				...(veoHistory.data || [])
+			].sort((a, b) => {
+				const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
+				const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
+				return timeB - timeA; // 降序排列，最新的在前
+			});
 
 			taskHistory = allTasks;
 			console.log('🎬 加载历史记录:', taskHistory.length, '个任务');
@@ -409,27 +667,32 @@
 			return;
 		}
 
-		console.log(`💰 【积分刷新】开始获取${selectedService === 'kling' ? '可灵' : '即梦'}积分...`);
+		let serviceDisplayName;
+		let getCreditsFunction;
+
+		if (selectedService === 'kling') {
+			serviceDisplayName = '可灵';
+			getCreditsFunction = getKlingUserCredits;
+		} else if (selectedService === 'jimeng') {
+			serviceDisplayName = '即梦';
+			getCreditsFunction = getJimengUserCredits;
+		} else if (selectedService === 'veo') {
+			serviceDisplayName = 'Veo';
+			getCreditsFunction = getVeoUserCredits;
+		}
+
+		console.log(`💰 【积分刷新】开始获取${serviceDisplayName}积分...`);
 		try {
-			const getCreditsFunction =
-				selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
 			const credits = await getCreditsFunction($user.token);
 			if (credits) {
 				const oldBalance = userCredits;
 				userCredits = credits.balance || 0;
-				console.log(
-					`💰 【积分刷新】${selectedService === 'kling' ? '可灵' : '即梦'}积分: ${oldBalance} → ${userCredits}`
-				);
+				console.log(`💰 【积分刷新】${serviceDisplayName}积分: ${oldBalance} → ${userCredits}`);
 			} else {
-				console.log(
-					`💰 【积分刷新】${selectedService === 'kling' ? '可灵' : '即梦'}积分API返回空结果`
-				);
+				console.log(`💰 【积分刷新】${serviceDisplayName}积分API返回空结果`);
 			}
 		} catch (error) {
-			console.warn(
-				`💰 【积分刷新】获取${selectedService === 'kling' ? '可灵' : '即梦'}积分失败:`,
-				error
-			);
+			console.warn(`💰 【积分刷新】获取${serviceDisplayName}积分失败:`, error);
 		}
 	};
 
@@ -439,16 +702,32 @@
 			return;
 		}
 
-		const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
-		const serviceName = selectedService === 'kling' ? '可灵' : '即梦';
+		let currentConfig, serviceName;
+		if (selectedService === 'kling') {
+			currentConfig = klingConfig;
+			serviceName = '可灵';
+		} else if (selectedService === 'jimeng') {
+			currentConfig = jimengConfig;
+			serviceName = '即梦';
+		} else if (selectedService === 'veo') {
+			currentConfig = veoConfig;
+			serviceName = 'Veo';
+		}
 
 		// 生成前重新获取最新配置，确保积分设置是最新的
 		console.log(`🎬 【${serviceName}】生成前刷新配置和积分...`);
-		await Promise.all([loadKlingConfig(), loadJimengConfig()]);
+		await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig()]);
 
 		// 重新获取积分余额以确保是最新的
-		const getCreditsFunction =
-			selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
+		let getCreditsFunction;
+		if (selectedService === 'kling') {
+			getCreditsFunction = getKlingUserCredits;
+		} else if (selectedService === 'jimeng') {
+			getCreditsFunction = getJimengUserCredits;
+		} else if (selectedService === 'veo') {
+			getCreditsFunction = getVeoUserCredits;
+		}
+
 		const latestCredits = await getCreditsFunction($user.token);
 		if (latestCredits) {
 			userCredits = latestCredits.balance || 0;
@@ -473,23 +752,40 @@
 
 		// 图生视频模式验证
 		if (selectedGenerationType === 'image-to-video') {
-			if (!inputImage) {
-				toast.error('图生视频模式需要上传输入图片');
-				return;
-			}
-
-			// 可灵特有的高级功能验证
-			if (selectedService === 'kling') {
-				// 首尾帧模式验证
-				if (selectedImageVideoMode === 'first-last' && !imageTail) {
-					toast.error('首尾帧模式需要同时上传首帧和尾帧图片');
+			if (selectedService === 'veo') {
+				// Veo图生视频验证
+				if (!veoImage1) {
+					toast.error('图生视频模式需要至少上传一张图片');
+					return;
+				}
+				if (selectedVeoImageMode === 'frames' && !veoImage2) {
+					toast.error('首尾帧模式需要上传两张图片');
+					return;
+				}
+				if (selectedVeoImageMode === 'components' && (!veoImage2 || !veoImage3)) {
+					toast.error('组件模式需要上传三张图片');
+					return;
+				}
+			} else {
+				// 可灵和即梦使用原有验证
+				if (!inputImage) {
+					toast.error('图生视频模式需要上传输入图片');
 					return;
 				}
 
-				// 笔刷模式验证
-				if (selectedImageVideoMode === 'brush' && !staticMask && dynamicMasks.length === 0) {
-					toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
-					return;
+				// 可灵特有的高级功能验证
+				if (selectedService === 'kling') {
+					// 首尾帧模式验证
+					if (selectedImageVideoMode === 'first-last' && !imageTail) {
+						toast.error('首尾帧模式需要同时上传首帧和尾帧图片');
+						return;
+					}
+
+					// 笔刷模式验证
+					if (selectedImageVideoMode === 'brush' && !staticMask && dynamicMasks.length === 0) {
+						toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
+						return;
+					}
 				}
 			}
 		}
@@ -497,7 +793,7 @@
 		isGenerating = true;
 		try {
 			// 构建生成请求 - 根据选择的服务
-			let request: KlingGenerateRequest | JimengGenerateRequest;
+			let request: KlingGenerateRequest | JimengGenerateRequest | VeoGenerateRequest;
 
 			if (selectedService === 'kling') {
 				request = {
@@ -509,7 +805,7 @@
 					duration: selectedDuration,
 					aspectRatio: selectedAspectRatio
 				} as KlingGenerateRequest;
-			} else {
+			} else if (selectedService === 'jimeng') {
 				// 即梦请求参数更简单
 				request = {
 					prompt: prompt.trim(),
@@ -518,81 +814,95 @@
 					cfgScale: cfgScale,
 					watermark: watermark
 				} as JimengGenerateRequest;
+			} else if (selectedService === 'veo') {
+				// Veo请求参数
+				request = {
+					prompt: prompt.trim(),
+					model: selectedModel,
+					enhance_prompt: enhancePrompt
+				} as VeoGenerateRequest;
 			}
 
 			// 如果是图生视频，添加图片和相关参数
 			if (selectedGenerationType === 'image-to-video') {
-				// 首帧图片 (必需)
-				if (inputImage) {
-					let base64Data = inputImage;
-					if (inputImage.startsWith('data:')) {
-						base64Data = inputImage.split(',')[1];
-					}
+				if (selectedService === 'veo') {
+					// Veo使用专用的图片数组
+					const images: string[] = [];
+					if (veoImage1) images.push(veoImage1);
+					if (veoImage2) images.push(veoImage2);
+					if (veoImage3) images.push(veoImage3);
+					(request as VeoGenerateRequest).images = images;
+				} else {
+					// 可灵和即梦使用原有的inputImage
+					if (inputImage) {
+						let base64Data = inputImage;
+						if (inputImage.startsWith('data:')) {
+							base64Data = inputImage.split(',')[1];
+						}
 
-					if (selectedService === 'kling') {
-						(request as KlingGenerateRequest).image = base64Data;
-					} else {
-						// 即梦支持两种方式：image (base64) 或 imageUrl
-						// 这里使用 base64 方式
-						(request as JimengGenerateRequest).image = base64Data;
+						if (selectedService === 'kling') {
+							(request as KlingGenerateRequest).image = base64Data;
+						} else if (selectedService === 'jimeng') {
+							// 即梦支持两种方式：image (base64) 或 imageUrl
+							// 这里使用 base64 方式
+							(request as JimengGenerateRequest).image = base64Data;
+						}
 					}
 				}
+			}
 
-				// 可灵特有的高级功能
-				if (selectedService === 'kling') {
-					const klingRequest = request as KlingGenerateRequest;
+			// 可灵特有的高级功能
+			if (selectedService === 'kling') {
+				const klingRequest = request as KlingGenerateRequest;
 
-					// 根据选择的模式添加不同的参数
-					if (selectedImageVideoMode === 'first-last' && imageTail) {
-						// 尾帧模式
-						let tailBase64 = imageTail;
-						if (imageTail.startsWith('data:')) {
-							tailBase64 = imageTail.split(',')[1];
+				// 根据选择的模式添加不同的参数
+				if (selectedImageVideoMode === 'first-last' && imageTail) {
+					// 尾帧模式
+					let tailBase64 = imageTail;
+					if (imageTail.startsWith('data:')) {
+						tailBase64 = imageTail.split(',')[1];
+					}
+					klingRequest.imageTail = tailBase64;
+				} else if (selectedImageVideoMode === 'brush') {
+					// 笔刷模式
+					if (staticMask) {
+						let maskBase64 = staticMask;
+						if (staticMask.startsWith('data:')) {
+							maskBase64 = staticMask.split(',')[1];
 						}
-						klingRequest.imageTail = tailBase64;
-					} else if (selectedImageVideoMode === 'brush') {
-						// 笔刷模式
-						if (staticMask) {
-							let maskBase64 = staticMask;
-							if (staticMask.startsWith('data:')) {
-								maskBase64 = staticMask.split(',')[1];
-							}
-							klingRequest.staticMask = maskBase64;
-						}
+						klingRequest.staticMask = maskBase64;
+					}
 
-						if (dynamicMasks.length > 0) {
-							klingRequest.dynamicMasks = dynamicMasks.map((dm) => ({
-								mask: dm.mask.startsWith('data:') ? dm.mask.split(',')[1] : dm.mask,
-								trajectories: dm.trajectories
-							}));
-						}
-					} else if (selectedImageVideoMode === 'camera') {
-						// 摄像机控制模式
-						if (cameraControlType !== 'simple') {
-							// 预定义运镜类型
-							klingRequest.cameraControl = {
-								type: cameraControlType
-							};
-						} else {
-							// 简单运镜模式 - 检查是否有非零参数
-							const hasValidConfig = Object.values(cameraControlConfig).some(
-								(value) => value !== 0
+					if (dynamicMasks.length > 0) {
+						klingRequest.dynamicMasks = dynamicMasks.map((dm) => ({
+							mask: dm.mask.startsWith('data:') ? dm.mask.split(',')[1] : dm.mask,
+							trajectories: dm.trajectories
+						}));
+					}
+				} else if (selectedImageVideoMode === 'camera') {
+					// 摄像机控制模式
+					if (cameraControlType !== 'simple') {
+						// 预定义运镜类型
+						klingRequest.cameraControl = {
+							type: cameraControlType
+						};
+					} else {
+						// 简单运镜模式 - 检查是否有非零参数
+						const hasValidConfig = Object.values(cameraControlConfig).some((value) => value !== 0);
+						if (hasValidConfig) {
+							// 确保只有一个参数不为0（根据API文档要求）
+							const nonZeroParams = Object.entries(cameraControlConfig).filter(
+								([key, value]) => value !== 0
 							);
-							if (hasValidConfig) {
-								// 确保只有一个参数不为0（根据API文档要求）
-								const nonZeroParams = Object.entries(cameraControlConfig).filter(
-									([key, value]) => value !== 0
-								);
-								if (nonZeroParams.length === 1) {
-									klingRequest.cameraControl = {
-										type: 'simple',
-										config: cameraControlConfig
-									};
-								} else if (nonZeroParams.length > 1) {
-									toast.error('简单运镜模式只能设置一个非零参数');
-									isGenerating = false;
-									return;
-								}
+							if (nonZeroParams.length === 1) {
+								klingRequest.cameraControl = {
+									type: 'simple',
+									config: cameraControlConfig
+								};
+							} else if (nonZeroParams.length > 1) {
+								toast.error('简单运镜模式只能设置一个非零参数');
+								isGenerating = false;
+								return;
 							}
 						}
 					}
@@ -638,8 +948,10 @@
 				model:
 					selectedService === 'kling'
 						? (request as KlingGenerateRequest).modelName
-						: 'jimeng-default',
-				hasInputImage: !!request.image,
+						: selectedService === 'veo'
+							? (request as VeoGenerateRequest).model
+							: 'jimeng-default',
+				hasInputImage: !!(request as any).image || !!(request as any).images,
 				prompt: request.prompt
 			});
 
@@ -650,18 +962,27 @@
 					selectedGenerationType === 'image-to-video'
 						? await submitKlingImageToVideoTask($user.token, request as KlingGenerateRequest)
 						: await submitKlingTextToVideoTask($user.token, request as KlingGenerateRequest);
-			} else {
+			} else if (selectedService === 'jimeng') {
 				result =
 					selectedGenerationType === 'image-to-video'
 						? await submitJimengImageToVideoTask($user.token, request as JimengGenerateRequest)
 						: await submitJimengTextToVideoTask($user.token, request as JimengGenerateRequest);
+			} else if (selectedService === 'veo') {
+				result =
+					selectedGenerationType === 'image-to-video'
+						? await submitVeoImageToVideoTask($user.token, request as VeoGenerateRequest)
+						: await submitVeoTextToVideoTask($user.token, request as VeoGenerateRequest);
 			}
 
 			if (result && result.success) {
 				// 提交成功，立即查询真实积分余额（后端已扣除）
 				try {
 					const getCreditsFunction =
-						selectedService === 'kling' ? getKlingUserCredits : getJimengUserCredits;
+						selectedService === 'kling'
+							? getKlingUserCredits
+							: selectedService === 'jimeng'
+								? getJimengUserCredits
+								: getVeoUserCredits;
 					const credits = await getCreditsFunction($user.token);
 					if (credits) {
 						userCredits = credits.balance || 0;
@@ -726,7 +1047,16 @@
 
 	// 计算所需积分 - 响应式计算属性
 	$: requiredCredits = (() => {
-		const currentConfig = selectedService === 'kling' ? klingConfig : jimengConfig;
+		let currentConfig;
+
+		if (selectedService === 'kling') {
+			currentConfig = klingConfig;
+		} else if (selectedService === 'jimeng') {
+			currentConfig = jimengConfig;
+		} else if (selectedService === 'veo') {
+			currentConfig = veoConfig;
+		}
+
 		if (!currentConfig) {
 			console.log(`💰 【积分计算】配置未加载，使用默认值: 50`);
 			return 50;
@@ -759,7 +1089,7 @@
 				`💰 【可灵积分计算】默认配置: ${selectedMode}-${selectedDuration} = ${credits}积分`
 			);
 			return credits;
-		} else {
+		} else if (selectedService === 'jimeng') {
 			// 即梦的积分配置更简单
 			const config = currentConfig as JimengConfig;
 			let credits = 50;
@@ -768,12 +1098,29 @@
 
 			console.log(`💰 【即梦积分计算】${selectedDuration}秒 = ${credits}积分`);
 			return credits;
+		} else if (selectedService === 'veo') {
+			// Veo的积分配置基于模型
+			const config = currentConfig as VeoUserConfig;
+			const credits = config.model_credits_config[selectedModel] || 100;
+
+			console.log(`💰 【Veo积分计算】模型 ${selectedModel} = ${credits}积分`);
+			return credits;
 		}
+
+		return 50; // 默认值
 	})();
 
 	// 轮询任务状态
-	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng') => {
-		const serviceName = service === 'kling' ? '可灵' : '即梦';
+	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng' | 'veo') => {
+		let serviceName;
+		if (service === 'kling') {
+			serviceName = '可灵';
+		} else if (service === 'jimeng') {
+			serviceName = '即梦';
+		} else if (service === 'veo') {
+			serviceName = 'Veo';
+		}
+
 		console.log(`🎬 【${serviceName}轮询】开始轮询任务:`, taskId);
 
 		if (!$user?.token) {
@@ -794,8 +1141,15 @@
 				attempts++;
 				console.log(`🎬 【${serviceName}轮询】第${attempts}次查询任务状态: ${taskId}`);
 
-				const getTaskStatusFunction =
-					service === 'kling' ? getKlingTaskStatus : getJimengTaskStatus;
+				let getTaskStatusFunction;
+				if (service === 'kling') {
+					getTaskStatusFunction = getKlingTaskStatus;
+				} else if (service === 'jimeng') {
+					getTaskStatusFunction = getJimengTaskStatus;
+				} else if (service === 'veo') {
+					getTaskStatusFunction = getVeoTaskStatus;
+				}
+
 				const task = await getTaskStatusFunction($user.token, taskId);
 
 				if (task) {
@@ -829,7 +1183,11 @@
 						// 更新积分余额
 						try {
 							const getCreditsFunction =
-								service === 'kling' ? getKlingUserCredits : getJimengUserCredits;
+								service === 'kling'
+									? getKlingUserCredits
+									: service === 'jimeng'
+										? getJimengUserCredits
+										: getVeoUserCredits;
 							const credits = await getCreditsFunction($user.token);
 							if (credits) {
 								const oldBalance = userCredits;
@@ -879,7 +1237,10 @@
 	};
 
 	// 图片上传处理
-	const handleImageUpload = async (event: Event, type: 'input' | 'tail' | 'static_mask') => {
+	const handleImageUpload = async (
+		event: Event,
+		type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3'
+	) => {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
@@ -910,6 +1271,15 @@
 			} else if (type === 'static_mask') {
 				staticMask = base64;
 				console.log('🎬 【可灵】静态笔刷上传成功:', file.name);
+			} else if (type === 'veo1') {
+				veoImage1 = base64;
+				console.log('🎯 【Veo】第1张图片上传成功:', file.name);
+			} else if (type === 'veo2') {
+				veoImage2 = base64;
+				console.log('🎯 【Veo】第2张图片上传成功:', file.name);
+			} else if (type === 'veo3') {
+				veoImage3 = base64;
+				console.log('🎯 【Veo】第3张图片上传成功:', file.name);
 			}
 		} catch (error) {
 			console.error('🎬 【可灵】图片上传失败:', error);
@@ -931,7 +1301,7 @@
 	};
 
 	// 删除任务
-	const handleDeleteTask = async (task: KlingTask | JimengTask) => {
+	const handleDeleteTask = async (task: KlingTask | JimengTask | VeoTask) => {
 		if (!$user?.token) {
 			toast.error('请先登录');
 			return;
@@ -943,11 +1313,17 @@
 
 			// 确定服务类型
 			const taskServiceType = task.serviceType || 'kling'; // 默认为kling
-			const serviceName = taskServiceType === 'kling' ? '可灵' : '即梦';
+			const serviceName =
+				taskServiceType === 'kling' ? '可灵' : taskServiceType === 'jimeng' ? '即梦' : 'Veo';
 
 			console.log(`🗑️ 删除${serviceName}任务: ${task.id}`);
 
-			const deleteFunction = taskServiceType === 'kling' ? deleteKlingTask : deleteJimengTask;
+			const deleteFunction =
+				taskServiceType === 'kling'
+					? deleteKlingTask
+					: taskServiceType === 'jimeng'
+						? deleteJimengTask
+						: deleteVeoTask;
 			const success = await deleteFunction($user.token, task.id);
 
 			if (success) {
@@ -1041,7 +1417,7 @@
 	};
 
 	// 使用相同参数重新生成
-	const regenerateWithSameParams = async (task: KlingTask | JimengTask) => {
+	const regenerateWithSameParams = async (task: KlingTask | JimengTask | VeoTask) => {
 		if (!task.prompt) {
 			toast.error('无法获取原始提示词');
 			return;
@@ -1066,6 +1442,12 @@
 		// 即梦特有参数
 		if (taskServiceType === 'jimeng') {
 			watermark = task.watermark || false;
+		}
+
+		// Veo特有参数
+		if (taskServiceType === 'veo') {
+			selectedModel = task.model || 'veo3';
+			enhancePrompt = task.enhance_prompt !== undefined ? task.enhance_prompt : true;
 		}
 
 		if (task.action === 'IMAGE_TO_VIDEO') {
@@ -1125,24 +1507,32 @@
 						<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							🎬 视频生成服务
 						</h3>
-						<div class="grid grid-cols-2 gap-2 mb-3">
+						<div class="grid grid-cols-3 gap-1 mb-3">
 							<button
-								class="px-3 py-2 text-sm rounded border transition-colors {selectedService ===
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
 								'kling'
 									? 'bg-purple-500 text-white border-purple-500'
 									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
 								on:click={() => (selectedService = 'kling')}
 							>
-								🎬 可灵 AI
+								🎬 可灵
 							</button>
 							<button
-								class="px-3 py-2 text-sm rounded border transition-colors {selectedService ===
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
 								'jimeng'
 									? 'bg-green-500 text-white border-green-500'
 									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
 								on:click={() => (selectedService = 'jimeng')}
 							>
-								🌟 即梦 AI
+								🌟 即梦
+							</button>
+							<button
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService === 'veo'
+									? 'bg-blue-500 text-white border-blue-500'
+									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+								on:click={() => (selectedService = 'veo')}
+							>
+								🎯 Veo AI
 							</button>
 						</div>
 
@@ -1159,7 +1549,7 @@
 									<div class="text-xl">🎬</div>
 								</div>
 							</div>
-						{:else}
+						{:else if selectedService === 'jimeng'}
 							<div class="rounded-lg p-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
 								<div class="flex items-center justify-between">
 									<div>
@@ -1171,12 +1561,30 @@
 									<div class="text-xl">🌟</div>
 								</div>
 							</div>
+						{:else}
+							<div class="rounded-lg p-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
+								<div class="flex items-center justify-between">
+									<div>
+										<div class="font-medium">Veo AI</div>
+										<div class="text-xs opacity-75">
+											{veoConfig?.enabled ? '已启用' : '未配置'}
+										</div>
+									</div>
+									<div class="text-xl">🎯</div>
+								</div>
+							</div>
 						{/if}
 					</div>
 
 					<!-- 当前服务信息 -->
 					<div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-						<div>当前服务: {selectedService === 'kling' ? '可灵' : '即梦'}视频生成</div>
+						<div>
+							当前服务: {selectedService === 'kling'
+								? '可灵'
+								: selectedService === 'jimeng'
+									? '即梦'
+									: 'Veo'}视频生成
+						</div>
 						<div>消耗积分: {requiredCredits}积分/次</div>
 						<div class="flex justify-between items-center">
 							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
@@ -1238,10 +1646,16 @@
 								on:click={generateVideo}
 								disabled={isGenerating ||
 									!prompt.trim() ||
-									!(selectedService === 'kling' ? klingConfig?.enabled : jimengConfig?.enabled)}
+									!(selectedService === 'kling'
+										? klingConfig?.enabled
+										: selectedService === 'jimeng'
+											? jimengConfig?.enabled
+											: veoConfig?.enabled)}
 								class="px-4 py-1 {selectedService === 'kling'
 									? 'bg-purple-500 hover:bg-purple-600'
-									: 'bg-green-500 hover:bg-green-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
+									: selectedService === 'jimeng'
+										? 'bg-green-500 hover:bg-green-600'
+										: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
 									<Spinner className="size-3" />
@@ -1278,48 +1692,203 @@
 							</div>
 						{/if}
 
-						<!-- 输入图片（首帧） -->
-						<div>
-							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-								{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
-									? '首帧图片'
-									: '输入图片'}
-							</label>
-							<div
-								class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-							>
-								{#if inputImage}
-									<div class="relative">
-										<img src={inputImage} alt="输入图片" class="w-full h-32 object-cover rounded" />
-										<button
-											on:click={() => (inputImage = null)}
-											class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
-											title="删除图片"
-										>
-											×
-										</button>
+						<!-- Veo专用图片上传 -->
+						{#if selectedService === 'veo'}
+							<div class="space-y-3">
+								<div class="text-sm font-medium text-gray-700 dark:text-gray-300">
+									图片输入
+									<span class="text-xs text-gray-500 ml-2">
+										{selectedVeoImageMode === 'single'
+											? '(单张图片)'
+											: selectedVeoImageMode === 'frames'
+												? '(首尾帧 - 两张图片)'
+												: '(组件模式 - 三张图片)'}
+									</span>
+								</div>
+
+								<!-- 第一张图片 -->
+								<div>
+									<label class="text-xs text-gray-500 mb-1 block">第1张图片</label>
+									<div
+										class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+									>
+										{#if veoImage1}
+											<div class="relative">
+												<img
+													src={veoImage1}
+													alt="第1张图片"
+													class="w-full h-32 object-cover rounded"
+												/>
+												<button
+													on:click={() => (veoImage1 = null)}
+													class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+													title="删除图片"
+												>
+													×
+												</button>
+											</div>
+										{:else}
+											<div class="text-center">
+												<input
+													type="file"
+													id="veo-image-1"
+													accept="image/*"
+													class="hidden"
+													on:change={(e) => handleImageUpload(e, 'veo1')}
+												/>
+												<button
+													type="button"
+													on:click={() => document.getElementById('veo-image-1')?.click()}
+													class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+												>
+													选择第1张图片
+												</button>
+												<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
+											</div>
+										{/if}
 									</div>
-								{:else}
-									<div class="text-center">
-										<input
-											type="file"
-											id="input-image"
-											accept="image/*"
-											class="hidden"
-											on:change={(e) => handleImageUpload(e, 'input')}
-										/>
-										<button
-											type="button"
-											on:click={() => document.getElementById('input-image')?.click()}
-											class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+								</div>
+
+								<!-- 第二张图片（首尾帧或组件模式） -->
+								{#if selectedVeoImageMode === 'frames' || selectedVeoImageMode === 'components'}
+									<div>
+										<label class="text-xs text-gray-500 mb-1 block">
+											{selectedVeoImageMode === 'frames' ? '第2张图片（尾帧）' : '第2张图片'}
+										</label>
+										<div
+											class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
 										>
-											选择图片
-										</button>
-										<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+											{#if veoImage2}
+												<div class="relative">
+													<img
+														src={veoImage2}
+														alt="第2张图片"
+														class="w-full h-32 object-cover rounded"
+													/>
+													<button
+														on:click={() => (veoImage2 = null)}
+														class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+														title="删除图片"
+													>
+														×
+													</button>
+												</div>
+											{:else}
+												<div class="text-center">
+													<input
+														type="file"
+														id="veo-image-2"
+														accept="image/*"
+														class="hidden"
+														on:change={(e) => handleImageUpload(e, 'veo2')}
+													/>
+													<button
+														type="button"
+														on:click={() => document.getElementById('veo-image-2')?.click()}
+														class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+													>
+														选择第2张图片
+													</button>
+													<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
+												</div>
+											{/if}
+										</div>
+									</div>
+								{/if}
+
+								<!-- 第三张图片（仅组件模式） -->
+								{#if selectedVeoImageMode === 'components'}
+									<div>
+										<label class="text-xs text-gray-500 mb-1 block">第3张图片</label>
+										<div
+											class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+										>
+											{#if veoImage3}
+												<div class="relative">
+													<img
+														src={veoImage3}
+														alt="第3张图片"
+														class="w-full h-32 object-cover rounded"
+													/>
+													<button
+														on:click={() => (veoImage3 = null)}
+														class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+														title="删除图片"
+													>
+														×
+													</button>
+												</div>
+											{:else}
+												<div class="text-center">
+													<input
+														type="file"
+														id="veo-image-3"
+														accept="image/*"
+														class="hidden"
+														on:change={(e) => handleImageUpload(e, 'veo3')}
+													/>
+													<button
+														type="button"
+														on:click={() => document.getElementById('veo-image-3')?.click()}
+														class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+													>
+														选择第3张图片
+													</button>
+													<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
+												</div>
+											{/if}
+										</div>
 									</div>
 								{/if}
 							</div>
-						</div>
+						{:else}
+							<!-- 可灵和即梦的输入图片 -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+									{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
+										? '首帧图片'
+										: '输入图片'}
+								</label>
+								<div
+									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+								>
+									{#if inputImage}
+										<div class="relative">
+											<img
+												src={inputImage}
+												alt="输入图片"
+												class="w-full h-32 object-cover rounded"
+											/>
+											<button
+												on:click={() => (inputImage = null)}
+												class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+												title="删除图片"
+											>
+												×
+											</button>
+										</div>
+									{:else}
+										<div class="text-center">
+											<input
+												type="file"
+												id="input-image"
+												accept="image/*"
+												class="hidden"
+												on:change={(e) => handleImageUpload(e, 'input')}
+											/>
+											<button
+												type="button"
+												on:click={() => document.getElementById('input-image')?.click()}
+												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+											>
+												选择图片
+											</button>
+											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+										</div>
+									{/if}
+								</div>
+							</div>
+						{/if}
 
 						<!-- 可灵特有的尾帧图片 (首尾帧模式) -->
 						{#if selectedService === 'kling' && selectedImageVideoMode === 'first-last'}
@@ -1724,8 +2293,8 @@
 							<div>视频参数</div>
 						</div>
 
-						<!-- 可灵特有的模型版本选择 -->
-						{#if selectedService === 'kling'}
+						<!-- 模型版本选择 -->
+						{#if selectedService === 'kling' || selectedService === 'veo'}
 							<div>
 								<div class="mb-1 text-xs text-gray-500">模型版本</div>
 								<select
@@ -1733,7 +2302,10 @@
 									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
 								>
 									{#each currentModelOptions as option}
-										<option value={option.value}>{option.label}</option>
+										<option value={option.value}
+											>{option.label}{#if option.description}
+												- {option.description}{/if}</option
+										>
 									{/each}
 								</select>
 							</div>
@@ -1755,59 +2327,65 @@
 								</div>
 							{/if}
 
-							<div>
-								<div class="mb-1 text-xs text-gray-500">视频时长</div>
-								<select
-									bind:value={selectedDuration}
-									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-								>
-									{#each durationOptions as option}
-										<option value={option.value}>{option.label}</option>
-									{/each}
-								</select>
-							</div>
-
-							<div>
-								<div class="mb-1 text-xs text-gray-500">画面比例</div>
-								<select
-									bind:value={selectedAspectRatio}
-									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-								>
-									{#each aspectRatioOptions as option}
-										<option value={option.value}>{option.label}</option>
-									{/each}
-								</select>
-							</div>
-
-							<div>
-								<div class="mb-1 text-xs text-gray-500">
-									CFG Scale
-									<Tooltip content="生成自由度，值越大越符合提示词 (0-1)">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="1.5"
-											stroke="currentColor"
-											class="w-3 h-3 inline ml-1"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
-											/>
-										</svg>
-									</Tooltip>
+							{#if selectedService !== 'veo'}
+								<div>
+									<div class="mb-1 text-xs text-gray-500">视频时长</div>
+									<select
+										bind:value={selectedDuration}
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									>
+										{#each durationOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
 								</div>
-								<input
-									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
-									type="number"
-									min="0"
-									max="1"
-									step="0.1"
-									bind:value={cfgScale}
-								/>
-							</div>
+							{/if}
+
+							{#if selectedService !== 'veo'}
+								<div>
+									<div class="mb-1 text-xs text-gray-500">画面比例</div>
+									<select
+										bind:value={selectedAspectRatio}
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+									>
+										{#each aspectRatioOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
+							{/if}
+
+							{#if selectedService !== 'veo'}
+								<div>
+									<div class="mb-1 text-xs text-gray-500">
+										CFG Scale
+										<Tooltip content="生成自由度，值越大越符合提示词 (0-1)">
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="1.5"
+												stroke="currentColor"
+												class="w-3 h-3 inline ml-1"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+												/>
+											</svg>
+										</Tooltip>
+									</div>
+									<input
+										class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+										type="number"
+										min="0"
+										max="1"
+										step="0.1"
+										bind:value={cfgScale}
+									/>
+								</div>
+							{/if}
 						</div>
 					</div>
 
@@ -1849,6 +2427,32 @@
 								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white resize-none"
 								rows="2"
 							></textarea>
+						</div>
+					{/if}
+
+					<!-- Veo特有的提示词优化设置 -->
+					{#if selectedService === 'veo'}
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+								提示词优化设置
+							</label>
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="enhance-prompt-checkbox"
+									bind:checked={enhancePrompt}
+									class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+								/>
+								<label
+									for="enhance-prompt-checkbox"
+									class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+								>
+									启用智能提示词优化
+								</label>
+							</div>
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+								开启后，AI 会自动优化您的提示词以获得更好的生成效果
+							</div>
 						</div>
 					{/if}
 
@@ -2332,6 +2936,12 @@
 											>
 												即梦 AI
 											</span>
+										{:else if task.serviceType === 'veo'}
+											<span
+												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-blue-500 to-indigo-500"
+											>
+												Veo AI
+											</span>
 										{:else}
 											<span
 												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -2443,10 +3053,11 @@
 											class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2"
 										>
 											<span>
-												{task.serviceType === 'jimeng' ? '即梦' : '可灵'} ({task.action ===
-												'IMAGE_TO_VIDEO'
-													? '图生视频'
-													: '文生视频'})
+												{task.serviceType === 'jimeng'
+													? '即梦'
+													: task.serviceType === 'veo'
+														? 'Veo'
+														: '可灵'} ({task.action === 'IMAGE_TO_VIDEO' ? '图生视频' : '文生视频'})
 											</span>
 											<span
 												>{new Date(
@@ -2460,6 +3071,8 @@
 											<span class="text-gray-600 dark:text-gray-400">
 												{#if task.serviceType === 'jimeng'}
 													{task.duration}秒 • {task.aspectRatio}
+												{:else if task.serviceType === 'veo'}
+													{task.model || 'veo3'}
 												{:else}
 													{task.mode || 'std'} • {task.duration}秒 • {task.aspectRatio}
 												{/if}
@@ -2527,6 +3140,12 @@
 							>
 								即梦 AI
 							</span>
+						{:else if selectedVideoForViewing?.serviceType === 'veo'}
+							<span
+								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-blue-500 to-indigo-500"
+							>
+								Veo AI
+							</span>
 						{:else}
 							<span
 								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -2579,6 +3198,8 @@
 						<div class="text-xs text-gray-500 dark:text-gray-400">
 							{#if selectedVideoForViewing?.serviceType === 'jimeng'}
 								{selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
+							{:else if selectedVideoForViewing?.serviceType === 'veo'}
+								{selectedVideoForViewing?.model || 'veo3'}
 							{:else}
 								{selectedVideoForViewing?.mode || 'std'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{/if}
