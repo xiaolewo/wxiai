@@ -61,29 +61,48 @@ def get_kling_client():
 @router.get("/config")
 async def get_kling_config(user=Depends(get_admin_user)):
     """获取可灵配置 - 管理员专用"""
-    config = KlingConfig.get_config()
-    if not config:
-        # 返回默认配置
-        default_config = KlingConfig()
-        return {
-            "enabled": False,
-            "base_url": "https://api.klingai.com",
-            "api_key": "",
-            "text_to_video_model": "kling-v1",
-            "image_to_video_model": "kling-v1",
-            "default_mode": "std",
-            "default_duration": "5",
-            "default_aspect_ratio": "16:9",
-            "default_cfg_scale": 0.5,
-            "credits_per_std_5s": 50,
-            "credits_per_std_10s": 100,
-            "credits_per_pro_5s": 100,
-            "credits_per_pro_10s": 200,
-            "model_credits_config": default_config._get_default_model_credits(),
-            "max_concurrent_tasks": 3,
-            "task_timeout": 600000,
-        }
-    return config.to_dict()
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        logger.info(f"🎬 【可灵配置】管理员 {user.id} 请求获取配置")
+
+        config = KlingConfig.get_config()
+        if not config:
+            logger.info("🎬 【可灵配置】数据库中无配置，返回默认配置")
+            # 返回默认配置
+            default_config = KlingConfig()
+            return {
+                "enabled": False,
+                "base_url": "https://api.klingai.com",
+                "api_key": "",
+                "text_to_video_model": "kling-v1",
+                "image_to_video_model": "kling-v1",
+                "default_mode": "std",
+                "default_duration": "5",
+                "default_aspect_ratio": "16:9",
+                "default_cfg_scale": 0.5,
+                "credits_per_std_5s": 50,
+                "credits_per_std_10s": 100,
+                "credits_per_pro_5s": 100,
+                "credits_per_pro_10s": 200,
+                "model_credits_config": default_config._get_default_model_credits(),
+                "max_concurrent_tasks": 3,
+                "task_timeout": 600000,
+            }
+
+        logger.info(f"🎬 【可灵配置】找到配置，ID: {config.id}")
+        config_dict = config.to_dict()
+        logger.info(f"🎬 【可灵配置】配置转换成功，包含 {len(config_dict)} 个字段")
+        return config_dict
+
+    except Exception as e:
+        logger.error(f"❌ 【可灵配置】获取配置失败: {str(e)}")
+        logger.error("🔧 【可灵配置】详细错误:")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"获取可灵配置失败: {str(e)}")
 
 
 @router.get("/config/user")
@@ -129,14 +148,22 @@ async def get_kling_user_config(user=Depends(get_verified_user)):
 @router.post("/config")
 async def save_kling_config(config_data: dict, user=Depends(get_admin_user)):
     """保存可灵配置 - 管理员专用"""
+    import logging
+    import traceback
+
+    logger = logging.getLogger(__name__)
     global kling_client, kling_config
 
     try:
+        logger.info(f"🎬 【可灵配置】管理员 {user.id} 请求保存配置")
+        logger.info(f"🎬 【可灵配置】配置数据: {len(config_data)} 个字段")
+
         # 验证必需字段
         enabled = config_data.get("enabled", False)
         if enabled and (
             not config_data.get("base_url") or not config_data.get("api_key")
         ):
+            logger.error("🎬 【可灵配置】启用时缺少必要字段")
             raise HTTPException(
                 status_code=400, detail="启用时需要提供Base URL和API Key"
             )
@@ -155,19 +182,23 @@ async def save_kling_config(config_data: dict, user=Depends(get_admin_user)):
         config_data.setdefault("max_concurrent_tasks", 3)
         config_data.setdefault("task_timeout", 600000)
 
+        logger.info("🎬 【可灵配置】开始保存配置到数据库")
         # 保存配置
         config = KlingConfig.save_config(config_data)
+        logger.info(f"🎬 【可灵配置】配置保存成功，ID: {config.id}")
 
         # 重置客户端
         kling_client = None
         kling_config = None
+        logger.info("🎬 【可灵配置】客户端缓存已重置")
 
         return {"message": "配置保存成功", "config": config.to_dict()}
+    except HTTPException:
+        raise
     except Exception as e:
-        import traceback
-
-        print(f"Error saving Kling config: {e}")
-        traceback.print_exc()
+        logger.error(f"❌ 【可灵配置】保存配置失败: {str(e)}")
+        logger.error("🔧 【可灵配置】详细错误:")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"保存配置失败: {str(e)}")
 
 

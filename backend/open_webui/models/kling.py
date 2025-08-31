@@ -59,61 +59,146 @@ class KlingConfig(Base):
     @classmethod
     def get_config(cls):
         """获取可灵配置"""
-        with get_db() as db:
-            return db.query(cls).filter(cls.id == 1).first()
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                config = db.query(cls).filter(cls.id == 1).first()
+                logger.info(
+                    f"🎬 【可灵模型】获取配置: {'找到' if config else '未找到'}"
+                )
+                return config
+        except Exception as e:
+            logger.error(f"❌ 【可灵模型】获取配置失败: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            return None
 
     @classmethod
     def save_config(cls, config_data: dict):
         """保存可灵配置"""
-        with get_db() as db:
-            config = db.query(cls).filter(cls.id == 1).first()
+        import logging
 
-            if config:
-                # 更新现有配置
-                for key, value in config_data.items():
-                    if hasattr(config, key):
-                        setattr(config, key, value)
-                config.updated_at = datetime.now()
-            else:
-                # 创建新配置
-                config_data["id"] = 1
-                config = cls(**config_data)
-                db.add(config)
+        logger = logging.getLogger(__name__)
 
-            db.commit()
-            db.refresh(config)
-            return config
+        try:
+            logger.info(f"🎬 【可灵模型】开始保存配置: {len(config_data)} 个字段")
+
+            with get_db() as db:
+                config = db.query(cls).filter(cls.id == 1).first()
+
+                if config:
+                    # 更新现有配置
+                    logger.info("🎬 【可灵模型】更新现有配置")
+                    for key, value in config_data.items():
+                        if hasattr(config, key):
+                            setattr(config, key, value)
+                        else:
+                            logger.warning(f"⚠️ 【可灵模型】忽略未知字段: {key}")
+                    config.updated_at = datetime.now()
+                else:
+                    # 创建新配置
+                    logger.info("🎬 【可灵模型】创建新配置")
+                    config_data["id"] = 1
+                    config = cls(**config_data)
+                    db.add(config)
+
+                db.commit()
+                db.refresh(config)
+                logger.info(f"🎬 【可灵模型】配置保存成功，ID: {config.id}")
+                return config
+        except Exception as e:
+            logger.error(f"❌ 【可灵模型】保存配置失败: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            raise e
 
     def to_dict(self) -> dict:
         """转换为字典"""
-        return {
-            "id": self.id,
-            "enabled": self.enabled,
-            "base_url": self.base_url,
-            "api_key": self.api_key,
-            "text_to_video_model": self.text_to_video_model,
-            "image_to_video_model": self.image_to_video_model,
-            "default_mode": self.default_mode,
-            "default_duration": self.default_duration,
-            "default_aspect_ratio": self.default_aspect_ratio,
-            "default_cfg_scale": self.default_cfg_scale,
-            "credits_per_std_5s": self.credits_per_std_5s,
-            "credits_per_std_10s": self.credits_per_std_10s,
-            "credits_per_pro_5s": self.credits_per_pro_5s,
-            "credits_per_pro_10s": self.credits_per_pro_10s,
-            "credits_per_extend": self.credits_per_extend,
-            "model_credits_config": self.model_credits_config
-            or self._get_default_model_credits(),
-            "max_concurrent_tasks": self.max_concurrent_tasks,
-            "task_timeout": self.task_timeout,
-            "detected_api_path": self.detected_api_path,
-            "created_at": (
-                self.created_at.isoformat() if self.created_at is not None else None
-            ),
-            "updated_at": (
-                self.updated_at.isoformat() if self.updated_at is not None else None
-            ),
-        }
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            # 获取模型积分配置，带异常处理
+            try:
+                model_credits = (
+                    self.model_credits_config or self._get_default_model_credits()
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ 【可灵模型】获取模型积分配置失败: {e}")
+                model_credits = {}
+
+            result = {
+                "id": self.id,
+                "enabled": getattr(self, "enabled", False),
+                "base_url": getattr(self, "base_url", "https://api.klingai.com"),
+                "api_key": getattr(self, "api_key", ""),
+                "text_to_video_model": getattr(self, "text_to_video_model", "kling-v1"),
+                "image_to_video_model": getattr(
+                    self, "image_to_video_model", "kling-v1"
+                ),
+                "default_mode": getattr(self, "default_mode", "std"),
+                "default_duration": getattr(self, "default_duration", "5"),
+                "default_aspect_ratio": getattr(self, "default_aspect_ratio", "16:9"),
+                "default_cfg_scale": getattr(self, "default_cfg_scale", 0.5),
+                "credits_per_std_5s": getattr(self, "credits_per_std_5s", 50),
+                "credits_per_std_10s": getattr(self, "credits_per_std_10s", 100),
+                "credits_per_pro_5s": getattr(self, "credits_per_pro_5s", 100),
+                "credits_per_pro_10s": getattr(self, "credits_per_pro_10s", 200),
+                "credits_per_extend": getattr(self, "credits_per_extend", 30),
+                "model_credits_config": model_credits,
+                "max_concurrent_tasks": getattr(self, "max_concurrent_tasks", 3),
+                "task_timeout": getattr(self, "task_timeout", 600000),
+                "detected_api_path": getattr(self, "detected_api_path", None),
+                "created_at": (
+                    self.created_at.isoformat()
+                    if hasattr(self, "created_at") and self.created_at is not None
+                    else None
+                ),
+                "updated_at": (
+                    self.updated_at.isoformat()
+                    if hasattr(self, "updated_at") and self.updated_at is not None
+                    else None
+                ),
+            }
+
+            logger.info(f"🎬 【可灵模型】to_dict成功，包含 {len(result)} 个字段")
+            return result
+
+        except Exception as e:
+            logger.error(f"❌ 【可灵模型】to_dict转换失败: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            # 返回基本的默认配置
+            return {
+                "id": 1,
+                "enabled": False,
+                "base_url": "https://api.klingai.com",
+                "api_key": "",
+                "text_to_video_model": "kling-v1",
+                "image_to_video_model": "kling-v1",
+                "default_mode": "std",
+                "default_duration": "5",
+                "default_aspect_ratio": "16:9",
+                "default_cfg_scale": 0.5,
+                "credits_per_std_5s": 50,
+                "credits_per_std_10s": 100,
+                "credits_per_pro_5s": 100,
+                "credits_per_pro_10s": 200,
+                "credits_per_extend": 30,
+                "model_credits_config": {},
+                "max_concurrent_tasks": 3,
+                "task_timeout": 600000,
+                "detected_api_path": None,
+                "created_at": None,
+                "updated_at": None,
+            }
 
     def _get_default_model_credits(self) -> dict:
         """获取默认的模型积分配置"""

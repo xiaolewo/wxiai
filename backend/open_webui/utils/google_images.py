@@ -324,7 +324,8 @@ async def upload_image_to_cloud(
         filename = f"google_images_{task_id}_{index}_{timestamp}"
 
         if image_data.startswith("http"):
-            # URL图片
+            # URL图片 - 尝试上传到云存储，失败时有备选方案
+            logger.info(f"📁 【谷歌生图云存储】开始上传URL图片: {image_data}")
             success, message, file_record = await file_manager.save_generated_content(
                 user_id=user_id,
                 file_url=image_data,
@@ -341,8 +342,13 @@ async def upload_image_to_cloud(
                 )
                 return file_record.cloud_url
             else:
-                logger.warning(f"📁 【谷歌生图云存储】图片上传失败: {message}")
-                return image_data  # 返回原始URL
+                logger.error(f"📁 【谷歌生图云存储】图片上传失败: {message}")
+                logger.error(f"📁 【谷歌生图云存储】原始URL: {image_data}")
+                # 上传失败时，记录错误但返回原始URL，让前端能显示（可能临时可用）
+                logger.warning(
+                    f"📁 【谷歌生图云存储】回退到原始URL，用户可能需要快速查看"
+                )
+                return image_data
 
         elif image_data.startswith("data:image/"):
             # Base64图片
@@ -473,14 +479,33 @@ async def process_google_images_generation(
                 logger.info(
                     f"🎨 【谷歌生图处理】开始处理 {len(result_images)} 张结果图片..."
                 )
+                upload_success_count = 0
+                upload_failed_count = 0
+
                 for i, image in enumerate(result_images):
+                    logger.info(
+                        f"🎨 【谷歌生图处理】处理第 {i+1}/{len(result_images)} 张图片..."
+                    )
                     cloud_url = await upload_image_to_cloud(
                         image, user_id, task_id, f"result_{i}"
                     )
-                    if cloud_url:
+
+                    if cloud_url and cloud_url != image:
+                        # 成功上传到云存储
                         cloud_result_images.append(cloud_url)
+                        upload_success_count += 1
+                        logger.info(f"✅ 【谷歌生图处理】第 {i+1} 张图片云存储上传成功")
                     else:
+                        # 上传失败，使用原始URL
                         cloud_result_images.append(image)
+                        upload_failed_count += 1
+                        logger.warning(
+                            f"⚠️ 【谷歌生图处理】第 {i+1} 张图片云存储上传失败，使用原始URL"
+                        )
+
+                logger.info(
+                    f"📊 【谷歌生图处理】图片上传统计: 成功 {upload_success_count} 张，失败 {upload_failed_count} 张"
+                )
 
             # 更新任务状态
             GoogleImagesTask.update_task_status(
