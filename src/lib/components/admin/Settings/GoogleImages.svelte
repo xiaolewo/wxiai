@@ -94,7 +94,7 @@
 		try {
 			// 先保存配置，然后测试用户配置接口
 			await saveGoogleImagesConfigData();
-			
+
 			// 测试用户配置接口
 			const response = await fetch(`/api/v1/google_images/config/user`, {
 				method: 'GET',
@@ -127,7 +127,9 @@
 	<div class="space-y-3 pr-1.5 overflow-y-scroll scrollbar-hidden h-full">
 		<div>
 			<div class=" mb-2 text-sm font-medium">🔍 谷歌生图服务</div>
-			<div class="text-xs text-gray-400">配置谷歌生图服务，支持OpenAI DALL-E兼容格式的图像生成和编辑</div>
+			<div class="text-xs text-gray-400">
+				配置谷歌生图服务，支持OpenAI DALL-E兼容格式的图像生成和编辑
+			</div>
 		</div>
 
 		<hr class=" dark:border-gray-700" />
@@ -236,11 +238,17 @@
 			<!-- 模型信息 -->
 			<div class="space-y-3">
 				<div class="text-sm font-medium">模型信息</div>
-				<div class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+				<div
+					class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
+				>
 					<div class="text-sm">当前模型</div>
-					<div class="text-sm font-medium text-blue-600 dark:text-blue-400">Nano Banana - 通用模型</div>
+					<div class="text-sm font-medium text-blue-600 dark:text-blue-400">
+						Nano Banana - 通用模型
+					</div>
 				</div>
-				<div class="text-xs text-gray-500">所有图像生成请求将使用 nano-banana 模型，结果自动上传到云存储</div>
+				<div class="text-xs text-gray-500">
+					所有图像生成请求将使用 nano-banana 模型，结果自动上传到云存储
+				</div>
 			</div>
 
 			<hr class=" dark:border-gray-700" />
@@ -329,7 +337,7 @@
 							<span class="text-xs text-gray-500">积分</span>
 						</div>
 					</div>
-					
+
 					<div
 						class="flex items-center justify-between py-2 px-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
 					>

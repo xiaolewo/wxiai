@@ -4,7 +4,11 @@ import { WEBUI_API_BASE_URL } from '$lib/constants';
 export type KlingTaskStatus = 'submitted' | 'processing' | 'succeed' | 'failed';
 
 // 可灵任务动作类型
-export type KlingTaskAction = 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO' | 'MULTI_IMAGE_TO_VIDEO' | 'VIDEO_EXTEND';
+export type KlingTaskAction =
+	| 'TEXT_TO_VIDEO'
+	| 'IMAGE_TO_VIDEO'
+	| 'MULTI_IMAGE_TO_VIDEO'
+	| 'VIDEO_EXTEND';
 
 // 可灵视频模式类型
 export type KlingVideoMode = 'std' | 'pro';

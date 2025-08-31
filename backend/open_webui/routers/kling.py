@@ -408,42 +408,47 @@ async def check_video_extend_eligibility(
     """检查视频延长资格"""
     try:
         print(f"🎬 【可灵延长】检查延长资格: 视频ID={video_id}, 用户={user.id}")
-        
+
         # 查找视频任务
         task = KlingTask.get_task_by_video_id(video_id)
         if not task:
             print(f"❌ 【可灵延长】视频任务不存在: {video_id}")
             raise HTTPException(status_code=404, detail="视频任务不存在")
-        
+
         # 验证任务所有权
         if task.user_id != user.id:
-            print(f"❌ 【可灵延长】无权访问视频: 任务用户={task.user_id}, 请求用户={user.id}")
+            print(
+                f"❌ 【可灵延长】无权访问视频: 任务用户={task.user_id}, 请求用户={user.id}"
+            )
             raise HTTPException(status_code=403, detail="无权访问此视频")
-        
+
         # 检查延长资格
         can_extend, reason, credits_cost = task.can_extend()
-        
+
         # 获取当前总时长和延长次数
         current_duration = task.get_total_duration()
         root_task = KlingTask.get_original_task(task.id) or task
         extend_count = KlingTask.get_task_extend_count(root_task.id)
-        
+
         result = KlingVideoExtendCheck(
             can_extend=can_extend,
             reason=reason if not can_extend else None,
             credits_cost=credits_cost if can_extend else None,
             current_duration=str(current_duration),
-            extend_count=extend_count
+            extend_count=extend_count,
         )
-        
-        print(f"🎬 【可灵延长】检查结果: can_extend={can_extend}, credits_cost={credits_cost}")
+
+        print(
+            f"🎬 【可灵延长】检查结果: can_extend={can_extend}, credits_cost={credits_cost}"
+        )
         return result.dict()
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ 【可灵延长】检查资格失败: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"检查延长资格失败: {str(e)}")
 
@@ -456,89 +461,95 @@ async def submit_video_extend_task(
 ):
     """提交视频延长任务"""
     try:
-        print(f"🎬 【可灵延长】收到视频延长请求: 视频ID={request.video_id}, 用户={user.id}")
-        
+        print(
+            f"🎬 【可灵延长】收到视频延长请求: 视频ID={request.video_id}, 用户={user.id}"
+        )
+
         # 使用工具函数处理延长任务
         from open_webui.utils.kling import process_kling_video_extend
-        
+
         task = await process_kling_video_extend(
             user_id=user.id,
             video_id=request.video_id,
             prompt=request.prompt,
             negative_prompt=request.negative_prompt,
-            cfg_scale=request.cfg_scale
+            cfg_scale=request.cfg_scale,
         )
-        
+
         # 添加后台轮询任务
         background_tasks.add_task(poll_kling_task_status, task.id, user.id)
-        
+
         print(f"🎬 【可灵延长】延长任务创建成功: {task.id}")
         return {
-            "success": True, 
-            "task_id": task.id, 
+            "success": True,
+            "task_id": task.id,
             "message": "视频延长任务提交成功",
-            "credits_cost": task.credits_cost
+            "credits_cost": task.credits_cost,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ 【可灵延长】提交延长任务失败: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"提交视频延长任务失败: {str(e)}")
 
 
 @router.get("/video/extend/{task_id}")
-async def get_video_extend_task_status(
-    task_id: str, user=Depends(get_verified_user)
-):
+async def get_video_extend_task_status(task_id: str, user=Depends(get_verified_user)):
     """获取视频延长任务状态"""
     try:
         print(f"🎬 【可灵延长】查询延长任务状态: {task_id}, 用户: {user.id}")
-        
+
         # 查询任务
         task = KlingTask.get_task_by_id(task_id)
         if not task:
             print(f"❌ 【可灵延长】延长任务不存在: {task_id}")
             raise HTTPException(status_code=404, detail="延长任务不存在")
-        
+
         # 验证任务所有权
         if task.user_id != user.id:
-            print(f"❌ 【可灵延长】无权访问延长任务: 任务用户={task.user_id}, 请求用户={user.id}")
+            print(
+                f"❌ 【可灵延长】无权访问延长任务: 任务用户={task.user_id}, 请求用户={user.id}"
+            )
             raise HTTPException(status_code=403, detail="无权访问此延长任务")
-        
+
         # 验证是否为延长任务
         if not task.is_extended:
             print(f"❌ 【可灵延长】任务不是延长任务: {task_id}")
             raise HTTPException(status_code=400, detail="该任务不是视频延长任务")
-        
+
         # 如果任务已完成，直接返回
         if task.status in ["succeed", "failed"]:
             print(f"🎬 【可灵延长】延长任务已完成: {task.id}, 状态: {task.status}")
             return task.to_dict()
-        
+
         # 如果任务还在进行中，查询远程状态
         if task.external_task_id:
             try:
                 print(f"🔍 【可灵延长】查询远程延长状态: {task.external_task_id}")
                 client = get_kling_client()
-                remote_status = await client.query_video_extend_task(task.external_task_id)
+                remote_status = await client.query_video_extend_task(
+                    task.external_task_id
+                )
                 print(f"📡 【可灵延长】远程延长响应: {str(remote_status)[:200]}...")
                 task.update_from_api_response(remote_status)
                 print(f"🎬 【可灵延长】更新延长状态成功: {task.status}")
             except Exception as e:
                 print(f"⚠️ 【可灵延长】查询远程延长状态失败: {e}")
                 # 查询失败不影响返回本地状态
-        
+
         print(f"📤 【可灵延长】返回延长任务状态: {task_id}")
         return task.to_dict()
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ 【可灵延长】获取延长任务状态失败: {e}")
         import traceback
+
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"获取延长任务状态失败: {str(e)}")
 
@@ -604,20 +615,18 @@ async def submit_image_to_video_task(
             if request.model_name != "kling-v1-6":
                 print("❌ 【可灵后端】多图模式只支持 kling-v1-6 模型")
                 raise HTTPException(
-                    status_code=400, 
-                    detail="多图参考生视频只支持 kling-v1-6 模型"
+                    status_code=400, detail="多图参考生视频只支持 kling-v1-6 模型"
                 )
-            
+
             if not request.image_list or len(request.image_list) > 4:
-                print(f"❌ 【可灵后端】多图数量错误: {len(request.image_list) if request.image_list else 0}")
-                raise HTTPException(
-                    status_code=400, 
-                    detail="多图参考需要1-4张图片"
+                print(
+                    f"❌ 【可灵后端】多图数量错误: {len(request.image_list) if request.image_list else 0}"
                 )
-            
+                raise HTTPException(status_code=400, detail="多图参考需要1-4张图片")
+
             print(f"🎬 【可灵后端】多图模式: {len(request.image_list)}张图片")
             action = "MULTI_IMAGE_TO_VIDEO"
-            
+
         else:
             # 单图模式验证（原有逻辑）
             if not request.image:
@@ -651,7 +660,11 @@ async def submit_image_to_video_task(
         background_tasks.add_task(poll_kling_task_status, task.id, user.id)
 
         print(f"🎬 【可灵后端】任务创建成功: {task.id}")
-        message = "多图参考生视频任务提交成功" if action == "MULTI_IMAGE_TO_VIDEO" else "图生视频任务提交成功"
+        message = (
+            "多图参考生视频任务提交成功"
+            if action == "MULTI_IMAGE_TO_VIDEO"
+            else "图生视频任务提交成功"
+        )
         return {"success": True, "task_id": task.id, "message": message}
 
     except HTTPException:

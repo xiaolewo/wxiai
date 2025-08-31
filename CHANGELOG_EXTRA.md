@@ -11,16 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 新增可灵视频延长
 - 新增可灵多图参考生成视频
+- 新增谷歌banana生图
 
 ### Changed
 
 - 修复Flux模型过多，名字不统一
 - 修复谷歌生图的生成按钮的积分显示问题
-## [1.1.7] - 2025.08.30
+
+## [1.1.8] - 2025.08.30
 
 ### Added
 
-- 新增谷歌banana生图
+- 新增谷歌veo视频生成
 
 ### Changed
 

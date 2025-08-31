@@ -68,7 +68,9 @@ export interface GoogleImagesTaskResponse {
 /**
  * 获取谷歌生图用户配置
  */
-export const getGoogleImagesUserConfig = async (token: string): Promise<GoogleImagesConfig | null> => {
+export const getGoogleImagesUserConfig = async (
+	token: string
+): Promise<GoogleImagesConfig | null> => {
 	try {
 		const response = await fetch(`${WEBUI_API_BASE_URL}/google_images/config/user`, {
 			method: 'GET',
@@ -174,7 +176,7 @@ export const getGoogleImagesTaskStatus = async (
 		if (result.success && result.task) {
 			return result.task;
 		}
-		
+
 		throw new Error(result.error || '获取任务失败');
 	} catch (error) {
 		console.error('获取谷歌生图任务状态失败:', error);
@@ -214,7 +216,7 @@ export const getGoogleImagesUserTaskHistory = async (
 				total: result.total || 0
 			};
 		}
-		
+
 		throw new Error(result.error || '获取任务历史失败');
 	} catch (error) {
 		console.error('获取谷歌生图任务历史失败:', error);
@@ -250,7 +252,9 @@ export const deleteGoogleImagesTask = async (token: string, taskId: string): Pro
 /**
  * 获取用户积分信息
  */
-export const getGoogleImagesUserCredits = async (token: string): Promise<{ balance: number } | null> => {
+export const getGoogleImagesUserCredits = async (
+	token: string
+): Promise<{ balance: number } | null> => {
 	try {
 		const response = await fetch(`${WEBUI_API_BASE_URL}/google_images/credits`, {
 			method: 'GET',
@@ -268,7 +272,7 @@ export const getGoogleImagesUserCredits = async (token: string): Promise<{ balan
 		if (result.success) {
 			return { balance: result.balance || 0 };
 		}
-		
+
 		throw new Error(result.error || '获取积分失败');
 	} catch (error) {
 		console.error('获取谷歌生图积分失败:', error);
@@ -284,13 +288,16 @@ export const getGoogleImagesCreditsHistory = async (
 	limit: number = 50
 ): Promise<any[] | null> => {
 	try {
-		const response = await fetch(`${WEBUI_API_BASE_URL}/google_images/credits/history?limit=${limit}`, {
-			method: 'GET',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${token}`
+		const response = await fetch(
+			`${WEBUI_API_BASE_URL}/google_images/credits/history?limit=${limit}`,
+			{
+				method: 'GET',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token}`
+				}
 			}
-		});
+		);
 
 		if (!response.ok) {
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -300,7 +307,7 @@ export const getGoogleImagesCreditsHistory = async (
 		if (result.success) {
 			return result.credits || [];
 		}
-		
+
 		throw new Error(result.error || '获取积分历史失败');
 	} catch (error) {
 		console.error('获取谷歌生图积分历史失败:', error);
@@ -315,12 +322,12 @@ export const getGoogleImagesCreditsHistory = async (
  */
 export const validateImageData = (imageData: string): boolean => {
 	if (!imageData) return false;
-	
+
 	// 检查是否为Base64格式
 	if (imageData.startsWith('data:image/')) {
 		return imageData.includes(',') && imageData.split(',')[1].length > 0;
 	}
-	
+
 	// 检查是否为URL格式
 	if (imageData.startsWith('http')) {
 		try {
@@ -330,7 +337,7 @@ export const validateImageData = (imageData: string): boolean => {
 			return false;
 		}
 	}
-	
+
 	return false;
 };
 
@@ -352,12 +359,12 @@ export const getGoogleImagesTaskImageUrl = (task: GoogleImagesTask): string | nu
 	if (task.cloud_result_images && task.cloud_result_images.length > 0) {
 		return task.cloud_result_images[0];
 	}
-	
+
 	// 其次返回原始结果图片URL
 	if (task.result_images && task.result_images.length > 0) {
 		return task.result_images[0];
 	}
-	
+
 	return null;
 };
 
@@ -369,12 +376,12 @@ export const calculateGoogleImagesCredits = (
 	request: GoogleImagesGenerateRequest
 ): number => {
 	let totalCredits = config.credits_per_generation;
-	
+
 	// 如果有输入图片，每张额外消耗积分
 	if (request.images && request.images.length > 0) {
 		totalCredits += request.images.length * config.credits_per_image;
 	}
-	
+
 	return totalCredits;
 };
 

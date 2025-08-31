@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """删除谷歌生图表中的响应格式字段"""
-    
+
     # 检查并删除配置表中的 default_response_format 字段（如果存在）
     try:
         op.drop_column("google_images_config", "default_response_format")
@@ -38,15 +38,22 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """恢复响应格式字段"""
-    
+
     # 恢复配置表中的 default_response_format 字段
     op.add_column(
         "google_images_config",
-        sa.Column("default_response_format", sa.String(length=20), nullable=False, default="url")
+        sa.Column(
+            "default_response_format",
+            sa.String(length=20),
+            nullable=False,
+            default="url",
+        ),
     )
 
     # 恢复任务表中的 response_format 字段
     op.add_column(
-        "google_images_tasks", 
-        sa.Column("response_format", sa.String(length=20), nullable=False, default="url")
+        "google_images_tasks",
+        sa.Column(
+            "response_format", sa.String(length=20), nullable=False, default="url"
+        ),
     )

@@ -142,13 +142,48 @@
 
 	// Flux 参数 - 固定的7个模型，与管理员面板保持一致
 	const fluxModels = [
-		{ id: 'fal-ai/flux-1/schnell', name: 'FLUX.1 [Schnell] - 快速模型', type: 'basic', description: '快速模型' },
-		{ id: 'fal-ai/flux-1/dev', name: 'FLUX.1 [Dev] - 标准模型', type: 'basic', description: '标准模型' },
-		{ id: 'fal-ai/flux-1/dev/image-to-image', name: 'FLUX.1 [Dev] 图生图', type: 'basic', description: '图生图' },
-		{ id: 'fal-ai/flux-pro', name: 'FLUX.1 [Pro] - 专业模型', type: 'pro', description: '专业模型' },
-		{ id: 'fal-ai/flux-pro/kontext', name: 'FLUX.1 Kontext [Pro]', type: 'pro', description: 'Kontext Pro' },
-		{ id: 'fal-ai/flux-pro/kontext/multi', name: 'FLUX.1 Kontext [Multi] - 多图编辑', type: 'pro', description: '多图编辑' },
-		{ id: 'fal-ai/flux-pro/max', name: 'FLUX.1 Kontext [Max Multi] - 高级多图', type: 'pro', description: '高级多图' }
+		{
+			id: 'fal-ai/flux-1/schnell',
+			name: 'FLUX.1 [Schnell] - 快速模型',
+			type: 'basic',
+			description: '快速模型'
+		},
+		{
+			id: 'fal-ai/flux-1/dev',
+			name: 'FLUX.1 [Dev] - 标准模型',
+			type: 'basic',
+			description: '标准模型'
+		},
+		{
+			id: 'fal-ai/flux-1/dev/image-to-image',
+			name: 'FLUX.1 [Dev] 图生图',
+			type: 'basic',
+			description: '图生图'
+		},
+		{
+			id: 'fal-ai/flux-pro',
+			name: 'FLUX.1 [Pro] - 专业模型',
+			type: 'pro',
+			description: '专业模型'
+		},
+		{
+			id: 'fal-ai/flux-pro/kontext',
+			name: 'FLUX.1 Kontext [Pro]',
+			type: 'pro',
+			description: 'Kontext Pro'
+		},
+		{
+			id: 'fal-ai/flux-pro/kontext/multi',
+			name: 'FLUX.1 Kontext [Multi] - 多图编辑',
+			type: 'pro',
+			description: '多图编辑'
+		},
+		{
+			id: 'fal-ai/flux-pro/max',
+			name: 'FLUX.1 Kontext [Max Multi] - 高级多图',
+			type: 'pro',
+			description: '高级多图'
+		}
 	];
 	let selectedFluxModel = 'fal-ai/flux-1/schnell'; // 默认快速模型
 	let fluxNumImages = 1; // 图片数量
@@ -632,7 +667,7 @@
 				if (googleImagesHistory && googleImagesHistory.data) {
 					console.log('🔍 加载谷歌生图历史记录:', googleImagesHistory.data.length, '个任务');
 					// 转换为统一格式并添加serviceType标识
-					const googleImagesTasksWithType = googleImagesHistory.data.map((task) => 
+					const googleImagesTasksWithType = googleImagesHistory.data.map((task) =>
 						convertGoogleImagesTaskToMJFormat(task)
 					);
 					allTasks = [...allTasks, ...googleImagesTasksWithType];
@@ -866,11 +901,11 @@
 						? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1) // Flux按模型和图片数量计算积分
 						: selectedService === 'google_images'
 							? googleImagesConfig
-								? calculateGoogleImagesCredits(googleImagesConfig, { 
-									model: googleImagesModel, 
-									prompt: prompt.trim(), 
-									images: googleImagesInputImages 
-								})
+								? calculateGoogleImagesCredits(googleImagesConfig, {
+										model: googleImagesModel,
+										prompt: prompt.trim(),
+										images: googleImagesInputImages
+									})
 								: 20
 							: 5;
 
@@ -1292,7 +1327,7 @@
 				});
 
 				// 验证每张图片数据
-				const validImages = googleImagesInputImages.filter(img => validateImageData(img));
+				const validImages = googleImagesInputImages.filter((img) => validateImageData(img));
 				if (validImages.length !== googleImagesInputImages.length) {
 					toast.error(`发现 ${googleImagesInputImages.length - validImages.length} 张无效图片`);
 				}
@@ -2303,11 +2338,13 @@
 							</div>
 						{:else if selectedService === 'google_images' && googleImagesConfig}
 							<div>
-								消耗积分: {googleImagesConfig ? calculateGoogleImagesCredits(googleImagesConfig, { 
-									model: googleImagesModel, 
-									prompt: prompt.trim(), 
-									images: googleImagesInputImages 
-								}) : 20}积分
+								消耗积分: {googleImagesConfig
+									? calculateGoogleImagesCredits(googleImagesConfig, {
+											model: googleImagesModel,
+											prompt: prompt.trim(),
+											images: googleImagesInputImages
+										})
+									: 20}积分
 							</div>
 						{/if}
 						<div class="flex justify-between items-center">
@@ -2338,7 +2375,9 @@
 							<div class="text-xs text-gray-500">{prompt.length}/2000</div>
 							<button
 								on:click={generateImage}
-								disabled={isGenerating || !prompt.trim() || (selectedService === 'google_images' && googleImagesInputImages.length === 0)}
+								disabled={isGenerating ||
+									!prompt.trim() ||
+									(selectedService === 'google_images' && googleImagesInputImages.length === 0)}
 								class="px-4 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
@@ -2352,11 +2391,13 @@
 											: selectedService === 'flux'
 												? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
 												: selectedService === 'google_images'
-													? googleImagesConfig ? calculateGoogleImagesCredits(googleImagesConfig, { 
-														model: googleImagesModel, 
-														prompt: prompt.trim(), 
-														images: googleImagesInputImages 
-													}) : 20
+													? googleImagesConfig
+														? calculateGoogleImagesCredits(googleImagesConfig, {
+																model: googleImagesModel,
+																prompt: prompt.trim(),
+																images: googleImagesInputImages
+															})
+														: 20
 													: 5}积分)
 								{/if}
 							</button>
@@ -2930,7 +2971,7 @@
 						</div>
 					{:else if selectedService === 'google_images' && googleImagesConfig}
 						<!-- 谷歌生图 参数 -->
-						
+
 						<!-- 模型信息 -->
 						<div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
 							<div class="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300 mb-2">
@@ -2947,7 +2988,7 @@
 							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
 								参考图片（必需）<span class="text-red-500 ml-1">*</span>
 							</label>
-							
+
 							<!-- 上传按钮 -->
 							<label
 								class="flex items-center justify-center w-full py-3 px-4 text-sm border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-400 transition-colors"
@@ -2980,17 +3021,22 @@
 											>
 												×
 											</button>
-											<div class="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-1 rounded">
+											<div
+												class="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-1 rounded"
+											>
 												图片 {index + 1}
 											</div>
 										</div>
 									{/each}
 								</div>
 								<div class="text-xs text-gray-500 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded">
-									💰 已上传 {googleImagesInputImages.length} 张参考图片，每张额外消耗 {googleImagesConfig.credits_per_image} 积分
+									💰 已上传 {googleImagesInputImages.length} 张参考图片，每张额外消耗 {googleImagesConfig.credits_per_image}
+									积分
 								</div>
 							{:else}
-								<div class="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-center">
+								<div
+									class="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-center"
+								>
 									<div class="text-red-600 dark:text-red-400 text-sm">
 										⚠️ 请上传至少一张参考图片
 									</div>

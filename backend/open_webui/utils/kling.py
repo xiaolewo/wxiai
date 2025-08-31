@@ -243,7 +243,9 @@ class KlingApiClient:
             traceback.print_exc()
             raise ValueError(f"可灵API请求失败: {e}")
 
-    async def generate_multi_image_to_video(self, request: KlingGenerateRequest) -> dict:
+    async def generate_multi_image_to_video(
+        self, request: KlingGenerateRequest
+    ) -> dict:
         """多图参考生视频"""
         url = self._get_api_url("multi-image2video")
 
@@ -260,10 +262,9 @@ class KlingApiClient:
         for i, img_data in enumerate(request.image_list):
             if not isinstance(img_data, dict) or "image" not in img_data:
                 raise ValueError(f"第{i+1}张图片数据格式错误")
-            
+
             processed_img = self._process_image_data(
-                img_data["image"], 
-                f"参考图片{i+1}"
+                img_data["image"], f"参考图片{i+1}"
             )
             processed_images.append({"image": processed_img})
 
@@ -279,13 +280,13 @@ class KlingApiClient:
         # 添加可选参数
         if request.prompt:
             request_data["prompt"] = request.prompt.strip()
-        
+
         if request.negative_prompt:
             request_data["negative_prompt"] = request.negative_prompt.strip()
-        
+
         if request.callback_url:
             request_data["callback_url"] = request.callback_url
-        
+
         if request.external_task_id:
             request_data["external_task_id"] = request.external_task_id
 
@@ -335,6 +336,7 @@ class KlingApiClient:
                 raise
             print(f"🎬 【可灵API】多图请求异常: {e}")
             import traceback
+
             traceback.print_exc()
             raise ValueError(f"可灵多图API请求失败: {e}")
 
@@ -373,16 +375,18 @@ class KlingApiClient:
                 raise
             raise ValueError(f"查询任务失败: {e}")
 
-    async def extend_video(self, video_id: str, prompt: Optional[str] = None, 
-                          negative_prompt: Optional[str] = None, 
-                          cfg_scale: Optional[float] = None) -> dict:
+    async def extend_video(
+        self,
+        video_id: str,
+        prompt: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        cfg_scale: Optional[float] = None,
+    ) -> dict:
         """视频延长"""
         url = self._get_api_url("video-extend")
 
         # 构建请求数据
-        request_data = {
-            "video_id": video_id
-        }
+        request_data = {"video_id": video_id}
 
         # 添加可选参数
         if prompt:
@@ -395,7 +399,9 @@ class KlingApiClient:
             request_data["cfg_scale"] = float(cfg_scale)
 
         print(f"🎬 【可灵API】视频延长请求URL: {url}")
-        print(f"🎬 【可灵API】延长请求参数: {json.dumps(request_data, ensure_ascii=False)}")
+        print(
+            f"🎬 【可灵API】延长请求参数: {json.dumps(request_data, ensure_ascii=False)}"
+        )
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -410,7 +416,9 @@ class KlingApiClient:
                     return result
                 else:
                     error_text = response.text
-                    print(f"🎬 【可灵API】延长响应错误 ({response.status_code}): {error_text}")
+                    print(
+                        f"🎬 【可灵API】延长响应错误 ({response.status_code}): {error_text}"
+                    )
 
                     try:
                         error_json = response.json()
@@ -432,6 +440,7 @@ class KlingApiClient:
                 raise
             print(f"🎬 【可灵API】延长请求异常: {e}")
             import traceback
+
             traceback.print_exc()
             raise ValueError(f"可灵视频延长API请求失败: {e}")
 
@@ -451,7 +460,9 @@ class KlingApiClient:
                     error_text = response.text
                     try:
                         error_json = response.json()
-                        error_message = error_json.get("message", "查询视频延长任务失败")
+                        error_message = error_json.get(
+                            "message", "查询视频延长任务失败"
+                        )
                         raise ValueError(
                             f"可灵API错误 ({response.status_code}): {error_message}"
                         )
@@ -718,7 +729,7 @@ async def process_kling_generation(
     print(
         f"🎬 【可灵处理】请求: prompt={request.prompt[:50]}..., mode={request.mode}, duration={request.duration}"
     )
-    
+
     if action == "MULTI_IMAGE_TO_VIDEO":
         print(f"🎬 【可灵处理】多图模式: {len(request.image_list)}张图片")
 
@@ -770,15 +781,21 @@ async def process_kling_generation(
 
     # 处理图片数据
     if action == "MULTI_IMAGE_TO_VIDEO":
-        task_data.update({
-            "input_images": request.image_list,
-            "image_count": len(request.image_list) if request.image_list else 0,
-        })
+        task_data.update(
+            {
+                "input_images": request.image_list,
+                "image_count": len(request.image_list) if request.image_list else 0,
+            }
+        )
     else:
-        task_data.update({
-            "input_image": request.image if action == "IMAGE_TO_VIDEO" else None,
-            "image_count": 1 if (action == "IMAGE_TO_VIDEO" and request.image) else 0,
-        })
+        task_data.update(
+            {
+                "input_image": request.image if action == "IMAGE_TO_VIDEO" else None,
+                "image_count": (
+                    1 if (action == "IMAGE_TO_VIDEO" and request.image) else 0
+                ),
+            }
+        )
 
     # 创建任务记录
     task = KlingTask.create_task(**task_data)
@@ -813,12 +830,15 @@ async def process_kling_generation(
 
 
 async def process_kling_video_extend(
-    user_id: str, video_id: str, prompt: Optional[str] = None, 
-    negative_prompt: Optional[str] = None, cfg_scale: Optional[float] = None
+    user_id: str,
+    video_id: str,
+    prompt: Optional[str] = None,
+    negative_prompt: Optional[str] = None,
+    cfg_scale: Optional[float] = None,
 ) -> KlingTask:
     """处理可灵视频延长任务"""
     from open_webui.models.kling import KlingVideoExtendRequest
-    
+
     config = KlingConfig.get_config()
     if not config or not config.enabled:
         raise Exception("可灵服务未配置或已禁用")
@@ -875,30 +895,33 @@ async def process_kling_video_extend(
     }
 
     extend_task = KlingTask.create_task(**extend_task_data)
-    
+
     try:
         # 调用API
         client = KlingApiClient(config)
         api_response = await client.extend_video(
             video_id=video_id,
             prompt=prompt,
-            negative_prompt=negative_prompt, 
-            cfg_scale=cfg_scale
+            negative_prompt=negative_prompt,
+            cfg_scale=cfg_scale,
         )
 
         # 更新任务状态
         extend_task.update_from_api_response(api_response)
-        
+
         print(f"🎬 【可灵延长】任务创建成功: {extend_task.id}")
         return extend_task
 
     except Exception as e:
         print(f"❌ 【可灵延长】延长失败: {e}")
         import traceback
+
         traceback.print_exc()
 
         # 发生错误时退还积分
-        add_user_credits(user_id, credits_cost, f"可灵视频延长失败退款-{video_id}", extend_task.id)
+        add_user_credits(
+            user_id, credits_cost, f"可灵视频延长失败退款-{video_id}", extend_task.id
+        )
         extend_task.update_status("failed")
         extend_task.fail_reason = str(e)
         raise

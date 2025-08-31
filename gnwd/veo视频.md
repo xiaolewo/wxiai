@@ -1,6 +1,5 @@
 Google Veo 视频生成 API 文档
 
-
 包含三个接口
 文生视频 文本生成视频
 图生视频 图像生成视频
@@ -58,13 +57,13 @@ import json
 
 conn = http.client.HTTPSConnection("{{BASE_URL}}")
 payload = json.dumps({
-   "prompt": "A futuristic city with flying cars",
-   "model": "veo3",
-   "enhance_prompt": True
+"prompt": "A futuristic city with flying cars",
+"model": "veo3",
+"enhance_prompt": True
 })
 headers = {
-   "Authorization": "Bearer {{YOUR_API_KEY}}",
-   "Content-Type": "application/json"
+"Authorization": "Bearer {{YOUR_API_KEY}}",
+"Content-Type": "application/json"
 }
 conn.request("POST", "/google/v1/models/veo/videos", payload, headers)
 res = conn.getresponse()
@@ -73,11 +72,10 @@ print(data.decode("utf-8"))
 
 返回示例
 {
-    "code": "success",
-    "message": "",
-    "data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
+"code": "success",
+"message": "",
+"data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
 }
-
 
 字段说明
 code string 状态码 success 表示成功
@@ -145,16 +143,16 @@ import json
 
 conn = http.client.HTTPSConnection("{{BASE_URL}}")
 payload = json.dumps({
-   "prompt": "A forest turning into a futuristic city",
-   "model": "veo3-pro-frames",
-   "enhance_prompt": True,
-   "images": [
-      "https://example.com/frame1.png"
-   ]
+"prompt": "A forest turning into a futuristic city",
+"model": "veo3-pro-frames",
+"enhance_prompt": True,
+"images": [
+"https://example.com/frame1.png"
+]
 })
 headers = {
-   "Authorization": "Bearer {{YOUR_API_KEY}}",
-   "Content-Type": "application/json"
+"Authorization": "Bearer {{YOUR_API_KEY}}",
+"Content-Type": "application/json"
 }
 conn.request("POST", "/google/v1/models/veo/videos", payload, headers)
 res = conn.getresponse()
@@ -163,11 +161,10 @@ print(data.decode("utf-8"))
 
 返回示例
 {
-    "code": "success",
-    "message": "",
-    "data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
+"code": "success",
+"message": "",
+"data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
 }
-
 
 字段说明
 code string 状态码
@@ -209,8 +206,8 @@ import json
 conn = http.client.HTTPSConnection("{{BASE_URL}}")
 payload = ""
 headers = {
-   "Authorization": "Bearer {{YOUR_API_KEY}}",
-   "Content-Type": "application/json"
+"Authorization": "Bearer {{YOUR_API_KEY}}",
+"Content-Type": "application/json"
 }
 conn.request("GET", "/google/v1/tasks/f0aa213c-c09e-4e19-a0e5-c698fe48acf1", payload, headers)
 res = conn.getresponse()
@@ -219,25 +216,25 @@ print(data.decode("utf-8"))
 
 返回示例
 {
-    "code": "success",
-    "message": "",
-    "data": {
-        "task_id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
-        "notify_hook": "",
-        "action": "google-videos",
-        "status": "SUCCESS",
-        "fail_reason": "",
-        "submit_time": 1750221308,
-        "start_time": 0,
-        "finish_time": 1750221572,
-        "progress": "100%",
-        "data": {
-            "id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
-            "status": "completed",
-            "video_url": "https://filesystem.site/cdn/20250618/a5O3efr3GyiSTIMxAtXYmCWKcNPjBL.mp4",
-            "status_update_time": 1750221453056
-        }
-    }
+"code": "success",
+"message": "",
+"data": {
+"task_id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
+"notify_hook": "",
+"action": "google-videos",
+"status": "SUCCESS",
+"fail_reason": "",
+"submit_time": 1750221308,
+"start_time": 0,
+"finish_time": 1750221572,
+"progress": "100%",
+"data": {
+"id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
+"status": "completed",
+"video_url": "https://filesystem.site/cdn/20250618/a5O3efr3GyiSTIMxAtXYmCWKcNPjBL.mp4",
+"status_update_time": 1750221453056
+}
+}
 }
 
 字段说明

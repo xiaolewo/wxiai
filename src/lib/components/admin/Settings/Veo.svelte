@@ -8,12 +8,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	// Import Veo API functions
-	import {
-		type VeoConfig,
-		getVeoConfig,
-		updateVeoConfig,
-		getVeoHealth
-	} from '$lib/apis/veo';
+	import { type VeoConfig, getVeoConfig, updateVeoConfig, getVeoHealth } from '$lib/apis/veo';
 
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
@@ -26,11 +21,11 @@
 		base_url: 'https://api.veoai.com',
 		api_key: '',
 		model_credits_config: {
-			'veo3': 100,
+			veo3: 100,
 			'veo3-fast': 80,
 			'veo3-pro': 150,
 			'veo3-pro-frames': 200,
-			'veo2': 90,
+			veo2: 90,
 			'veo2-fast': 70,
 			'veo2-fast-frames': 120,
 			'veo2-fast-components': 160,
@@ -73,13 +68,13 @@
 			const config = await getVeoConfig($user.token);
 			if (config) {
 				// 保持完整的模型列表，只更新已存在的配置
-				veoConfig = { 
-					...veoConfig, 
-					...config, 
-					model_credits_config: { 
-						...veoConfig.model_credits_config, 
-						...(config.model_credits_config || {}) 
-					} 
+				veoConfig = {
+					...veoConfig,
+					...config,
+					model_credits_config: {
+						...veoConfig.model_credits_config,
+						...(config.model_credits_config || {})
+					}
 				};
 			}
 		} catch (error) {
@@ -137,7 +132,7 @@
 
 	// 获取模型类型标识
 	const getModelTypeBadge = (modelValue: string) => {
-		const model = modelOptions.find(opt => opt.value === modelValue);
+		const model = modelOptions.find((opt) => opt.value === modelValue);
 		if (model?.type === 'image') {
 			return '图';
 		}
@@ -277,7 +272,9 @@
 							<div class="flex-1">
 								<div class="text-xs text-gray-500 mb-1">
 									{modelName}
-									<span class="ml-2 px-1 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded text-xs">
+									<span
+										class="ml-2 px-1 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 rounded text-xs"
+									>
 										{getModelTypeBadge(modelName)}
 									</span>
 								</div>
@@ -392,7 +389,9 @@
 			<!-- 使用说明 -->
 			<div class="space-y-2">
 				<div class="text-xs font-medium text-gray-500">使用说明</div>
-				<div class="text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg space-y-1">
+				<div
+					class="text-xs text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg space-y-1"
+				>
 					<div>• 支持多种Veo模型：文生视频、图生视频等</div>
 					<div>• 带有"frames"或"components"的模型支持图片输入</div>
 					<div>• 可以自定义每个模型的积分消耗</div>
