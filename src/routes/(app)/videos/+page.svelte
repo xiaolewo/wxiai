@@ -13,13 +13,18 @@
 		type KlingConfig,
 		type KlingGenerateRequest,
 		type KlingVideoMode,
+		type KlingVideoExtendRequest,
+		type KlingVideoExtendCheck,
 		submitKlingTextToVideoTask,
 		submitKlingImageToVideoTask,
 		getKlingTaskStatus,
 		getKlingUserTaskHistory,
 		getKlingUserCredits,
 		getKlingUserConfig,
-		deleteKlingTask
+		deleteKlingTask,
+		checkKlingVideoExtendEligibility,
+		submitKlingVideoExtendTask,
+		getKlingVideoExtendTaskStatus
 	} from '$lib/apis/kling';
 
 	// Import JiMeng API functions
@@ -64,6 +69,10 @@
 	let jimengConfig: JimengConfig | null = null;
 	let veoConfig: VeoUserConfig | null = null;
 
+	// 视频延长相关状态
+	let extendingTasks = new Set<string>(); // 正在检查或延长中的任务ID
+	let extendChecks = new Map<string, KlingVideoExtendCheck>(); // 延长资格检查结果缓存
+
 	// Service selection
 	let selectedService: 'kling' | 'jimeng' | 'veo' = 'kling';
 	let lastServiceSwitch = '';
@@ -107,18 +116,7 @@
 			} else if (selectedService === 'veo') {
 				watermark = false; // Veo服务没有水印功能
 				// 设置默认Veo模型
-				const veoModels = [
-					'veo3',
-					'veo3-fast',
-					'veo3-pro',
-					'veo3-pro-frames',
-					'veo2',
-					'veo2-fast',
-					'veo2-fast-frames',
-					'veo2-fast-components',
-					'veo2-pro',
-					'veo3-fast-frames'
-				];
+				const veoModels = ['veo3', 'veo3-fast', 'veo3-pro', 'veo3-pro-frames', 'veo2', 'veo2-fast', 'veo2-fast-frames', 'veo2-fast-components', 'veo2-pro', 'veo3-fast-frames'];
 				// 确保配置已加载后再设置默认模型
 				if (veoConfig?.default_model) {
 					selectedModel = veoConfig.default_model;
@@ -147,6 +145,10 @@
 	let imageTail: string | null = null; // 尾帧图片
 	let selectedGenerationType: 'text-to-video' | 'image-to-video' = 'text-to-video';
 
+	// 多图参考参数
+	let multiImages: Array<{ image: string; preview: string }> = []; // 多图参考列表
+	const maxMultiImages = 4;
+	
 	// Veo专用图片输入
 	let veoImage1: string | null = null; // Veo第一张图片
 	let veoImage2: string | null = null; // Veo第二张图片（首尾帧模式）
@@ -156,7 +158,7 @@
 	// 图生视频高级功能
 	let staticMask: string | null = null; // 静态笔刷
 	let dynamicMasks: Array<{ mask: string; trajectories: Array<{ x: number; y: number }> }> = []; // 动态笔刷
-	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' = 'basic'; // 图生视频模式
+	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' | 'multi-image' = 'basic'; // 图生视频模式
 
 	// 摄像机控制参数
 	let cameraControlType:
@@ -200,40 +202,15 @@
 	// Veo模型选项
 	const veoModelOptions = [
 		{ value: 'veo3', label: 'Veo 3 (最新)', description: '最新版本', type: 'text' },
-		{
-			value: 'veo3-fast',
-			label: 'Veo 3 Fast',
-			description: '快速版本，生成速度更快',
-			type: 'text'
-		},
+		{ value: 'veo3-fast', label: 'Veo 3 Fast', description: '快速版本，生成速度更快', type: 'text' },
 		{ value: 'veo3-pro', label: 'Veo 3 Pro', description: '专业版本，质量更高', type: 'text' },
-		{
-			value: 'veo3-pro-frames',
-			label: 'Veo 3 Pro Frames',
-			description: '支持图生视频(单张图片)',
-			type: 'image'
-		},
+		{ value: 'veo3-pro-frames', label: 'Veo 3 Pro Frames', description: '支持图生视频(单张图片)', type: 'image' },
 		{ value: 'veo2', label: 'Veo 2', description: '稳定版本，平衡速度与质量', type: 'text' },
 		{ value: 'veo2-fast', label: 'Veo 2 Fast', description: '快速版本', type: 'text' },
-		{
-			value: 'veo2-fast-frames',
-			label: 'Veo 2 Fast Frames',
-			description: '支持图生视频(首尾帧)',
-			type: 'image'
-		},
-		{
-			value: 'veo2-fast-components',
-			label: 'Veo 2 Fast Components',
-			description: '支持多图片输入(视频元素)',
-			type: 'image'
-		},
+		{ value: 'veo2-fast-frames', label: 'Veo 2 Fast Frames', description: '支持图生视频(首尾帧)', type: 'image' },
+		{ value: 'veo2-fast-components', label: 'Veo 2 Fast Components', description: '支持多图片输入(视频元素)', type: 'image' },
 		{ value: 'veo2-pro', label: 'Veo 2 Pro', description: '专业版本', type: 'text' },
-		{
-			value: 'veo3-fast-frames',
-			label: 'Veo 3 Fast Frames',
-			description: '支持图生视频的快速版本',
-			type: 'image'
-		}
+		{ value: 'veo3-fast-frames', label: 'Veo 3 Fast Frames', description: '支持图生视频的快速版本', type: 'image' }
 	];
 
 	// 根据生成类型和服务获取当前可用的模型选项
@@ -241,14 +218,12 @@
 		if (selectedService === 'veo') {
 			// Veo根据生成类型过滤支持的模型
 			if (selectedGenerationType === 'text-to-video') {
-				return veoModelOptions.filter((option) => option.type === 'text');
+				return veoModelOptions.filter(option => option.type === 'text');
 			} else {
-				return veoModelOptions.filter((option) => option.type === 'image');
+				return veoModelOptions.filter(option => option.type === 'image');
 			}
 		} else if (selectedService === 'kling') {
-			return selectedGenerationType === 'text-to-video'
-				? textToVideoModelOptions
-				: imageToVideoModelOptions;
+			return selectedGenerationType === 'text-to-video' ? textToVideoModelOptions : imageToVideoModelOptions;
 		} else {
 			// Jimeng 暂时使用固定选项
 			return [{ value: 'jimeng-default', label: '即梦默认' }];
@@ -257,23 +232,17 @@
 
 	// 验证并修正选中的模型 - 确保模型在当前可用选项中
 	$: if (currentModelOptions && currentModelOptions.length > 0 && selectedService && loaded) {
-		const availableValues = currentModelOptions.map((option) => option.value);
-		console.log(
-			`🔍 【模型验证】服务: ${selectedService}, 当前模型: ${selectedModel}, 可用模型: [${availableValues.join(', ')}]`
-		);
-
+		const availableValues = currentModelOptions.map(option => option.value);
+		console.log(`🔍 【模型验证】服务: ${selectedService}, 当前模型: ${selectedModel}, 可用模型: [${availableValues.join(', ')}]`);
+		
 		// 如果当前选中的模型不在可用选项中
 		if (!availableValues.includes(selectedModel)) {
 			console.log(`⚠️ 【模型验证】当前模型 "${selectedModel}" 不在可用选项中，需要修正`);
-
+			
 			// 优先选择后端配置的默认模型
 			let newModel = null;
-
-			if (
-				selectedService === 'veo' &&
-				veoConfig?.default_model &&
-				availableValues.includes(veoConfig.default_model)
-			) {
+			
+			if (selectedService === 'veo' && veoConfig?.default_model && availableValues.includes(veoConfig.default_model)) {
 				newModel = veoConfig.default_model;
 				console.log(`🎯 【模型验证】使用Veo默认模型: ${newModel}`);
 			} else if (selectedService === 'kling' && availableValues.includes('kling-v1')) {
@@ -287,7 +256,7 @@
 				newModel = availableValues[0];
 				console.log(`⚠️ 【模型验证】使用第一个可用模型: ${newModel}`);
 			}
-
+			
 			if (newModel && newModel !== selectedModel) {
 				console.log(`🔄 【模型验证】模型修正: ${selectedModel} → ${newModel}`);
 				selectedModel = newModel;
@@ -327,6 +296,13 @@
 				label: '首尾帧模式',
 				desc: '同时使用首帧和尾帧图片 (自动使用V1.6专家模式)'
 			});
+
+			// 在首尾帧模式后插入多图参考模式
+			baseOptions.splice(2, 0, {
+				value: 'multi-image',
+				label: '多图参考',
+				desc: '使用多张参考图片（仅V1.6，最多4张，积分不变）'
+			});
 		}
 
 		return baseOptions;
@@ -343,6 +319,17 @@
 			if (selectedMode !== 'pro') {
 				selectedMode = 'pro';
 				console.log('🎬 【首尾帧模式】自动切换到专家模式');
+			}
+		}
+	}
+
+	// 当选择多图参考模式时，自动设置模型
+	$: {
+		if (selectedImageVideoMode === 'multi-image' && selectedService === 'kling') {
+			// 多图参考模式只支持可灵V1.6模型
+			if (selectedModel !== 'kling-v1-6') {
+				selectedModel = 'kling-v1-6';
+				console.log('🎬 【多图参考模式】自动切换到可灵V1.6模型');
 			}
 		}
 	}
@@ -431,16 +418,12 @@
 		loaded = true;
 
 		// 初始模型状态调试信息
-		console.log(
-			`🔍 【初始状态】selectedService: ${selectedService}, selectedModel: ${selectedModel}`
-		);
+		console.log(`🔍 【初始状态】selectedService: ${selectedService}, selectedModel: ${selectedModel}`);
 
 		await loadUserData();
 
 		// 数据加载完成后的状态调试信息
-		console.log(
-			`🔍 【数据加载后】selectedService: ${selectedService}, selectedModel: ${selectedModel}`
-		);
+		console.log(`🔍 【数据加载后】selectedService: ${selectedService}, selectedModel: ${selectedModel}`);
 
 		// 清除可能存在的旧定时器
 		if (creditRefreshInterval) {
@@ -526,11 +509,7 @@
 			if (selectedService === 'veo' && veoConfig?.default_model) {
 				selectedModel = veoConfig.default_model;
 				console.log(`🎯 【初始化】为Veo服务设置默认模型: ${veoConfig.default_model}`);
-			} else if (
-				selectedService === 'kling' &&
-				!selectedModel.startsWith('kling-') &&
-				!selectedModel.includes('pro')
-			) {
+			} else if (selectedService === 'kling' && (!selectedModel.startsWith('kling-') && !selectedModel.includes('pro'))) {
 				selectedModel = 'kling-v1';
 				console.log(`🎬 【初始化】为可灵服务设置默认模型: kling-v1`);
 			} else if (selectedService === 'jimeng') {
@@ -542,7 +521,7 @@
 			// 检查当前选择的服务是否可用
 			let currentConfig = null;
 			let serviceName = '';
-
+			
 			if (selectedService === 'kling') {
 				currentConfig = klingConfig;
 				serviceName = '可灵';
@@ -553,7 +532,7 @@
 				currentConfig = veoConfig;
 				serviceName = 'Veo';
 			}
-
+			
 			if (!currentConfig?.enabled) {
 				toast.error(`${serviceName}视频服务未启用，请联系管理员配置或切换到其他服务`);
 
@@ -594,7 +573,7 @@
 			// 加载用户积分
 			let getCreditsFunction;
 			let serviceDisplayName;
-
+			
 			if (selectedService === 'kling') {
 				getCreditsFunction = getKlingUserCredits;
 				serviceDisplayName = '可灵';
@@ -605,7 +584,7 @@
 				getCreditsFunction = getVeoUserCredits;
 				serviceDisplayName = 'Veo';
 			}
-
+			
 			const credits = await getCreditsFunction($user.token);
 			if (credits) {
 				userCredits = credits.balance || 0;
@@ -628,15 +607,13 @@
 			]);
 
 			// 合并和排序历史记录（后端已经包含serviceType字段）
-			const allTasks = [
-				...(klingHistory.data || []),
-				...(jimengHistory.data || []),
-				...(veoHistory.data || [])
-			].sort((a, b) => {
-				const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
-				const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
-				return timeB - timeA; // 降序排列，最新的在前
-			});
+			const allTasks = [...(klingHistory.data || []), ...(jimengHistory.data || []), ...(veoHistory.data || [])].sort(
+				(a, b) => {
+					const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
+					const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
+					return timeB - timeA; // 降序排列，最新的在前
+				}
+			);
 
 			taskHistory = allTasks;
 			console.log('🎬 加载历史记录:', taskHistory.length, '个任务');
@@ -669,7 +646,7 @@
 
 		let serviceDisplayName;
 		let getCreditsFunction;
-
+		
 		if (selectedService === 'kling') {
 			serviceDisplayName = '可灵';
 			getCreditsFunction = getKlingUserCredits;
@@ -727,7 +704,7 @@
 		} else if (selectedService === 'veo') {
 			getCreditsFunction = getVeoUserCredits;
 		}
-
+		
 		const latestCredits = await getCreditsFunction($user.token);
 		if (latestCredits) {
 			userCredits = latestCredits.balance || 0;
@@ -768,7 +745,10 @@
 				}
 			} else {
 				// 可灵和即梦使用原有验证
-				if (!inputImage) {
+				// 多图参考模式跳过单图验证
+				if (selectedService === 'kling' && selectedImageVideoMode === 'multi-image') {
+					// 多图模式验证将在可灵特有功能验证中处理
+				} else if (!inputImage) {
 					toast.error('图生视频模式需要上传输入图片');
 					return;
 				}
@@ -785,6 +765,23 @@
 					if (selectedImageVideoMode === 'brush' && !staticMask && dynamicMasks.length === 0) {
 						toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
 						return;
+					}
+
+					// 多图参考模式验证
+					if (selectedImageVideoMode === 'multi-image') {
+						if (multiImages.length === 0) {
+							toast.error('多图参考模式需要至少上传1张图片');
+							return;
+						}
+						if (multiImages.length > maxMultiImages) {
+							toast.error(`多图参考模式最多支持${maxMultiImages}张图片`);
+							return;
+						}
+						// 验证模型是否为 kling-v1-6
+						if (selectedModel !== 'kling-v1-6') {
+							toast.error('多图参考模式只支持 kling-v1-6 模型');
+							return;
+						}
 					}
 				}
 			}
@@ -851,63 +848,72 @@
 				}
 			}
 
-			// 可灵特有的高级功能
-			if (selectedService === 'kling') {
-				const klingRequest = request as KlingGenerateRequest;
+				// 可灵特有的高级功能
+				if (selectedService === 'kling') {
+					const klingRequest = request as KlingGenerateRequest;
 
-				// 根据选择的模式添加不同的参数
-				if (selectedImageVideoMode === 'first-last' && imageTail) {
-					// 尾帧模式
-					let tailBase64 = imageTail;
-					if (imageTail.startsWith('data:')) {
-						tailBase64 = imageTail.split(',')[1];
-					}
-					klingRequest.imageTail = tailBase64;
-				} else if (selectedImageVideoMode === 'brush') {
-					// 笔刷模式
-					if (staticMask) {
-						let maskBase64 = staticMask;
-						if (staticMask.startsWith('data:')) {
-							maskBase64 = staticMask.split(',')[1];
-						}
-						klingRequest.staticMask = maskBase64;
-					}
-
-					if (dynamicMasks.length > 0) {
-						klingRequest.dynamicMasks = dynamicMasks.map((dm) => ({
-							mask: dm.mask.startsWith('data:') ? dm.mask.split(',')[1] : dm.mask,
-							trajectories: dm.trajectories
+					// 根据选择的模式添加不同的参数
+					if (selectedImageVideoMode === 'multi-image' && multiImages.length > 0) {
+						// 多图参考模式
+						klingRequest.generationMode = 'multi_image';
+						klingRequest.imageList = multiImages.map(img => ({
+							image: img.image.startsWith('data:') ? img.image.split(',')[1] : img.image
 						}));
-					}
-				} else if (selectedImageVideoMode === 'camera') {
-					// 摄像机控制模式
-					if (cameraControlType !== 'simple') {
-						// 预定义运镜类型
-						klingRequest.cameraControl = {
-							type: cameraControlType
-						};
-					} else {
-						// 简单运镜模式 - 检查是否有非零参数
-						const hasValidConfig = Object.values(cameraControlConfig).some((value) => value !== 0);
-						if (hasValidConfig) {
-							// 确保只有一个参数不为0（根据API文档要求）
-							const nonZeroParams = Object.entries(cameraControlConfig).filter(
-								([key, value]) => value !== 0
+						console.log('🎬 【可灵多图】设置多图参考:', multiImages.length, '张图片');
+					} else if (selectedImageVideoMode === 'first-last' && imageTail) {
+						// 尾帧模式
+						let tailBase64 = imageTail;
+						if (imageTail.startsWith('data:')) {
+							tailBase64 = imageTail.split(',')[1];
+						}
+						klingRequest.imageTail = tailBase64;
+					} else if (selectedImageVideoMode === 'brush') {
+						// 笔刷模式
+						if (staticMask) {
+							let maskBase64 = staticMask;
+							if (staticMask.startsWith('data:')) {
+								maskBase64 = staticMask.split(',')[1];
+							}
+							klingRequest.staticMask = maskBase64;
+						}
+
+						if (dynamicMasks.length > 0) {
+							klingRequest.dynamicMasks = dynamicMasks.map((dm) => ({
+								mask: dm.mask.startsWith('data:') ? dm.mask.split(',')[1] : dm.mask,
+								trajectories: dm.trajectories
+							}));
+						}
+					} else if (selectedImageVideoMode === 'camera') {
+						// 摄像机控制模式
+						if (cameraControlType !== 'simple') {
+							// 预定义运镜类型
+							klingRequest.cameraControl = {
+								type: cameraControlType
+							};
+						} else {
+							// 简单运镜模式 - 检查是否有非零参数
+							const hasValidConfig = Object.values(cameraControlConfig).some(
+								(value) => value !== 0
 							);
-							if (nonZeroParams.length === 1) {
-								klingRequest.cameraControl = {
-									type: 'simple',
-									config: cameraControlConfig
-								};
-							} else if (nonZeroParams.length > 1) {
-								toast.error('简单运镜模式只能设置一个非零参数');
-								isGenerating = false;
-								return;
+							if (hasValidConfig) {
+								// 确保只有一个参数不为0（根据API文档要求）
+								const nonZeroParams = Object.entries(cameraControlConfig).filter(
+									([key, value]) => value !== 0
+								);
+								if (nonZeroParams.length === 1) {
+									klingRequest.cameraControl = {
+										type: 'simple',
+										config: cameraControlConfig
+									};
+								} else if (nonZeroParams.length > 1) {
+									toast.error('简单运镜模式只能设置一个非零参数');
+									isGenerating = false;
+									return;
+								}
 							}
 						}
 					}
 				}
-			}
 
 			// 为所有可灵视频生成添加摄像机控制支持（文生视频和图生视频）
 			if (selectedService === 'kling') {
@@ -949,8 +955,8 @@
 					selectedService === 'kling'
 						? (request as KlingGenerateRequest).modelName
 						: selectedService === 'veo'
-							? (request as VeoGenerateRequest).model
-							: 'jimeng-default',
+						? (request as VeoGenerateRequest).model
+						: 'jimeng-default',
 				hasInputImage: !!(request as any).image || !!(request as any).images,
 				prompt: request.prompt
 			});
@@ -978,11 +984,8 @@
 				// 提交成功，立即查询真实积分余额（后端已扣除）
 				try {
 					const getCreditsFunction =
-						selectedService === 'kling'
-							? getKlingUserCredits
-							: selectedService === 'jimeng'
-								? getJimengUserCredits
-								: getVeoUserCredits;
+						selectedService === 'kling' ? getKlingUserCredits : 
+						selectedService === 'jimeng' ? getJimengUserCredits : getVeoUserCredits;
 					const credits = await getCreditsFunction($user.token);
 					if (credits) {
 						userCredits = credits.balance || 0;
@@ -996,7 +999,11 @@
 				const baseTask = {
 					id: result.task_id,
 					userId: $user.id,
-					action: selectedGenerationType === 'image-to-video' ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
+					action: selectedGenerationType === 'image-to-video' 
+						? (selectedService === 'kling' && selectedImageVideoMode === 'multi-image' 
+							? 'MULTI_IMAGE_TO_VIDEO' 
+							: 'IMAGE_TO_VIDEO') 
+						: 'TEXT_TO_VIDEO',
 					status: 'submitted',
 					prompt: prompt.trim(),
 					duration: selectedDuration,
@@ -1048,7 +1055,7 @@
 	// 计算所需积分 - 响应式计算属性
 	$: requiredCredits = (() => {
 		let currentConfig;
-
+		
 		if (selectedService === 'kling') {
 			currentConfig = klingConfig;
 		} else if (selectedService === 'jimeng') {
@@ -1102,11 +1109,11 @@
 			// Veo的积分配置基于模型
 			const config = currentConfig as VeoUserConfig;
 			const credits = config.model_credits_config[selectedModel] || 100;
-
+			
 			console.log(`💰 【Veo积分计算】模型 ${selectedModel} = ${credits}积分`);
 			return credits;
 		}
-
+		
 		return 50; // 默认值
 	})();
 
@@ -1120,7 +1127,7 @@
 		} else if (service === 'veo') {
 			serviceName = 'Veo';
 		}
-
+		
 		console.log(`🎬 【${serviceName}轮询】开始轮询任务:`, taskId);
 
 		if (!$user?.token) {
@@ -1149,7 +1156,7 @@
 				} else if (service === 'veo') {
 					getTaskStatusFunction = getVeoTaskStatus;
 				}
-
+				
 				const task = await getTaskStatusFunction($user.token, taskId);
 
 				if (task) {
@@ -1183,11 +1190,8 @@
 						// 更新积分余额
 						try {
 							const getCreditsFunction =
-								service === 'kling'
-									? getKlingUserCredits
-									: service === 'jimeng'
-										? getJimengUserCredits
-										: getVeoUserCredits;
+								service === 'kling' ? getKlingUserCredits : 
+								service === 'jimeng' ? getJimengUserCredits : getVeoUserCredits;
 							const credits = await getCreditsFunction($user.token);
 							if (credits) {
 								const oldBalance = userCredits;
@@ -1237,10 +1241,7 @@
 	};
 
 	// 图片上传处理
-	const handleImageUpload = async (
-		event: Event,
-		type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3'
-	) => {
+	const handleImageUpload = async (event: Event, type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3' | 'multi') => {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
@@ -1280,6 +1281,18 @@
 			} else if (type === 'veo3') {
 				veoImage3 = base64;
 				console.log('🎯 【Veo】第3张图片上传成功:', file.name);
+			} else if (type === 'multi') {
+				// 多图模式：检查数量限制
+				if (multiImages.length >= maxMultiImages) {
+					toast.error(`最多只能上传${maxMultiImages}张图片`);
+					return;
+				}
+
+				multiImages = [...multiImages, {
+					image: base64,
+					preview: base64
+				}];
+				console.log('🎬 【可灵多图】图片上传成功:', file.name, `(${multiImages.length}/${maxMultiImages})`);
 			}
 		} catch (error) {
 			console.error('🎬 【可灵】图片上传失败:', error);
@@ -1288,6 +1301,58 @@
 
 		// 清空input值，允许重复上传同一文件
 		target.value = '';
+	};
+
+	// 批量多图上传处理
+	const handleMultiImagesUpload = async (event: Event) => {
+		const target = event.target as HTMLInputElement;
+		const files = Array.from(target.files || []);
+
+		if (files.length === 0) return;
+
+		// 检查数量限制
+		if (multiImages.length + files.length > maxMultiImages) {
+			toast.error(`最多只能上传${maxMultiImages}张图片，当前已有${multiImages.length}张`);
+			return;
+		}
+
+		for (const file of files) {
+			// 验证文件类型
+			if (!file.type.startsWith('image/')) {
+				toast.error(`文件 ${file.name} 不是图片格式`);
+				continue;
+			}
+
+			// 验证文件大小 (10MB)
+			if (file.size > 10 * 1024 * 1024) {
+				toast.error(`图片 ${file.name} 大小不能超过10MB`);
+				continue;
+			}
+
+			try {
+				// 转换为base64
+				const base64 = await fileToBase64(file);
+				
+				multiImages = [...multiImages, {
+					image: base64,
+					preview: base64
+				}];
+				
+				console.log('🎬 【可灵多图】批量上传成功:', file.name, `(${multiImages.length}/${maxMultiImages})`);
+			} catch (error) {
+				console.error('🎬 【可灵多图】上传失败:', file.name, error);
+				toast.error(`图片 ${file.name} 上传失败`);
+			}
+		}
+
+		// 清空input值
+		target.value = '';
+	};
+
+	// 删除多图中的某张图片
+	const removeMultiImage = (index: number) => {
+		multiImages = multiImages.filter((_, i) => i !== index);
+		console.log('🎬 【可灵多图】删除图片:', index, `剩余(${multiImages.length}/${maxMultiImages})`);
 	};
 
 	// 文件转Base64
@@ -1313,17 +1378,12 @@
 
 			// 确定服务类型
 			const taskServiceType = task.serviceType || 'kling'; // 默认为kling
-			const serviceName =
-				taskServiceType === 'kling' ? '可灵' : taskServiceType === 'jimeng' ? '即梦' : 'Veo';
+			const serviceName = taskServiceType === 'kling' ? '可灵' : taskServiceType === 'jimeng' ? '即梦' : 'Veo';
 
 			console.log(`🗑️ 删除${serviceName}任务: ${task.id}`);
 
-			const deleteFunction =
-				taskServiceType === 'kling'
-					? deleteKlingTask
-					: taskServiceType === 'jimeng'
-						? deleteJimengTask
-						: deleteVeoTask;
+			const deleteFunction = taskServiceType === 'kling' ? deleteKlingTask : 
+								   taskServiceType === 'jimeng' ? deleteJimengTask : deleteVeoTask;
 			const success = await deleteFunction($user.token, task.id);
 
 			if (success) {
@@ -1450,9 +1510,15 @@
 			enhancePrompt = task.enhance_prompt !== undefined ? task.enhance_prompt : true;
 		}
 
-		if (task.action === 'IMAGE_TO_VIDEO') {
+		if (task.action === 'IMAGE_TO_VIDEO' || task.action === 'MULTI_IMAGE_TO_VIDEO') {
 			selectedGenerationType = 'image-to-video';
-			inputImage = task.inputImage || null;
+			
+			if (task.action === 'MULTI_IMAGE_TO_VIDEO') {
+				selectedImageVideoMode = 'multi-image';
+				multiImages = task.inputImages || [];
+			} else {
+				inputImage = task.inputImage || null;
+			}
 		} else {
 			selectedGenerationType = 'text-to-video';
 		}
@@ -1460,6 +1526,191 @@
 		// 开始生成
 		await generateVideo();
 		toast.info('开始重新生成视频...');
+	};
+
+	// ======================== 视频延长功能 ========================
+
+	// 检查视频延长资格并缓存结果
+	const checkVideoExtendEligibility = async (task: KlingTask) => {
+		if (!$user?.token || task.serviceType !== 'kling' || !task.videoId) {
+			return null;
+		}
+
+		// 检查缓存
+		if (extendChecks.has(task.videoId)) {
+			return extendChecks.get(task.videoId);
+		}
+
+		try {
+			extendingTasks.add(task.id);
+			extendingTasks = extendingTasks; // 触发响应性更新
+
+			const result = await checkKlingVideoExtendEligibility($user.token, task.videoId);
+			extendChecks.set(task.videoId, result);
+			return result;
+		} catch (error) {
+			console.error('检查延长资格失败:', error);
+			return null;
+		} finally {
+			extendingTasks.delete(task.id);
+			extendingTasks = extendingTasks; // 触发响应性更新
+		}
+	};
+
+	// 处理视频延长
+	const handleVideoExtend = async (task: KlingTask) => {
+		if (!$user?.token || task.serviceType !== 'kling' || !task.videoId) {
+			toast.error('无法延长此视频');
+			return;
+		}
+
+		// 先检查资格
+		const eligibility = await checkVideoExtendEligibility(task);
+		if (!eligibility || !eligibility.canExtend) {
+			toast.error(eligibility?.reason || '无法延长此视频');
+			return;
+		}
+
+		try {
+			extendingTasks.add(task.id);
+			extendingTasks = extendingTasks; // 触发响应性更新
+
+			const extendRequest: KlingVideoExtendRequest = {
+				videoId: task.videoId,
+				prompt: task.prompt, // 使用原始提示词
+				negativePrompt: task.negativePrompt,
+				cfgScale: task.cfgScale
+			};
+
+			console.log(`🎬 【可灵延长】提交延长请求: ${task.videoId}, 积分: ${eligibility.creditsCost}`);
+			const result = await submitKlingVideoExtendTask($user.token, extendRequest);
+
+			if (result.success) {
+				// 创建延长任务记录（模拟）
+				const extendTask: KlingTask = {
+					id: result.task_id,
+					userId: $user.id,
+					externalTaskId: '',
+					action: 'VIDEO_EXTEND',
+					status: 'submitted',
+					taskStatusMsg: '延长任务已提交',
+					modelName: task.modelName,
+					prompt: task.prompt,
+					negativePrompt: task.negativePrompt,
+					cfgScale: task.cfgScale,
+					mode: task.mode,
+					duration: task.duration,
+					aspectRatio: task.aspectRatio,
+					parentTaskId: task.id,
+					isExtended: true,
+					extendCount: (eligibility.extendCount || 0) + 1,
+					creditsCost: result.credits_cost || eligibility.creditsCost || 0,
+					progress: '延长中...',
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					properties: {
+						serviceType: 'kling',
+						action: 'VIDEO_EXTEND',
+						originalVideoId: task.videoId
+					}
+				};
+
+				// 添加到任务历史
+				taskHistory = [extendTask, ...taskHistory];
+
+				// 开始轮询延长任务状态
+				pollExtendTaskStatus(result.task_id);
+
+				// 刷新积分
+				await refreshCredits();
+
+				// 清除缓存
+				extendChecks.delete(task.videoId);
+
+				toast.success(
+					`视频延长任务已提交，消耗 ${result.credits_cost || eligibility.creditsCost} 积分`
+				);
+			}
+		} catch (error) {
+			console.error('延长视频失败:', error);
+			toast.error('延长视频失败: ' + (error.message || error));
+		} finally {
+			extendingTasks.delete(task.id);
+			extendingTasks = extendingTasks; // 触发响应性更新
+		}
+	};
+
+	// 轮询延长任务状态
+	const pollExtendTaskStatus = async (taskId: string) => {
+		if (!$user?.token) return;
+
+		const maxAttempts = 60; // 最多轮询60次
+		const interval = 10000; // 每10秒轮询一次
+		let attempts = 0;
+
+		const poll = async () => {
+			try {
+				attempts++;
+				console.log(`🔍 【可灵延长】轮询延长任务状态: ${taskId} (${attempts}/${maxAttempts})`);
+
+				const task = await getKlingVideoExtendTaskStatus($user.token, taskId);
+
+				// 更新任务历史中的任务状态
+				taskHistory = taskHistory.map((t) => (t.id === taskId ? { ...task } : t));
+
+				if (task.status === 'succeed') {
+					console.log(`✅ 【可灵延长】延长任务完成: ${taskId}`);
+					toast.success('视频延长完成！');
+					// 刷新积分
+					await refreshCredits();
+					return; // 停止轮询
+				} else if (task.status === 'failed') {
+					console.log(`❌ 【可灵延长】延长任务失败: ${taskId}`);
+					toast.error('视频延长失败: ' + (task.failReason || '未知错误'));
+					return; // 停止轮询
+				}
+
+				// 继续轮询
+				if (attempts < maxAttempts) {
+					setTimeout(poll, interval);
+				} else {
+					console.log(`⏱️ 【可灵延长】延长任务轮询超时: ${taskId}`);
+					toast.warning('延长任务状态查询超时，请稍后手动刷新');
+				}
+			} catch (error) {
+				console.error('轮询延长任务状态失败:', error);
+				if (attempts < maxAttempts) {
+					setTimeout(poll, interval);
+				}
+			}
+		};
+
+		// 延迟一点开始轮询，给后端时间处理
+		setTimeout(poll, 3000);
+	};
+
+	// 计算视频总时长（包括延长）
+	const calculateTotalDuration = (task: KlingTask | JimengTask | VeoTask) => {
+		if (task.serviceType !== 'kling') {
+			return task.duration; // 非可灵任务直接返回原时长
+		}
+
+		const klingTask = task as KlingTask;
+		
+		// 如果是延长任务，显示累计时长
+		if (klingTask.isExtended && klingTask.originalDuration) {
+			const originalDuration = parseInt(klingTask.originalDuration) || 0;
+			const extendDuration = parseInt(klingTask.duration) || 0;
+			return (originalDuration + extendDuration * (klingTask.extendCount || 1)).toString();
+		}
+		
+		// 如果有视频实际时长，使用实际时长
+		if (klingTask.videoDuration) {
+			return klingTask.videoDuration;
+		}
+		
+		// 否则返回设置的时长
+		return klingTask.duration;
 	};
 
 	// 积分余额定期刷新
@@ -1527,7 +1778,8 @@
 								🌟 即梦
 							</button>
 							<button
-								class="px-2 py-2 text-xs rounded border transition-colors {selectedService === 'veo'
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
+								'veo'
 									? 'bg-blue-500 text-white border-blue-500'
 									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
 								on:click={() => (selectedService = 'veo')}
@@ -1578,13 +1830,7 @@
 
 					<!-- 当前服务信息 -->
 					<div class="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-						<div>
-							当前服务: {selectedService === 'kling'
-								? '可灵'
-								: selectedService === 'jimeng'
-									? '即梦'
-									: 'Veo'}视频生成
-						</div>
+						<div>当前服务: {selectedService === 'kling' ? '可灵' : selectedService === 'jimeng' ? '即梦' : 'Veo'}视频生成</div>
 						<div>消耗积分: {requiredCredits}积分/次</div>
 						<div class="flex justify-between items-center">
 							<div class="text-green-600 dark:text-green-400">余额: {userCredits}积分</div>
@@ -1646,16 +1892,12 @@
 								on:click={generateVideo}
 								disabled={isGenerating ||
 									!prompt.trim() ||
-									!(selectedService === 'kling'
-										? klingConfig?.enabled
-										: selectedService === 'jimeng'
-											? jimengConfig?.enabled
-											: veoConfig?.enabled)}
+									!(selectedService === 'kling' ? klingConfig?.enabled : selectedService === 'jimeng' ? jimengConfig?.enabled : veoConfig?.enabled)}
 								class="px-4 py-1 {selectedService === 'kling'
 									? 'bg-purple-500 hover:bg-purple-600'
-									: selectedService === 'jimeng'
-										? 'bg-green-500 hover:bg-green-600'
-										: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
+									: selectedService === 'jimeng' 
+									? 'bg-green-500 hover:bg-green-600'
+									: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
 									<Spinner className="size-3" />
@@ -1698,27 +1940,19 @@
 								<div class="text-sm font-medium text-gray-700 dark:text-gray-300">
 									图片输入
 									<span class="text-xs text-gray-500 ml-2">
-										{selectedVeoImageMode === 'single'
-											? '(单张图片)'
-											: selectedVeoImageMode === 'frames'
-												? '(首尾帧 - 两张图片)'
-												: '(组件模式 - 三张图片)'}
+										{selectedVeoImageMode === 'single' ? '(单张图片)' : 
+										 selectedVeoImageMode === 'frames' ? '(首尾帧 - 两张图片)' : 
+										 '(组件模式 - 三张图片)'}
 									</span>
 								</div>
 
 								<!-- 第一张图片 -->
 								<div>
 									<label class="text-xs text-gray-500 mb-1 block">第1张图片</label>
-									<div
-										class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-									>
+									<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
 										{#if veoImage1}
 											<div class="relative">
-												<img
-													src={veoImage1}
-													alt="第1张图片"
-													class="w-full h-32 object-cover rounded"
-												/>
+												<img src={veoImage1} alt="第1张图片" class="w-full h-32 object-cover rounded" />
 												<button
 													on:click={() => (veoImage1 = null)}
 													class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
@@ -1755,16 +1989,10 @@
 										<label class="text-xs text-gray-500 mb-1 block">
 											{selectedVeoImageMode === 'frames' ? '第2张图片（尾帧）' : '第2张图片'}
 										</label>
-										<div
-											class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-										>
+										<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
 											{#if veoImage2}
 												<div class="relative">
-													<img
-														src={veoImage2}
-														alt="第2张图片"
-														class="w-full h-32 object-cover rounded"
-													/>
+													<img src={veoImage2} alt="第2张图片" class="w-full h-32 object-cover rounded" />
 													<button
 														on:click={() => (veoImage2 = null)}
 														class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
@@ -1800,16 +2028,10 @@
 								{#if selectedVeoImageMode === 'components'}
 									<div>
 										<label class="text-xs text-gray-500 mb-1 block">第3张图片</label>
-										<div
-											class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-										>
+										<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
 											{#if veoImage3}
 												<div class="relative">
-													<img
-														src={veoImage3}
-														alt="第3张图片"
-														class="w-full h-32 object-cover rounded"
-													/>
+													<img src={veoImage3} alt="第3张图片" class="w-full h-32 object-cover rounded" />
 													<button
 														on:click={() => (veoImage3 = null)}
 														class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
@@ -1842,52 +2064,50 @@
 								{/if}
 							</div>
 						{:else}
-							<!-- 可灵和即梦的输入图片 -->
-							<div>
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-									{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
-										? '首帧图片'
-										: '输入图片'}
-								</label>
-								<div
-									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-								>
-									{#if inputImage}
-										<div class="relative">
-											<img
-												src={inputImage}
-												alt="输入图片"
-												class="w-full h-32 object-cover rounded"
-											/>
-											<button
-												on:click={() => (inputImage = null)}
-												class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
-												title="删除图片"
-											>
-												×
-											</button>
-										</div>
-									{:else}
-										<div class="text-center">
-											<input
-												type="file"
-												id="input-image"
-												accept="image/*"
-												class="hidden"
-												on:change={(e) => handleImageUpload(e, 'input')}
-											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('input-image')?.click()}
-												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
-											>
-												选择图片
-											</button>
-											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
-										</div>
-									{/if}
-								</div>
+							<!-- 可灵和即梦的输入图片 (多图参考模式下隐藏) -->
+							{#if !(selectedService === 'kling' && selectedImageVideoMode === 'multi-image')}
+								<div>
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+										{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
+											? '首帧图片'
+											: '输入图片'}
+									</label>
+							<div
+								class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+							>
+								{#if inputImage}
+									<div class="relative">
+										<img src={inputImage} alt="输入图片" class="w-full h-32 object-cover rounded" />
+										<button
+											on:click={() => (inputImage = null)}
+											class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+											title="删除图片"
+										>
+											×
+										</button>
+									</div>
+								{:else}
+									<div class="text-center">
+										<input
+											type="file"
+											id="input-image"
+											accept="image/*"
+											class="hidden"
+											on:change={(e) => handleImageUpload(e, 'input')}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('input-image')?.click()}
+											class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+										>
+											选择图片
+										</button>
+										<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+									</div>
+								{/if}
 							</div>
+								</div>
+							{/if}
 						{/if}
 
 						<!-- 可灵特有的尾帧图片 (首尾帧模式) -->
@@ -1980,6 +2200,78 @@
 											<div class="text-xs text-gray-500 mt-2">可选：静态笔刷涂抹区域</div>
 										</div>
 									{/if}
+								</div>
+							</div>
+						{/if}
+
+						<!-- 可灵特有的多图参考 (多图参考模式) -->
+						{#if selectedService === 'kling' && selectedImageVideoMode === 'multi-image'}
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+									多图参考上传 ({multiImages.length}/{maxMultiImages})
+								</label>
+								
+								<!-- 图片网格显示 -->
+								{#if multiImages.length > 0}
+									<div class="grid grid-cols-2 gap-2 mb-4">
+										{#each multiImages as image, index}
+											<div class="relative">
+												<img
+													src={image.preview}
+													alt="参考图片 {index + 1}"
+													class="w-full h-24 object-cover rounded border"
+												/>
+												<button
+													on:click={() => removeMultiImage(index)}
+													class="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors"
+													title="删除图片"
+												>
+													×
+												</button>
+												<div class="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 rounded">
+													{index + 1}
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+
+								<!-- 上传区域 -->
+								<div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
+									<div class="text-center">
+										<input
+											type="file"
+											id="multi-images"
+											accept="image/*"
+											multiple
+											class="hidden"
+											on:change={handleMultiImagesUpload}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('multi-images')?.click()}
+											class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors mr-2"
+											disabled={multiImages.length >= maxMultiImages}
+										>
+											{multiImages.length === 0 ? '选择图片' : '继续添加'}
+										</button>
+										
+										{#if multiImages.length > 0}
+											<button
+												type="button"
+												on:click={() => multiImages = []}
+												class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded transition-colors"
+											>
+												清空全部
+											</button>
+										{/if}
+										
+										<div class="text-xs text-gray-500 mt-2">
+											• 支持 JPG、PNG、WebP 格式，单张图片最大 10MB<br>
+											• 最多上传 {maxMultiImages} 张图片，仅支持 kling-v1-6 模型<br>
+											• 积分费用与单图模式相同，多图不额外收费
+										</div>
+									</div>
 								</div>
 							</div>
 						{/if}
@@ -2302,10 +2594,7 @@
 									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
 								>
 									{#each currentModelOptions as option}
-										<option value={option.value}
-											>{option.label}{#if option.description}
-												- {option.description}{/if}</option
-										>
+										<option value={option.value}>{option.label}{#if option.description} - {option.description}{/if}</option>
 									{/each}
 								</select>
 							</div>
@@ -2993,6 +3282,38 @@
 														>
 															重新生成
 														</button>
+														<!-- 可灵视频延长按钮 -->
+														{#if task.serviceType === 'kling' && task.status === 'succeed' && task.videoUrl && task.videoId && ['kling-v1', 'kling-v1-5', 'kling-v1-6'].includes(task.modelName)}
+															{#await checkVideoExtendEligibility(task)}
+																<button
+																	disabled
+																	class="px-2 py-1 bg-purple-400 bg-opacity-90 text-white text-xs rounded transition-all font-medium cursor-not-allowed"
+																>
+																	检查中...
+																</button>
+															{:then eligibility}
+																{#if eligibility && eligibility.canExtend}
+																	<button
+																		on:click|stopPropagation={() => handleVideoExtend(task)}
+																		disabled={extendingTasks.has(task.id)}
+																		class="px-2 py-1 bg-purple-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+																		title={`延长视频 (${eligibility.creditsCost}积分)`}
+																	>
+																		{extendingTasks.has(task.id) ? '延长中...' : `延长 (${eligibility.creditsCost})`}
+																	</button>
+																{:else if eligibility && !eligibility.canExtend}
+																	<button
+																		disabled
+																		class="px-2 py-1 bg-gray-400 bg-opacity-90 text-white text-xs rounded transition-all font-medium cursor-not-allowed"
+																		title={eligibility.reason || '无法延长'}
+																	>
+																		无法延长
+																	</button>
+																{/if}
+															{:catch error}
+																<!-- 检查失败时不显示按钮 -->
+															{/await}
+														{/if}
 														<button
 															on:click|stopPropagation={() => handleDeleteTask(task)}
 															class="px-2 py-1 bg-red-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
@@ -3053,11 +3374,11 @@
 											class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2"
 										>
 											<span>
-												{task.serviceType === 'jimeng'
-													? '即梦'
-													: task.serviceType === 'veo'
-														? 'Veo'
-														: '可灵'} ({task.action === 'IMAGE_TO_VIDEO' ? '图生视频' : '文生视频'})
+												{task.serviceType === 'jimeng' ? '即梦' : task.serviceType === 'veo' ? 'Veo' : '可灵'} ({task.action === 'IMAGE_TO_VIDEO' || task.action === 'MULTI_IMAGE_TO_VIDEO'
+													? '图生视频'
+													: task.action === 'VIDEO_EXTEND' 
+														? '延长视频' 
+														: '文生视频'})
 											</span>
 											<span
 												>{new Date(
@@ -3074,7 +3395,11 @@
 												{:else if task.serviceType === 'veo'}
 													{task.model || 'veo3'}
 												{:else}
-													{task.mode || 'std'} • {task.duration}秒 • {task.aspectRatio}
+													<!-- 可灵任务显示 -->
+													{task.mode || 'std'} • {calculateTotalDuration(task)}秒 • {task.aspectRatio}
+													{#if task.serviceType === 'kling' && task.isExtended}
+														<span class="text-purple-600 dark:text-purple-400 ml-1">[已延长{task.extendCount || 1}次]</span>
+													{/if}
 												{/if}
 											</span>
 											<span
@@ -3201,7 +3526,11 @@
 							{:else if selectedVideoForViewing?.serviceType === 'veo'}
 								{selectedVideoForViewing?.model || 'veo3'}
 							{:else}
-								{selectedVideoForViewing?.mode || 'std'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
+								<!-- 可灵任务显示 -->
+								{selectedVideoForViewing?.mode || 'std'} • {calculateTotalDuration(selectedVideoForViewing)}秒 • {selectedVideoForViewing.aspectRatio}
+								{#if selectedVideoForViewing?.serviceType === 'kling' && selectedVideoForViewing.isExtended}
+									<span class="text-purple-600 dark:text-purple-400 ml-1">[已延长{selectedVideoForViewing.extendCount || 1}次]</span>
+								{/if}
 							{/if}
 						</div>
 					</div>

@@ -141,7 +141,7 @@ export const getVeoUserConfig = async (token: string): Promise<VeoUserConfig | n
 export const getVeoUserCredits = async (token: string): Promise<{ balance: number } | null> => {
 	try {
 		console.log('🎯 【Veo前端】开始获取用户积分...');
-
+		
 		const response = await fetch(`${API_BASE_URL}/user/credits`, {
 			method: 'GET',
 			headers: {
@@ -157,10 +157,10 @@ export const getVeoUserCredits = async (token: string): Promise<{ balance: numbe
 
 		const data = await response.json();
 		console.log('🎯 【Veo前端】积分API响应:', data);
-
+		
 		// 尝试多种可能的响应格式
 		let balance = null;
-
+		
 		// 格式1: 直接返回 { balance: number }
 		if (typeof data.balance === 'number') {
 			balance = data.balance;
@@ -173,12 +173,12 @@ export const getVeoUserCredits = async (token: string): Promise<{ balance: numbe
 		else if (data.success && typeof data.balance === 'number') {
 			balance = data.balance;
 		}
-
+		
 		if (balance !== null) {
 			console.log('🎯 【Veo前端】积分余额获取成功:', balance);
 			return { balance };
 		}
-
+		
 		console.warn('🎯 【Veo前端】积分余额解析失败，API响应格式不符合预期:', data);
 		return null;
 	} catch (error) {
@@ -210,7 +210,7 @@ export const submitVeoTextToVideoTask = async (
 		});
 
 		const data = await response.json();
-
+		
 		if (!response.ok) {
 			console.error('🎬 【Veo前端】文生视频任务提交失败:', data);
 			return {
@@ -258,7 +258,7 @@ export const submitVeoImageToVideoTask = async (
 		});
 
 		const data = await response.json();
-
+		
 		if (!response.ok) {
 			console.error('🎬 【Veo前端】图生视频任务提交失败:', data);
 			return {
@@ -305,7 +305,7 @@ export const getVeoTaskStatus = async (token: string, taskId: string): Promise<V
 		}
 
 		const data: VeoTaskResponse = await response.json();
-
+		
 		if (data.success && data.task) {
 			// 转换为前端兼容格式
 			const task = data.task;
@@ -319,7 +319,7 @@ export const getVeoTaskStatus = async (token: string, taskId: string): Promise<V
 				aspectRatio: '16:9' // Veo默认16:9
 			};
 		}
-
+		
 		return null;
 	} catch (error) {
 		console.error('获取Veo任务状态异常:', error);
@@ -336,16 +336,13 @@ export const getVeoUserTaskHistory = async (
 	limit: number = 20
 ): Promise<{ data: VeoTask[] } | null> => {
 	try {
-		const response = await fetch(
-			`${API_BASE_URL}/tasks?limit=${limit}&offset=${(page - 1) * limit}`,
-			{
-				method: 'GET',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${token}`
-				}
+		const response = await fetch(`${API_BASE_URL}/tasks?limit=${limit}&offset=${(page - 1) * limit}`, {
+			method: 'GET',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`
 			}
-		);
+		});
 
 		if (!response.ok) {
 			console.error('获取Veo任务历史失败:', response.status, response.statusText);
@@ -353,10 +350,10 @@ export const getVeoUserTaskHistory = async (
 		}
 
 		const data: VeoTasksResponse = await response.json();
-
+		
 		if (data.success && data.tasks) {
 			// 转换为前端兼容格式
-			const tasks = data.tasks.map((task) => ({
+			const tasks = data.tasks.map(task => ({
 				...task,
 				serviceType: 'veo' as const,
 				action: task.input_images?.length ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
@@ -365,10 +362,10 @@ export const getVeoUserTaskHistory = async (
 				duration: '10', // Veo默认10秒
 				aspectRatio: '16:9' // Veo默认16:9
 			}));
-
+			
 			return { data: tasks };
 		}
-
+		
 		return null;
 	} catch (error) {
 		console.error('获取Veo任务历史异常:', error);
@@ -389,24 +386,21 @@ export const canCancelVeoTask = (task: VeoTask): boolean => {
  */
 export const getVeoTaskStatusInfo = (status: string) => {
 	const statusMap = {
-		submitted: { text: '已提交', class: 'text-blue-600', canCancel: true },
-		processing: { text: '处理中', class: 'text-orange-600', canCancel: true },
-		completed: { text: '已完成', class: 'text-green-600', canCancel: false },
-		failed: { text: '失败', class: 'text-red-600', canCancel: false },
-		cancelled: { text: '已取消', class: 'text-gray-600', canCancel: false },
-		timeout: { text: '超时', class: 'text-red-600', canCancel: false }
+		'submitted': { text: '已提交', class: 'text-blue-600', canCancel: true },
+		'processing': { text: '处理中', class: 'text-orange-600', canCancel: true },
+		'completed': { text: '已完成', class: 'text-green-600', canCancel: false },
+		'failed': { text: '失败', class: 'text-red-600', canCancel: false },
+		'cancelled': { text: '已取消', class: 'text-gray-600', canCancel: false },
+		'timeout': { text: '超时', class: 'text-red-600', canCancel: false }
 	};
-
+	
 	return statusMap[status] || { text: status, class: 'text-gray-600', canCancel: false };
 };
 
 /**
  * 取消任务（只能取消进行中的任务）
  */
-export const cancelVeoTask = async (
-	token: string,
-	taskId: string
-): Promise<{ success: boolean; error?: string; message?: string }> => {
+export const cancelVeoTask = async (token: string, taskId: string): Promise<{success: boolean, error?: string, message?: string}> => {
 	try {
 		console.log('🚫 【Veo前端】取消任务:', taskId);
 
@@ -414,7 +408,7 @@ export const cancelVeoTask = async (
 			action: 'cancel',
 			task_id: taskId
 		};
-
+		
 		console.log('🚫 【Veo前端】请求数据:', requestBody);
 
 		const response = await fetch(`${API_BASE_URL}/action`, {
@@ -431,13 +425,12 @@ export const cancelVeoTask = async (
 		if (!response.ok) {
 			let errorDetail = '';
 			let userMessage = '取消任务失败';
-
+			
 			try {
 				const errorData = await response.json();
-				errorDetail =
-					errorData.detail || errorData.message || errorData.error || response.statusText;
+				errorDetail = errorData.detail || errorData.message || errorData.error || response.statusText;
 				console.error('🚫 【Veo前端】错误详情:', errorData);
-
+				
 				if (response.status === 400) {
 					if (errorDetail.includes('任务已完成') || errorDetail.includes('已取消')) {
 						userMessage = '任务已完成或已取消，无法取消';
@@ -456,7 +449,7 @@ export const cancelVeoTask = async (
 				userMessage = '服务错误，请稍后重试';
 				console.error('🚫 【Veo前端】无法解析错误响应');
 			}
-
+			
 			console.error('🚫 【Veo前端】取消任务失败:', response.status, errorDetail);
 			return {
 				success: false,
@@ -482,10 +475,7 @@ export const cancelVeoTask = async (
 /**
  * 删除任务（可以删除任何状态的任务）
  */
-export const deleteVeoTask = async (
-	token: string,
-	taskId: string
-): Promise<{ success: boolean; error?: string; message?: string }> => {
+export const deleteVeoTask = async (token: string, taskId: string): Promise<{success: boolean, error?: string, message?: string}> => {
 	try {
 		console.log('🗑️ 【Veo前端】删除任务:', taskId);
 
@@ -493,7 +483,7 @@ export const deleteVeoTask = async (
 			action: 'delete',
 			task_id: taskId
 		};
-
+		
 		console.log('🗑️ 【Veo前端】请求数据:', requestBody);
 
 		const response = await fetch(`${API_BASE_URL}/action`, {
@@ -510,13 +500,12 @@ export const deleteVeoTask = async (
 		if (!response.ok) {
 			let errorDetail = '';
 			let userMessage = '删除任务失败';
-
+			
 			try {
 				const errorData = await response.json();
-				errorDetail =
-					errorData.detail || errorData.message || errorData.error || response.statusText;
+				errorDetail = errorData.detail || errorData.message || errorData.error || response.statusText;
 				console.error('🗑️ 【Veo前端】错误详情:', errorData);
-
+				
 				// 为不同的错误状态提供友好的用户消息
 				if (response.status === 400) {
 					if (errorDetail.includes('缺少必要参数')) {
@@ -538,7 +527,7 @@ export const deleteVeoTask = async (
 				userMessage = '服务错误，请稍后重试';
 				console.error('🗑️ 【Veo前端】无法解析错误响应');
 			}
-
+			
 			console.error('🗑️ 【Veo前端】删除任务失败:', response.status, errorDetail);
 			return {
 				success: false,
@@ -619,10 +608,7 @@ export const getVeoConfig = async (token: string): Promise<VeoConfig | null> => 
 /**
  * 更新Veo配置（管理员）
  */
-export const updateVeoConfig = async (
-	token: string,
-	config: Partial<VeoConfig>
-): Promise<boolean> => {
+export const updateVeoConfig = async (token: string, config: Partial<VeoConfig>): Promise<boolean> => {
 	try {
 		const response = await fetch(`${API_BASE_URL}/config`, {
 			method: 'POST',

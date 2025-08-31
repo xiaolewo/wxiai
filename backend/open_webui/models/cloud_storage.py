@@ -198,9 +198,7 @@ class FileListRequest(BaseModel):
     page: int = 1
     limit: int = 20
     file_type: Optional[str] = None  # 'image', 'video'
-    source_type: Optional[str] = (
-        None  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
-    )
+    source_type: Optional[str] = None  # 'midjourney', 'kling', 'jimeng', 'dreamwork', 'veo', 'flux'
     status: Optional[str] = None  # 'pending', 'uploaded', 'failed'
 
 

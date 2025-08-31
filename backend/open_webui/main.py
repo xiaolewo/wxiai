@@ -87,6 +87,7 @@ from open_webui.routers import (
     storage,
     flux,
     veo,
+    google_images,
 )
 
 from open_webui.routers.retrieval import (
@@ -139,6 +140,15 @@ try:
     )
 except ImportError as e:
     logger.warning(f"Failed to import veo models: {e}")
+
+try:
+    from open_webui.models.google_images import (
+        GoogleImagesConfig,
+        GoogleImagesTask,
+        GoogleImagesCredit,
+    )
+except ImportError as e:
+    logger.warning(f"Failed to import google_images models: {e}")
 
 from open_webui.config import (
     # Ollama
@@ -1318,6 +1328,7 @@ app.include_router(
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
+app.include_router(google_images.router, prefix="/api/v1", tags=["google_images"])
 app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])

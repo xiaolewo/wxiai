@@ -13,6 +13,7 @@
 	import Audio from './Settings/Audio.svelte';
 	import Images from './Settings/Images.svelte';
 	import Midjourney from './Settings/Midjourney.svelte';
+	import GoogleImages from './Settings/GoogleImages.svelte';
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
 	import Kling from './Settings/Kling.svelte';
@@ -58,6 +59,7 @@
 			'audio',
 			'images',
 			'midjourney',
+			'google-images',
 			'dreamwork',
 			'flux',
 			'kling',
@@ -481,6 +483,32 @@
 		</button>
 
 		<button
+			id="google-images"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'google-images'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/google-images');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12.017 11.986c-.024 4.75-3.86 8.614-8.61 8.614H2.136C.96 20.6.023 19.663.023 18.487V17.22c0-4.75 3.86-8.614 8.61-8.614h1.267c1.176 0 2.113.937 2.113 2.113v1.267Z"
+					/>
+					<circle cx="17.5" cy="6.5" r="4.5" fill="currentColor" opacity="0.7" />
+				</svg>
+			</div>
+			<div class=" self-center">谷歌生图</div>
+		</button>
+
+		<button
 			id="dreamwork"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'dreamwork'
@@ -871,6 +899,12 @@
 			/>
 		{:else if selectedTab === 'midjourney'}
 			<Midjourney
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'google-images'}
+			<GoogleImages
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

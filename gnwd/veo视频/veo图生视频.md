@@ -68,17 +68,17 @@ import json
 conn = http.client.HTTPSConnection("{{BASE_URL}}")
 
 payload = json.dumps({
-"prompt": "A forest turning into a futuristic city",
-"model": "veo3-pro-frames",
-"enhance_prompt": True,
-"images": [
-"https://example.com/frame1.png"
-]
+   "prompt": "A forest turning into a futuristic city",
+   "model": "veo3-pro-frames",
+   "enhance_prompt": True,
+   "images": [
+      "https://example.com/frame1.png"
+   ]
 })
 
 headers = {
-"Authorization": "Bearer {{YOUR_API_KEY}}",
-"Content-Type": "application/json"
+   "Authorization": "Bearer {{YOUR_API_KEY}}",
+   "Content-Type": "application/json"
 }
 
 conn.request("POST", "/google/v1/models/veo/videos", payload, headers)
@@ -92,10 +92,11 @@ print(data.decode("utf-8"))
 成功响应 200 OK
 
 {
-"code": "success",
-"message": "",
-"data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
+    "code": "success",
+    "message": "",
+    "data": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1"
 }
+
 
 字段说明
 code 类型 string 说明 状态码 success 表示成功

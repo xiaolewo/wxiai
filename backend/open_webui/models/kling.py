@@ -40,6 +40,9 @@ class KlingConfig(Base):
     credits_per_pro_5s = Column(Integer, default=100)
     credits_per_pro_10s = Column(Integer, default=200)
 
+    # 视频延长积分配置
+    credits_per_extend = Column(Integer, default=30)
+
     # 模型版本积分配置 - JSON存储，支持灵活配置
     model_credits_config = Column(JSON)
 
@@ -98,6 +101,7 @@ class KlingConfig(Base):
             "credits_per_std_10s": self.credits_per_std_10s,
             "credits_per_pro_5s": self.credits_per_pro_5s,
             "credits_per_pro_10s": self.credits_per_pro_10s,
+            "credits_per_extend": self.credits_per_extend,
             "model_credits_config": self.model_credits_config
             or self._get_default_model_credits(),
             "max_concurrent_tasks": self.max_concurrent_tasks,
@@ -114,9 +118,18 @@ class KlingConfig(Base):
     def _get_default_model_credits(self) -> dict:
         """获取默认的模型积分配置"""
         return {
-            "kling-v1": {"std": {"5": 50, "10": 100}, "pro": {"5": 100, "10": 200}},
-            "kling-v1-5": {"std": {"5": 60, "10": 120}, "pro": {"5": 120, "10": 240}},
-            "kling-v1-6": {"std": {"5": 70, "10": 140}, "pro": {"5": 140, "10": 280}},
+            "kling-v1": {
+                "std": {"5": 50, "10": 100, "extend": 30}, 
+                "pro": {"5": 100, "10": 200, "extend": 50}
+            },
+            "kling-v1-5": {
+                "std": {"5": 60, "10": 120, "extend": 35}, 
+                "pro": {"5": 120, "10": 240, "extend": 60}
+            },
+            "kling-v1-6": {
+                "std": {"5": 70, "10": 140, "extend": 40}, 
+                "pro": {"5": 140, "10": 280, "extend": 70}
+            },
             "kling-v2-master": {
                 "std": {"5": 100, "10": 200},
                 "pro": {"5": 200, "10": 400},
@@ -156,6 +169,34 @@ class KlingConfig(Base):
             # 默认按标准5秒计算
             return self.credits_per_std_5s
 
+    def get_extend_credits_cost(self, mode: str, model_name: str = None) -> int:
+        """根据模式和模型版本获取视频延长积分消耗"""
+        mode = mode.lower()
+        
+        # 如果有模型版本积分配置，优先使用
+        if model_name and self.model_credits_config:
+            model_config = self.model_credits_config.get(model_name)
+            if (
+                model_config
+                and model_config.get(mode)
+                and model_config[mode].get("extend")
+            ):
+                return int(model_config[mode]["extend"])
+        
+        # 使用默认配置中的extend值
+        default_config = self._get_default_model_credits()
+        if model_name and model_name in default_config:
+            model_config = default_config[model_name]
+            if model_config.get(mode) and model_config[mode].get("extend"):
+                return int(model_config[mode]["extend"])
+        
+        # 回退到通用延长积分配置
+        if self.credits_per_extend:
+            return self.credits_per_extend
+            
+        # 最终兜底：根据模式返回默认值
+        return 50 if mode == "pro" else 30
+
 
 class KlingTask(Base):
     __tablename__ = "kling_tasks"
@@ -165,9 +206,14 @@ class KlingTask(Base):
     external_task_id = Column(String(100))
 
     # 任务类型和状态
-    action = Column(String(50), nullable=False)  # TEXT_TO_VIDEO, IMAGE_TO_VIDEO
+    action = Column(String(50), nullable=False)  # TEXT_TO_VIDEO, IMAGE_TO_VIDEO, MULTI_IMAGE_TO_VIDEO
     status = Column(String(50), default="SUBMITTED")
     task_status_msg = Column(Text)
+
+    # 多图支持字段
+    generation_mode = Column(String(20), default="single_image")
+    input_images = Column(JSON)
+    image_count = Column(Integer, default=0)
 
     # 基础视频生成参数
     model_name = Column(String(100))
@@ -208,6 +254,12 @@ class KlingTask(Base):
     properties = Column(JSON)
     progress = Column(String(20), default="0%")
 
+    # 视频延长相关字段
+    parent_task_id = Column(String(50), nullable=True, comment="父任务ID，延长任务专用")
+    is_extended = Column(Boolean, default=False, comment="是否为延长任务")
+    original_duration = Column(String(10), nullable=True, comment="原视频时长")
+    extend_count = Column(Integer, default=0, comment="延长次数")
+
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -230,6 +282,14 @@ class KlingTask(Base):
         dynamic_masks: Optional[List[Dict]] = None,
         camera_control: Optional[Dict] = None,
         properties: Optional[Dict] = None,
+        generation_mode: str = "single_image",
+        input_images: Optional[List[Dict]] = None,
+        image_count: int = 0,
+        # 视频延长相关参数
+        parent_task_id: Optional[str] = None,
+        is_extended: bool = False,
+        original_duration: Optional[str] = None,
+        extend_count: int = 0,
     ):
         """创建新任务"""
         task_id = str(uuid.uuid4())
@@ -253,6 +313,13 @@ class KlingTask(Base):
                 dynamic_masks=dynamic_masks,
                 camera_control=camera_control,
                 properties=properties,
+                generation_mode=generation_mode,
+                input_images=input_images,
+                image_count=image_count,
+                parent_task_id=parent_task_id,
+                is_extended=is_extended,
+                original_duration=original_duration,
+                extend_count=extend_count,
                 submit_time=datetime.now(),
             )
 
@@ -286,6 +353,104 @@ class KlingTask(Base):
         """获取用户任务总数"""
         with get_db() as db:
             return db.query(cls).filter(cls.user_id == user_id).count()
+
+    @classmethod
+    def get_task_by_video_id(cls, video_id: str):
+        """根据视频ID获取任务"""
+        with get_db() as db:
+            return db.query(cls).filter(cls.video_id == video_id).first()
+
+    @classmethod
+    def get_task_extend_count(cls, task_id: str) -> int:
+        """获取任务的延长次数"""
+        with get_db() as db:
+            # 统计以该任务为父任务的延长任务数量
+            return db.query(cls).filter(cls.parent_task_id == task_id).count()
+    
+    def can_extend(self) -> tuple[bool, str, int]:
+        """
+        检查任务是否可以延长
+        Returns:
+            tuple[bool, str, int]: (是否可以延长, 原因, 需要的积分)
+        """
+        # 支持的模型版本
+        SUPPORTED_MODELS = ["kling-v1", "kling-v1-5", "kling-v1-6"]
+        
+        # 检查任务状态
+        if self.status != "succeed":
+            return False, "只能延长已成功生成的视频", 0
+            
+        # 检查是否有视频URL
+        if not self.video_url:
+            return False, "视频文件不存在，无法延长", 0
+            
+        # 检查模型版本支持
+        if self.model_name not in SUPPORTED_MODELS:
+            return False, f"当前模型 {self.model_name} 不支持视频延长，仅支持 {', '.join(SUPPORTED_MODELS)}", 0
+            
+        # 检查视频创建时间（30天限制）
+        if self.created_at:
+            from datetime import datetime, timedelta
+            creation_time = self.created_at
+            if isinstance(creation_time, str):
+                creation_time = datetime.fromisoformat(creation_time.replace('Z', '+00:00'))
+            
+            days_since_creation = (datetime.now() - creation_time.replace(tzinfo=None)).days
+            if days_since_creation > 30:
+                return False, "视频已超过30天，无法延长", 0
+                
+        # 计算当前视频总时长
+        current_duration = self.get_total_duration()
+        
+        # 检查是否超过最大时长限制（180秒）
+        MAX_DURATION = 180
+        if current_duration >= MAX_DURATION:
+            return False, f"视频时长已达到最大限制({MAX_DURATION}秒)，无法继续延长", 0
+            
+        # 获取延长积分消耗
+        config = KlingConfig.get_config()
+        if not config:
+            return False, "系统配置未找到，无法计算积分", 0
+            
+        credits_cost = config.get_extend_credits_cost(self.mode, self.model_name)
+        
+        return True, "", credits_cost
+    
+    def get_total_duration(self) -> int:
+        """
+        获取视频总时长（包括所有延长）
+        Returns:
+            int: 总时长（秒）
+        """
+        if not self.video_duration:
+            # 如果没有视频时长信息，使用任务设置的时长
+            return int(self.duration or "5")
+            
+        try:
+            return int(float(self.video_duration))
+        except (ValueError, TypeError):
+            # 解析失败时回退到任务设置时长
+            return int(self.duration or "5")
+    
+    @classmethod  
+    def get_original_task(cls, task_id: str):
+        """
+        获取原始任务（非延长任务）
+        如果传入的是延长任务，则返回其根任务
+        """
+        with get_db() as db:
+            task = db.query(cls).filter(cls.id == task_id).first()
+            if not task:
+                return None
+                
+            # 如果是延长任务，找到根任务
+            while task.parent_task_id:
+                parent_task = db.query(cls).filter(cls.id == task.parent_task_id).first()
+                if not parent_task:
+                    break
+                task = parent_task
+                
+            return task
 
     def update_status(self, status: str, task_status_msg: Optional[str] = None):
         """更新任务状态"""
@@ -371,6 +536,13 @@ class KlingTask(Base):
             "static_mask": self.static_mask,
             "dynamic_masks": self.dynamic_masks,
             "camera_control": self.camera_control,
+            "generation_mode": self.generation_mode,
+            "input_images": self.input_images,
+            "image_count": self.image_count,
+            "parent_task_id": self.parent_task_id,
+            "is_extended": self.is_extended,
+            "original_duration": self.original_duration,
+            "extend_count": self.extend_count,
             "credits_cost": self.credits_cost,
             "submit_time": (
                 self.submit_time.isoformat() if self.submit_time is not None else None
@@ -495,6 +667,12 @@ class KlingGenerateRequest(BaseModel):
         None, max_items=6, description="动态笔刷"
     )
 
+    # 多图参考生成专用
+    generation_mode: Optional[str] = Field("single_image", description="生成模式: single_image, multi_image")
+    image_list: Optional[List[Dict[str, str]]] = Field(
+        None, max_items=4, description="多图参考列表，最多4张"
+    )
+
     # 摄像机控制
     camera_control: Optional[CameraControl] = Field(None, description="摄像机控制")
 
@@ -519,6 +697,7 @@ class KlingConfigForm(BaseModel):
     credits_per_std_10s: int = Field(100, description="标准10秒积分")
     credits_per_pro_5s: int = Field(100, description="专家5秒积分")
     credits_per_pro_10s: int = Field(200, description="专家10秒积分")
+    credits_per_extend: int = Field(30, description="视频延长积分")
     max_concurrent_tasks: int = Field(3, description="最大并发任务")
     task_timeout: int = Field(600000, description="任务超时时间")
 
@@ -528,3 +707,24 @@ class KlingTaskForm(BaseModel):
 
     action: str = Field(..., description="任务类型")
     request: KlingGenerateRequest = Field(..., description="生成请求")
+
+
+class KlingVideoExtendRequest(BaseModel):
+    """可灵视频延长请求"""
+    
+    video_id: str = Field(..., description="源视频ID")
+    prompt: Optional[str] = Field(None, max_length=2500, description="正向提示词")
+    negative_prompt: Optional[str] = Field(None, max_length=2500, description="负向提示词")
+    cfg_scale: Optional[float] = Field(0.5, ge=0, le=1, description="提示词参考强度")
+    callback_url: Optional[str] = Field(None, description="回调地址")
+
+
+class KlingVideoExtendCheck(BaseModel):
+    """延长资格检查响应"""
+    
+    can_extend: bool = Field(..., description="是否可以延长")
+    reason: Optional[str] = Field(None, description="不能延长的原因")
+    credits_cost: Optional[int] = Field(None, description="延长需要的积分")
+    current_duration: Optional[str] = Field(None, description="当前视频时长")
+    max_duration: str = Field("180", description="最大允许时长(秒)")
+    extend_count: Optional[int] = Field(None, description="已延长次数")

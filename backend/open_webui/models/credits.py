@@ -253,9 +253,7 @@ class CreditsTable:
         """Get user credit model - method alias for Veo compatibility"""
         return self.get_credit_by_user_id(user_id)
 
-    def update_user_credits(
-        self, user_id: str, new_balance: Decimal, description: str = "Credit update"
-    ) -> Optional[CreditModel]:
+    def update_user_credits(self, user_id: str, new_balance: Decimal, description: str = "Credit update") -> Optional[CreditModel]:
         """Update user credit balance - method for Veo compatibility"""
         try:
             # Create the form data for setting credits
@@ -266,8 +264,8 @@ class CreditsTable:
                     desc=description,
                     api_path="/api/v1/veo",
                     api_params={"action": "credit_update"},
-                    usage={},
-                ),
+                    usage={}
+                )
             )
             return self.set_credit_by_user_id(form_data)
         except Exception:

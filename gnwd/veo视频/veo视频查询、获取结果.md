@@ -46,8 +46,8 @@ conn = http.client.HTTPSConnection("{{BASE_URL}}")
 payload = ""
 
 headers = {
-"Authorization": "Bearer {{YOUR_API_KEY}}",
-"Content-Type": "application/json"
+   "Authorization": "Bearer {{YOUR_API_KEY}}",
+   "Content-Type": "application/json"
 }
 
 conn.request("GET", "/google/v1/tasks/f0aa213c-c09e-4e19-a0e5-c698fe48acf1", payload, headers)
@@ -61,25 +61,25 @@ print(data.decode("utf-8"))
 成功响应 200 OK
 
 {
-"code": "success",
-"message": "",
-"data": {
-"task_id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
-"notify_hook": "",
-"action": "google-videos",
-"status": "SUCCESS",
-"fail_reason": "",
-"submit_time": 1750221308,
-"start_time": 0,
-"finish_time": 1750221572,
-"progress": "100%",
-"data": {
-"id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
-"status": "completed",
-"video_url": "https://filesystem.site/cdn/20250618/a5O3efr3GyiSTIMxAtXYmCWKcNPjBL.mp4",
-"status_update_time": 1750221453056
-}
-}
+    "code": "success",
+    "message": "",
+    "data": {
+        "task_id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
+        "notify_hook": "",
+        "action": "google-videos",
+        "status": "SUCCESS",
+        "fail_reason": "",
+        "submit_time": 1750221308,
+        "start_time": 0,
+        "finish_time": 1750221572,
+        "progress": "100%",
+        "data": {
+            "id": "f0aa213c-c09e-4e19-a0e5-c698fe48acf1",
+            "status": "completed",
+            "video_url": "https://filesystem.site/cdn/20250618/a5O3efr3GyiSTIMxAtXYmCWKcNPjBL.mp4",
+            "status_update_time": 1750221453056
+        }
+    }
 }
 
 字段说明
