@@ -114,7 +114,7 @@ jobs:
             latest=false
 
       - name: Build and push Docker image (latest)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         id: build
         if: steps.meta.outputs.tags != '' && steps.meta.outputs.tags != null
         with:
@@ -244,7 +244,7 @@ jobs:
             latest=false
 
       - name: Build Docker image (cuda)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         id: build
         if: steps.meta.outputs.tags != '' && steps.meta.outputs.tags != null
         with:
@@ -375,7 +375,7 @@ jobs:
             latest=false
 
       - name: Build Docker image (ollama)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         id: build
         if: steps.meta.outputs.tags != '' && steps.meta.outputs.tags != null
         with:
