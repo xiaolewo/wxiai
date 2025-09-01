@@ -452,81 +452,271 @@ class KlingTask(Base):
         original_duration: Optional[str] = None,
         extend_count: int = 0,
     ):
-        """创建新任务"""
+        """创建新任务 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
         task_id = str(uuid.uuid4())
 
         with get_db() as db:
-            task = cls(
-                id=task_id,
-                user_id=user_id,
-                action=action,
-                prompt=prompt,
-                model_name=model_name,
-                mode=mode,
-                duration=duration,
-                aspect_ratio=aspect_ratio,
-                cfg_scale=cfg_scale,
-                negative_prompt=negative_prompt,
-                credits_cost=credits_cost,
-                input_image=input_image,
-                image_tail=image_tail,
-                static_mask=static_mask,
-                dynamic_masks=dynamic_masks,
-                camera_control=camera_control,
-                properties=properties,
-                generation_mode=generation_mode,
-                input_images=input_images,
-                image_count=image_count,
-                parent_task_id=parent_task_id,
-                is_extended=is_extended,
-                original_duration=original_duration,
-                extend_count=extend_count,
-                submit_time=datetime.now(),
-            )
+            try:
+                task = cls(
+                    id=task_id,
+                    user_id=user_id,
+                    action=action,
+                    prompt=prompt,
+                    model_name=model_name,
+                    mode=mode,
+                    duration=duration,
+                    aspect_ratio=aspect_ratio,
+                    cfg_scale=cfg_scale,
+                    negative_prompt=negative_prompt,
+                    credits_cost=credits_cost,
+                    input_image=input_image,
+                    image_tail=image_tail,
+                    static_mask=static_mask,
+                    dynamic_masks=dynamic_masks,
+                    camera_control=camera_control,
+                    properties=properties,
+                    generation_mode=generation_mode,
+                    input_images=input_images,
+                    image_count=image_count,
+                    parent_task_id=parent_task_id,
+                    is_extended=is_extended,
+                    original_duration=original_duration,
+                    extend_count=extend_count,
+                    submit_time=datetime.now(),
+                )
 
-            db.add(task)
-            db.commit()
-            db.refresh(task)
-            return task
+                db.add(task)
+                db.commit()
+                db.refresh(task)
+                logger.info(f"🎬 【可灵任务】任务创建成功: {task_id}")
+                return task
+
+            except Exception as create_error:
+                if "no such column" in str(create_error):
+                    logger.warning(
+                        f"⚠️ 【可灵任务】创建任务时检测到字段缺失，尝试修复: {str(create_error)}"
+                    )
+                    cls._fix_missing_task_columns(db)
+                    # 重新创建任务
+                    task = cls(
+                        id=task_id,
+                        user_id=user_id,
+                        action=action,
+                        prompt=prompt,
+                        model_name=model_name,
+                        mode=mode,
+                        duration=duration,
+                        aspect_ratio=aspect_ratio,
+                        cfg_scale=cfg_scale,
+                        negative_prompt=negative_prompt,
+                        credits_cost=credits_cost,
+                        input_image=input_image,
+                        image_tail=image_tail,
+                        static_mask=static_mask,
+                        dynamic_masks=dynamic_masks,
+                        camera_control=camera_control,
+                        properties=properties,
+                        generation_mode=generation_mode,
+                        input_images=input_images,
+                        image_count=image_count,
+                        parent_task_id=parent_task_id,
+                        is_extended=is_extended,
+                        original_duration=original_duration,
+                        extend_count=extend_count,
+                        submit_time=datetime.now(),
+                    )
+                    db.add(task)
+                    db.commit()
+                    db.refresh(task)
+                    logger.info(f"🎬 【可灵任务】字段修复后任务创建成功: {task_id}")
+                    return task
+                else:
+                    logger.error(f"❌ 【可灵任务】任务创建失败: {str(create_error)}")
+                    raise create_error
+
+    @classmethod
+    def _fix_missing_task_columns(cls, db):
+        """自动修复 kling_tasks 表缺失的字段"""
+        import logging
+        from sqlalchemy import text
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            logger.info("🔧 【可灵任务】开始修复 kling_tasks 表缺失字段...")
+
+            # 检查表结构
+            inspector = sa.inspect(db.bind)
+            columns = inspector.get_columns("kling_tasks")
+            existing_columns = [col["name"] for col in columns]
+
+            # 定义需要的字段和对应的 ALTER TABLE 语句
+            required_task_fields = {
+                # 多图支持字段
+                "generation_mode": 'ALTER TABLE kling_tasks ADD COLUMN generation_mode VARCHAR(20) DEFAULT "single_image"',
+                "input_images": "ALTER TABLE kling_tasks ADD COLUMN input_images JSON",
+                "image_count": "ALTER TABLE kling_tasks ADD COLUMN image_count INTEGER DEFAULT 0",
+                # 视频延长相关字段
+                "parent_task_id": "ALTER TABLE kling_tasks ADD COLUMN parent_task_id VARCHAR(50)",
+                "is_extended": "ALTER TABLE kling_tasks ADD COLUMN is_extended BOOLEAN DEFAULT 0",
+                "original_duration": "ALTER TABLE kling_tasks ADD COLUMN original_duration VARCHAR(10)",
+                "extend_count": "ALTER TABLE kling_tasks ADD COLUMN extend_count INTEGER DEFAULT 0",
+                "cloud_video_url": "ALTER TABLE kling_tasks ADD COLUMN cloud_video_url TEXT",
+            }
+
+            # 添加缺失字段
+            for field_name, alter_sql in required_task_fields.items():
+                if field_name not in existing_columns:
+                    logger.info(f"🔧 【可灵任务】添加缺失字段: {field_name}")
+                    try:
+                        db.execute(text(alter_sql))
+                        db.commit()
+                        logger.info(f"✅ 【可灵任务】成功添加字段: {field_name}")
+                    except Exception as field_error:
+                        if "duplicate column" in str(field_error).lower():
+                            logger.info(f"ℹ️ 【可灵任务】字段 {field_name} 已存在")
+                        else:
+                            logger.error(
+                                f"❌ 【可灵任务】添加字段 {field_name} 失败: {field_error}"
+                            )
+
+            logger.info("🎉 【可灵任务】kling_tasks 字段修复完成")
+
+        except Exception as e:
+            logger.error(f"❌ 【可灵任务】字段修复失败: {str(e)}")
+            # 不抛出异常，让程序继续运行
 
     @classmethod
     def get_task_by_id(cls, task_id: str):
-        """根据任务ID获取任务"""
-        with get_db() as db:
-            return db.query(cls).filter(cls.id == task_id).first()
+        """根据任务ID获取任务 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                return db.query(cls).filter(cls.id == task_id).first()
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】查询任务时检测到字段缺失，尝试修复: {str(query_error)}"
+                )
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    return db.query(cls).filter(cls.id == task_id).first()
+            else:
+                logger.error(f"❌ 【可灵任务】查询任务失败: {str(query_error)}")
+                raise query_error
 
     @classmethod
     def get_user_tasks(cls, user_id: str, page: int = 1, limit: int = 20):
-        """获取用户任务列表"""
-        with get_db() as db:
-            offset = (page - 1) * limit
-            return (
-                db.query(cls)
-                .filter(cls.user_id == user_id)
-                .order_by(cls.created_at.desc())
-                .offset(offset)
-                .limit(limit)
-                .all()
-            )
+        """获取用户任务列表 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                offset = (page - 1) * limit
+                return (
+                    db.query(cls)
+                    .filter(cls.user_id == user_id)
+                    .order_by(cls.created_at.desc())
+                    .offset(offset)
+                    .limit(limit)
+                    .all()
+                )
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】查询用户任务列表时检测到字段缺失，尝试修复: {str(query_error)}"
+                )
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    offset = (page - 1) * limit
+                    return (
+                        db.query(cls)
+                        .filter(cls.user_id == user_id)
+                        .order_by(cls.created_at.desc())
+                        .offset(offset)
+                        .limit(limit)
+                        .all()
+                    )
+            else:
+                logger.error(f"❌ 【可灵任务】查询用户任务列表失败: {str(query_error)}")
+                raise query_error
 
     @classmethod
     def get_user_task_count(cls, user_id: str) -> int:
-        """获取用户任务总数"""
-        with get_db() as db:
-            return db.query(cls).filter(cls.user_id == user_id).count()
+        """获取用户任务总数 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                return db.query(cls).filter(cls.user_id == user_id).count()
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】查询用户任务总数时检测到字段缺失，尝试修复: {str(query_error)}"
+                )
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    return db.query(cls).filter(cls.user_id == user_id).count()
+            else:
+                logger.error(f"❌ 【可灵任务】查询用户任务总数失败: {str(query_error)}")
+                raise query_error
 
     @classmethod
     def get_task_by_video_id(cls, video_id: str):
-        """根据视频ID获取任务"""
-        with get_db() as db:
-            return db.query(cls).filter(cls.video_id == video_id).first()
+        """根据视频ID获取任务 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                return db.query(cls).filter(cls.video_id == video_id).first()
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】根据视频ID查询任务时检测到字段缺失，尝试修复: {str(query_error)}"
+                )
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    return db.query(cls).filter(cls.video_id == video_id).first()
+            else:
+                logger.error(
+                    f"❌ 【可灵任务】根据视频ID查询任务失败: {str(query_error)}"
+                )
+                raise query_error
 
     @classmethod
     def get_task_extend_count(cls, task_id: str) -> int:
-        """获取任务的延长次数"""
-        with get_db() as db:
-            # 统计以该任务为父任务的延长任务数量
-            return db.query(cls).filter(cls.parent_task_id == task_id).count()
+        """获取任务的延长次数 - 带字段缺失自动修复"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                # 统计以该任务为父任务的延长任务数量
+                return db.query(cls).filter(cls.parent_task_id == task_id).count()
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】查询任务延长次数时检测到字段缺失，尝试修复: {str(query_error)}"
+                )
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    return db.query(cls).filter(cls.parent_task_id == task_id).count()
+            else:
+                logger.error(f"❌ 【可灵任务】查询任务延长次数失败: {str(query_error)}")
+                raise query_error
 
     def can_extend(self) -> tuple[bool, str, int]:
         """
@@ -605,24 +795,53 @@ class KlingTask(Base):
     @classmethod
     def get_original_task(cls, task_id: str):
         """
-        获取原始任务（非延长任务）
+        获取原始任务（非延长任务）- 带字段缺失自动修复
         如果传入的是延长任务，则返回其根任务
         """
-        with get_db() as db:
-            task = db.query(cls).filter(cls.id == task_id).first()
-            if not task:
-                return None
+        import logging
 
-            # 如果是延长任务，找到根任务
-            while task.parent_task_id:
-                parent_task = (
-                    db.query(cls).filter(cls.id == task.parent_task_id).first()
+        logger = logging.getLogger(__name__)
+
+        try:
+            with get_db() as db:
+                task = db.query(cls).filter(cls.id == task_id).first()
+                if not task:
+                    return None
+
+                # 如果是延长任务，找到根任务
+                while task.parent_task_id:
+                    parent_task = (
+                        db.query(cls).filter(cls.id == task.parent_task_id).first()
+                    )
+                    if not parent_task:
+                        break
+                    task = parent_task
+
+                return task
+        except Exception as query_error:
+            if "no such column" in str(query_error):
+                logger.warning(
+                    f"⚠️ 【可灵任务】查询原始任务时检测到字段缺失，尝试修复: {str(query_error)}"
                 )
-                if not parent_task:
-                    break
-                task = parent_task
+                with get_db() as db:
+                    cls._fix_missing_task_columns(db)
+                    task = db.query(cls).filter(cls.id == task_id).first()
+                    if not task:
+                        return None
 
-            return task
+                    # 如果是延长任务，找到根任务
+                    while task.parent_task_id:
+                        parent_task = (
+                            db.query(cls).filter(cls.id == task.parent_task_id).first()
+                        )
+                        if not parent_task:
+                            break
+                        task = parent_task
+
+                    return task
+            else:
+                logger.error(f"❌ 【可灵任务】查询原始任务失败: {str(query_error)}")
+                raise query_error
 
     def update_status(self, status: str, task_status_msg: Optional[str] = None):
         """更新任务状态"""
@@ -688,58 +907,115 @@ class KlingTask(Base):
             db.commit()
 
     def to_dict(self) -> dict:
-        """转换为字典"""
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "external_task_id": self.external_task_id,
-            "action": self.action,
-            "status": self.status,
-            "task_status_msg": self.task_status_msg,
-            "model_name": self.model_name,
-            "prompt": self.prompt,
-            "negative_prompt": self.negative_prompt,
-            "cfg_scale": self.cfg_scale,
-            "mode": self.mode,
-            "duration": self.duration,
-            "aspect_ratio": self.aspect_ratio,
-            "input_image": self.input_image,
-            "image_tail": self.image_tail,
-            "static_mask": self.static_mask,
-            "dynamic_masks": self.dynamic_masks,
-            "camera_control": self.camera_control,
-            "generation_mode": self.generation_mode,
-            "input_images": self.input_images,
-            "image_count": self.image_count,
-            "parent_task_id": self.parent_task_id,
-            "is_extended": self.is_extended,
-            "original_duration": self.original_duration,
-            "extend_count": self.extend_count,
-            "credits_cost": self.credits_cost,
-            "submit_time": (
-                self.submit_time.isoformat() if self.submit_time is not None else None
-            ),
-            "start_time": (
-                self.start_time.isoformat() if self.start_time is not None else None
-            ),
-            "finish_time": (
-                self.finish_time.isoformat() if self.finish_time is not None else None
-            ),
-            "video_id": self.video_id,
-            "video_url": self.cloud_video_url or self.video_url,  # 优先返回云存储URL
-            "video_duration": self.video_duration,
-            "fail_reason": self.fail_reason,
-            "properties": self.properties,
-            "progress": self.progress,
-            "created_at": (
-                self.created_at.isoformat() if self.created_at is not None else None
-            ),
-            "updated_at": (
-                self.updated_at.isoformat() if self.updated_at is not None else None
-            ),
-            # 添加服务类型标识
-            "serviceType": "kling",
-        }
+        """转换为字典 - 带字段缺失容错处理"""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            return {
+                "id": self.id,
+                "user_id": self.user_id,
+                "external_task_id": self.external_task_id,
+                "action": self.action,
+                "status": self.status,
+                "task_status_msg": self.task_status_msg,
+                "model_name": self.model_name,
+                "prompt": self.prompt,
+                "negative_prompt": self.negative_prompt,
+                "cfg_scale": self.cfg_scale,
+                "mode": self.mode,
+                "duration": self.duration,
+                "aspect_ratio": self.aspect_ratio,
+                "input_image": self.input_image,
+                "image_tail": self.image_tail,
+                "static_mask": self.static_mask,
+                "dynamic_masks": self.dynamic_masks,
+                "camera_control": self.camera_control,
+                "generation_mode": getattr(self, "generation_mode", "single_image"),
+                "input_images": getattr(self, "input_images", None),
+                "image_count": getattr(self, "image_count", 0),
+                "parent_task_id": getattr(self, "parent_task_id", None),
+                "is_extended": getattr(self, "is_extended", False),
+                "original_duration": getattr(self, "original_duration", None),
+                "extend_count": getattr(self, "extend_count", 0),
+                "credits_cost": self.credits_cost,
+                "submit_time": (
+                    self.submit_time.isoformat()
+                    if self.submit_time is not None
+                    else None
+                ),
+                "start_time": (
+                    self.start_time.isoformat() if self.start_time is not None else None
+                ),
+                "finish_time": (
+                    self.finish_time.isoformat()
+                    if self.finish_time is not None
+                    else None
+                ),
+                "video_id": self.video_id,
+                "video_url": getattr(self, "cloud_video_url", None)
+                or self.video_url,  # 优先返回云存储URL
+                "video_duration": self.video_duration,
+                "fail_reason": self.fail_reason,
+                "properties": self.properties,
+                "progress": self.progress,
+                "created_at": (
+                    self.created_at.isoformat() if self.created_at is not None else None
+                ),
+                "updated_at": (
+                    self.updated_at.isoformat() if self.updated_at is not None else None
+                ),
+                # 添加服务类型标识
+                "serviceType": "kling",
+            }
+        except Exception as e:
+            logger.error(f"❌ 【可灵任务】to_dict转换失败: {str(e)}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+            # 返回基本的默认配置
+            return {
+                "id": getattr(self, "id", ""),
+                "user_id": getattr(self, "user_id", ""),
+                "external_task_id": getattr(self, "external_task_id", None),
+                "action": getattr(self, "action", ""),
+                "status": getattr(self, "status", "unknown"),
+                "task_status_msg": getattr(self, "task_status_msg", None),
+                "model_name": getattr(self, "model_name", None),
+                "prompt": getattr(self, "prompt", ""),
+                "negative_prompt": getattr(self, "negative_prompt", None),
+                "cfg_scale": getattr(self, "cfg_scale", None),
+                "mode": getattr(self, "mode", "std"),
+                "duration": getattr(self, "duration", "5"),
+                "aspect_ratio": getattr(self, "aspect_ratio", "16:9"),
+                "input_image": getattr(self, "input_image", None),
+                "image_tail": getattr(self, "image_tail", None),
+                "static_mask": getattr(self, "static_mask", None),
+                "dynamic_masks": getattr(self, "dynamic_masks", None),
+                "camera_control": getattr(self, "camera_control", None),
+                "generation_mode": getattr(self, "generation_mode", "single_image"),
+                "input_images": getattr(self, "input_images", None),
+                "image_count": getattr(self, "image_count", 0),
+                "parent_task_id": getattr(self, "parent_task_id", None),
+                "is_extended": getattr(self, "is_extended", False),
+                "original_duration": getattr(self, "original_duration", None),
+                "extend_count": getattr(self, "extend_count", 0),
+                "credits_cost": getattr(self, "credits_cost", 0),
+                "submit_time": None,
+                "start_time": None,
+                "finish_time": None,
+                "video_id": getattr(self, "video_id", None),
+                "video_url": getattr(self, "cloud_video_url", None)
+                or getattr(self, "video_url", None),
+                "video_duration": getattr(self, "video_duration", None),
+                "fail_reason": getattr(self, "fail_reason", None),
+                "properties": getattr(self, "properties", None),
+                "progress": getattr(self, "progress", "0%"),
+                "created_at": None,
+                "updated_at": None,
+                "serviceType": "kling",
+            }
 
 
 class KlingCredit(Base):

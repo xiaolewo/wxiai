@@ -78,6 +78,12 @@ def upgrade() -> None:
         sa.Column("static_mask", sa.Text(), nullable=True),
         sa.Column("dynamic_masks", sa.JSON(), nullable=True),
         sa.Column("camera_control", sa.JSON(), nullable=True),
+        # 多图参考生成字段
+        sa.Column(
+            "generation_mode", sa.String(20), nullable=False, default="single_image"
+        ),
+        sa.Column("input_images", sa.JSON(), nullable=True),
+        sa.Column("image_count", sa.Integer(), nullable=False, default=0),
         sa.Column("credits_cost", sa.Integer(), nullable=True, default=0),
         sa.Column("submit_time", sa.DateTime(), nullable=True),
         sa.Column("start_time", sa.DateTime(), nullable=True),
@@ -119,6 +125,11 @@ def upgrade() -> None:
     op.create_index("idx_kling_tasks_status", "kling_tasks", ["status"])
     op.create_index("idx_kling_credits_user_id", "kling_credits", ["user_id"])
 
+    # 多图参考生成相关索引
+    op.create_index(
+        "idx_kling_tasks_generation_mode", "kling_tasks", ["generation_mode"]
+    )
+
     # 视频延长功能相关索引
     op.create_index("idx_kling_tasks_parent_task_id", "kling_tasks", ["parent_task_id"])
     op.create_index("idx_kling_tasks_is_extended", "kling_tasks", ["is_extended"])
@@ -153,6 +164,7 @@ def downgrade() -> None:
     op.drop_index("idx_kling_tasks_user_extended", "kling_tasks")
     op.drop_index("idx_kling_tasks_is_extended", "kling_tasks")
     op.drop_index("idx_kling_tasks_parent_task_id", "kling_tasks")
+    op.drop_index("idx_kling_tasks_generation_mode", "kling_tasks")
     op.drop_index("idx_kling_credits_user_id", "kling_credits")
     op.drop_index("idx_kling_tasks_status", "kling_tasks")
     op.drop_index("idx_kling_tasks_user_id", "kling_tasks")
