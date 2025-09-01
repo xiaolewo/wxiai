@@ -69,7 +69,7 @@ pyarrow==20.0.0
 einops==0.8.1
 
 
-ftfy==6.2.3
+ftfy==6.3.1
 pypdf==4.3.1
 fpdf2==2.8.2
 pymdown-extensions==10.14.2
