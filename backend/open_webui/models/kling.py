@@ -5,6 +5,7 @@
 
 from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime, JSON, Float
 from sqlalchemy.sql import func
+import sqlalchemy as sa
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
@@ -58,24 +59,86 @@ class KlingConfig(Base):
 
     @classmethod
     def get_config(cls):
-        """获取可灵配置"""
+        """获取可灵配置 - 带字段缺失容错处理"""
         import logging
 
         logger = logging.getLogger(__name__)
 
         try:
             with get_db() as db:
-                config = db.query(cls).filter(cls.id == 1).first()
-                logger.info(
-                    f"🎬 【可灵模型】获取配置: {'找到' if config else '未找到'}"
-                )
-                return config
+                # 尝试正常查询
+                try:
+                    config = db.query(cls).filter(cls.id == 1).first()
+                    logger.info(
+                        f"🎬 【可灵模型】获取配置: {'找到' if config else '未找到'}"
+                    )
+                    return config
+                except Exception as query_error:
+                    # 检查是否是字段缺失错误
+                    if "no such column" in str(query_error):
+                        logger.warning(
+                            f"⚠️ 【可灵模型】检测到字段缺失，尝试手动修复: {str(query_error)}"
+                        )
+                        # 尝试手动添加缺失字段
+                        cls._fix_missing_columns(db)
+                        # 重新查询
+                        config = db.query(cls).filter(cls.id == 1).first()
+                        logger.info("✅ 【可灵模型】字段修复后重新查询成功")
+                        return config
+                    else:
+                        raise query_error
+
         except Exception as e:
             logger.error(f"❌ 【可灵模型】获取配置失败: {str(e)}")
             import traceback
 
             logger.error(traceback.format_exc())
             return None
+
+    @classmethod
+    def _fix_missing_columns(cls, db):
+        """自动修复缺失的数据库字段"""
+        import logging
+        from sqlalchemy import text
+
+        logger = logging.getLogger(__name__)
+
+        try:
+            logger.info("🔧 【可灵模型】开始自动修复缺失字段...")
+
+            # 检查表结构
+            inspector = sa.inspect(db.bind)
+            columns = inspector.get_columns("kling_config")
+            existing_columns = [col["name"] for col in columns]
+
+            # 定义需要的字段
+            required_fields = {
+                "credits_per_extend": "ALTER TABLE kling_config ADD COLUMN credits_per_extend INTEGER DEFAULT 30",
+                "model_credits_config": "ALTER TABLE kling_config ADD COLUMN model_credits_config JSON",
+                "detected_api_path": "ALTER TABLE kling_config ADD COLUMN detected_api_path VARCHAR(200)",
+            }
+
+            # 添加缺失字段
+            for field_name, alter_sql in required_fields.items():
+                if field_name not in existing_columns:
+                    logger.info(f"🔧 【可灵模型】添加缺失字段: {field_name}")
+                    try:
+                        db.execute(text(alter_sql))
+                        db.commit()
+                        logger.info(f"✅ 【可灵模型】成功添加字段: {field_name}")
+                    except Exception as field_error:
+                        if "duplicate column" in str(field_error).lower():
+                            logger.info(f"ℹ️ 【可灵模型】字段 {field_name} 已存在")
+                        else:
+                            logger.error(
+                                f"❌ 【可灵模型】添加字段 {field_name} 失败: {field_error}"
+                            )
+
+            logger.info("🎉 【可灵模型】字段修复完成")
+
+        except Exception as e:
+            logger.error(f"❌ 【可灵模型】字段修复失败: {str(e)}")
+            # 不抛出异常，让程序继续运行
 
     @classmethod
     def save_config(cls, config_data: dict):
@@ -88,7 +151,18 @@ class KlingConfig(Base):
             logger.info(f"🎬 【可灵模型】开始保存配置: {len(config_data)} 个字段")
 
             with get_db() as db:
-                config = db.query(cls).filter(cls.id == 1).first()
+                # 尝试查询现有配置，带字段缺失容错
+                try:
+                    config = db.query(cls).filter(cls.id == 1).first()
+                except Exception as query_error:
+                    if "no such column" in str(query_error):
+                        logger.warning(
+                            f"⚠️ 【可灵模型】保存时检测到字段缺失，尝试修复: {str(query_error)}"
+                        )
+                        cls._fix_missing_columns(db)
+                        config = db.query(cls).filter(cls.id == 1).first()
+                    else:
+                        raise query_error
 
                 if config:
                     # 更新现有配置
