@@ -1,143 +1,116 @@
-# 🚀 部署指南 - 解决数据库初始化问题
+# 🚀 WXIAI 发版部署指南
 
-## ⚠️ 之前遇到的问题
+## 发版信息
 
-在新环境部署时，你可能会遇到以下错误：
+- 检查时间: 2025-09-02 22:03:57
+- 发版版本: v2.0902
 
-```
-sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: config
-```
+## 🎯 本次发版修复内容
 
-## ✅ 问题已完全解决
+✅ Veo任务历史500错误 (enhance_prompt列缺失)
+✅ ComfyUI签名验证失败 (AddCreditForm导入错误)  
+✅ Google Images配置保存失败 (表不存在)
+✅ 积分系统表结构不完整 (字段缺失)
+✅ 云存储字段缺失 (各AI服务任务表)
 
-我已经修复了所有相关问题：
+## 📋 线上更新步骤
 
-### 🔧 主要修复内容
-
-1. **循环导入问题修复**：
-   - 简化了 `env.py` 文件，避免循环导入
-   - 在 `config.py` 中延迟执行迁移
-
-2. **配置加载容错**：
-   - `get_config()` 函数现在能正确处理表不存在的情况
-   - `save_to_db()` 函数添加了错误处理
-   - 配置文件迁移延迟到数据库就绪后执行
-
-3. **迁移执行优化**：
-   - 添加了备用方案：如果迁移失败，直接创建数据表
-   - 改进错误处理和日志记录
-
-4. **数据库schema修复**：
-   - 修复了 `jimeng_config` 表的字段名不匹配问题
-   - 添加了缺失的 `tool.access_control` 列
-   - 确保所有模型定义与数据库schema一致
-
-### ⚠️ 新发现并修复的问题
-
-在第二台电脑部署时发现了额外的问题：
-
-- `tool` 表缺少 `access_control` 列
-- 已创建迁移 `70c7b727736e_add_tool_access_control_column.py` 解决此问题
-
-## 🎯 现在的部署状态
-
-### ✅ 全新环境部署
-
-- 迁移将自动运行并创建所有必要的表
-- 即使迁移过程中出现问题，系统也会回退到直接创建表
-- 配置加载具有容错机制，不会因为表不存在而崩溃
-
-### ✅ 现有环境更新
-
-- Alembic 会检查当前数据库版本，只运行新的迁移
-- 不会重复运行已执行的迁移
-- 数据不会丢失
-
-## 🛠️ 部署步骤
-
-### 方法1：正常启动（推荐）
+### 1. 更新前准备
 
 ```bash
-# 后端启动
-python -m uvicorn open_webui.main:app --host 0.0.0.0 --port 8080
+# 备份数据库
+cp data/webui.db data/webui.db.backup.$(date +%Y%m%d_%H%M%S)
 
-# 前端启动（如果需要）
-npm run dev
+# 备份配置文件
+cp .env .env.backup
+
+# 停止服务
+sudo systemctl stop wxiai
 ```
 
-### 方法2：使用初始化脚本（可选）
+### 2. 代码更新
 
 ```bash
-# 运行数据库初始化检查
-python init_db.py
+# 拉取最新代码
+git pull origin main
 
-# 然后正常启动服务
-python -m uvicorn open_webui.main:app --host 0.0.0.0 --port 8080
+# 检查更新内容
+git log --oneline -10
+
+# 安装依赖
+pip install -r requirements.txt
 ```
 
-## 📋 验证清单
+### 3. 数据库迁移
 
-部署完成后，可以通过以下方式验证：
+```bash
+# 运行迁移检查
+python final_release_check.py
 
-1. **健康检查**：
+# 如果有多重迁移头，运行修复脚本
+python fix_all_missing_tables.py
 
-   ```bash
-   curl http://localhost:8080/health
-   # 应该返回: {"status":true}
-   ```
+# 运行Alembic迁移
+python -c "
+import sys
+sys.path.append('open_webui')
+from alembic import command
+from alembic.config import Config
+cfg = Config('open_webui/alembic.ini')
+command.upgrade(cfg, 'head')
+"
+```
 
-2. **Jimeng API 检查**：
+### 4. 功能验证
 
-   ```bash
-   curl http://localhost:8080/api/v1/jimeng/config
-   # 应该返回认证错误（说明API正常工作）: {"detail":"Not authenticated"}
-   ```
+```bash
+# 运行全面测试
+python test_all_ai_services.py
 
-3. **数据库表检查**：
+# 测试ComfyUI配置
+python test_comfyui_config.py
+```
 
-   ```python
-   python -c "
-   from open_webui.internal.db import engine
-   from sqlalchemy import text
+### 5. 启动服务
 
-   with engine.connect() as conn:
-       result = conn.execute(text('SELECT name FROM sqlite_master WHERE type=\"table\" AND name LIKE \"%jimeng%\"'))
-       for row in result:
-           print(f'表: {row[0]}')
-   "
-   ```
+```bash
+# 启动服务
+sudo systemctl start wxiai
 
-## 🔍 重要文件说明
+# 检查状态
+sudo systemctl status wxiai
 
-### 修改的文件：
+# 查看日志
+sudo journalctl -u wxiai -f
+```
 
-- `config.py`：添加了错误处理和延迟执行机制
-- `env.py`：简化导入，避免循环依赖
-- `6fc1adfb106d_add_jimeng_tables.py`：修复了字段名不匹配问题
+## 🆘 回滚方案
 
-### 新增文件：
+如发现问题需要回滚:
 
-- `init_db.py`：数据库初始化检查脚本（可选使用）
-- `DEPLOYMENT_GUIDE.md`：本部署指南
+```bash
+# 停止服务
+sudo systemctl stop wxiai
 
-## 🎉 总结
+# 回滚代码
+git reset --hard HEAD~1
 
-现在系统具有：
+# 恢复数据库
+cp data/webui.db.backup.YYYYMMDD_HHMMSS data/webui.db
 
-- ✅ 强健的错误处理机制
-- ✅ 自动数据库初始化
-- ✅ 循环导入问题修复
-- ✅ 配置加载容错
-- ✅ 完整的迁移支持
+# 重启服务
+sudo systemctl start wxiai
+```
 
-**部署现在是完全安全的！** 无论是全新环境还是现有环境更新，都不会再出现之前的数据库错误。
+## 🔍 发版后验证清单
 
-如果仍有问题，请检查：
+- [ ] 用户登录注册正常
+- [ ] Veo任务历史页面正常加载
+- [ ] ComfyUI配置保存正常
+- [ ] Google Images功能正常
+- [ ] 积分充值扣费正常
+- [ ] 所有AI服务正常工作
 
-1. Python 环境是否正确
-2. 数据库文件权限是否正确
-3. 所有依赖是否已安装
+## 📞 紧急联系
 
----
-
-_最后更新: 2025-08-18_
+如遇到问题请立即联系开发团队

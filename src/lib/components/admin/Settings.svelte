@@ -16,6 +16,7 @@
 	import GoogleImages from './Settings/GoogleImages.svelte';
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
+	import ComfyUI from './Settings/ComfyUI.svelte';
 	import Kling from './Settings/Kling.svelte';
 	import KlingLipSync from './Settings/KlingLipSync.svelte';
 	import JimengInpainting from './Settings/JimengInpainting.svelte';
@@ -62,6 +63,7 @@
 			'google-images',
 			'dreamwork',
 			'flux',
+			'comfyui',
 			'kling',
 			'kling-lip-sync',
 			'jimeng-inpainting',
@@ -561,6 +563,33 @@
 		</button>
 
 		<button
+			id="comfyui"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'comfyui'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/comfyui');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">ComfyUI</div>
+		</button>
+
+		<button
 			id="kling"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'kling'
@@ -917,6 +946,12 @@
 			/>
 		{:else if selectedTab === 'flux'}
 			<Flux
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'comfyui'}
+			<ComfyUI
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

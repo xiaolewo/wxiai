@@ -86,6 +86,7 @@ from open_webui.routers import (
     jimeng,
     storage,
     flux,
+    comfyui,
     veo,
     google_images,
 )
@@ -1327,6 +1328,7 @@ app.include_router(
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
+app.include_router(comfyui.router, prefix="/api/v1", tags=["comfyui"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
 app.include_router(google_images.router, prefix="/api/v1", tags=["google_images"])
 app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])

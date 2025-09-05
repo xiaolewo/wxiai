@@ -82,7 +82,7 @@ class KlingConfig(Base):
                         # 尝试手动添加缺失字段
                         cls._fix_missing_columns(db)
                         # 重新查询
-                        config = db.query(cls).filter(cls.id == 1).first()
+                        config = db.query(cls).filter(cls.id == "default").first()
                         logger.info("✅ 【可灵模型】字段修复后重新查询成功")
                         return config
                     else:
@@ -855,7 +855,7 @@ class KlingTask(Base):
             elif status in ["succeed", "failed"]:
                 self.finish_time = datetime.now()
 
-            self.updated_at = datetime.now()
+            self.updated_at = datetime.now().isoformat()
             db.merge(self)
             db.commit()
 

@@ -20,32 +20,35 @@ from open_webui.internal.db import Base, get_db
 class VeoConfig(Base):
     __tablename__ = "veo_config"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(255), primary_key=True, default="default")
     enabled = Column(Boolean, default=False, nullable=False)
-    base_url = Column(String(500), default="https://api.veoai.com", nullable=False)
+    base_url = Column(String(500), default="https://api.veo.ai", nullable=False)
     api_key = Column(Text, nullable=True)
 
-    # 模型积分配置 - JSON格式支持灵活配置
-    model_credits_config = Column(JSON, nullable=True)
-
-    # 默认参数配置
-    default_model = Column(String(50), default="veo3", nullable=False)
-    default_enhance_prompt = Column(Boolean, default=True, nullable=False)
-
-    # 系统配置
+    default_model = Column(String(255), nullable=True)
     max_concurrent_tasks = Column(Integer, default=3, nullable=False)
-    task_timeout = Column(Integer, default=900000, nullable=False)  # 15分钟
-    query_interval = Column(Integer, default=15000, nullable=False)  # 15秒
+    task_timeout = Column(Integer, default=600000, nullable=False)
+    credits_per_generation = Column(Integer, default=50, nullable=False)
+    default_duration = Column(Integer, default=5, nullable=False)
+    default_aspect_ratio = Column(String(20), default="16:9", nullable=False)
+    additional_config = Column(String(10000), nullable=False)
 
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, nullable=True)
+    created_at = Column(
+        Text, nullable=False, default=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    updated_at = Column(Text)
+    # 模型积分配置 - JSON格式支持灵活配置
+    model_credits_config = Column(String(10000), nullable=True)
+    query_interval = Column(Integer, default=15000, nullable=False)  # 15秒
+    # 系统配置
+    default_enhance_prompt = Column(Boolean, default=True, nullable=False)
 
     @classmethod
     def get_config(cls):
         """获取Veo配置"""
         try:
             with get_db() as db:
-                return db.query(cls).filter(cls.id == 1).first()
+                return db.query(cls).filter(cls.id == "default").first()
         except Exception as e:
             # 如果出现表不存在的错误，尝试创建表
             if "no such table" in str(e).lower():
@@ -54,7 +57,7 @@ class VeoConfig(Base):
                     cls._ensure_tables_exist()
                     # 重试获取配置
                     with get_db() as db:
-                        return db.query(cls).filter(cls.id == 1).first()
+                        return db.query(cls).filter(cls.id == "default").first()
                 except Exception as create_error:
                     print(f"❌ 自动创建Veo表失败: {create_error}")
                     raise create_error
@@ -66,18 +69,25 @@ class VeoConfig(Base):
         """保存Veo配置"""
         try:
             with get_db() as db:
-                config = db.query(cls).filter(cls.id == 1).first()
+                config = db.query(cls).filter(cls.id == "default").first()
 
                 if config:
                     # 更新现有配置
                     for key, value in config_data.items():
                         if hasattr(config, key):
                             setattr(config, key, value)
-                    config.updated_at = datetime.now()
+                    config.updated_at = datetime.now().isoformat()
+                    config.model_credits_config = json.dumps(
+                        config_data.get("model_credits_config")
+                    )
                 else:
                     # 创建新配置
-                    config_data["id"] = 1
+                    config_data["id"] = "default"
                     config = cls(**config_data)
+                    config.updated_at = datetime.now().isoformat()
+                    config.model_credits_config = json.dumps(
+                        config_data.get("model_credits_config")
+                    )
                     db.add(config)
 
                 db.commit()
@@ -99,10 +109,18 @@ class VeoConfig(Base):
                         print("✅ Veo表创建成功并保存配置")
                         return config
                 except Exception as create_error:
+                    import traceback
+
+                    print(traceback.format_exc())
                     print(f"❌ 自动创建Veo表失败: {create_error}")
                     raise create_error
             else:
                 raise e
+
+    def to_iso(self, dt):
+        if isinstance(dt, datetime):
+            return dt.isoformat()
+        return dt  # 已经是字符串或 None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -118,8 +136,8 @@ class VeoConfig(Base):
             "max_concurrent_tasks": self.max_concurrent_tasks,
             "task_timeout": self.task_timeout,
             "query_interval": self.query_interval,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": self.to_iso(self.created_at),
+            "updated_at": self.to_iso(self.created_at),
         }
 
     def _get_default_model_credits(self) -> dict:
@@ -434,7 +452,7 @@ class VeoTask(Base):
                     for key, value in status_data.items():
                         if hasattr(task, key):
                             setattr(task, key, value)
-                    task.updated_at = datetime.now()
+                    task.updated_at = datetime.now().isoformat()
                     db.commit()
                     db.refresh(task)
                     return task
@@ -450,7 +468,7 @@ class VeoTask(Base):
                         for key, value in status_data.items():
                             if hasattr(task, key):
                                 setattr(task, key, value)
-                        task.updated_at = datetime.now()
+                        task.updated_at = datetime.now().isoformat().isoformat()
                         db.commit()
                         db.refresh(task)
                         return task

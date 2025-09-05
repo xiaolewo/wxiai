@@ -88,39 +88,50 @@ class GoogleImagesTaskForm(BaseModel):
 # ======================== SQLAlchemy 数据库模型 ========================
 
 
+def to_iso(dt):
+    if isinstance(dt, datetime):
+        return dt.isoformat()
+    return dt  # 已经是字符串或 None
+
+
 class GoogleImagesConfig(Base):
     """谷歌生图配置表"""
 
     __tablename__ = "google_images_config"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(100), primary_key=True, default="default")
     enabled = Column(Boolean, default=False, nullable=False)
-    base_url = Column(String(500), nullable=True)
-    api_key = Column(Text, nullable=True)
+    base_url = Column(
+        String(500), nullable=False, default="https://api.googleimages.ai"
+    )
+    api_key = Column(Text, nullable=True, default="")
 
     # 模型配置
-    default_model = Column(String(50), default="nano-banana", nullable=False)
-    max_images_per_request = Column(Integer, default=10, nullable=False)
-    timeout = Column(Integer, default=60, nullable=False)
+    default_model = Column(String(100), default="nano-banana", nullable=True)
+    max_images_per_request = Column(Integer, default=10, nullable=True)
+    timeout = Column(Integer, default=120, nullable=True)
 
     # 积分配置
-    credits_per_generation = Column(Integer, default=20, nullable=False)
-    credits_per_image = Column(Integer, default=5, nullable=False)
+    credits_per_generation = Column(Integer, default=20, nullable=True)
+    credits_per_image = Column(Integer, default=5, nullable=True)
 
     # 扩展配置
-    additional_config = Column(JSON, nullable=True)
+    additional_config = Column(Text, default="{}", nullable=True)
 
     # 时间戳
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, nullable=True)
+    created_at = Column(Text, nullable=False, default=func.now())
+    updated_at = Column(Text, nullable=False, default=func.now())
 
     @classmethod
     def get_config(cls):
         """获取配置"""
         try:
             with get_db() as db:
-                return db.query(cls).filter(cls.id == 1).first()
+                return db.query(cls).filter(cls.id == "default").first()
         except Exception as e:
+            import traceback
+
+            print(traceback.format_exc())
             print(f"获取谷歌生图配置失败: {str(e)}")
             return None
 
@@ -129,16 +140,16 @@ class GoogleImagesConfig(Base):
         """保存配置"""
         try:
             with get_db() as db:
-                config = db.query(cls).filter(cls.id == 1).first()
+                config = db.query(cls).filter(cls.id == "default").first()
                 if config:
                     # 更新现有配置
                     for key, value in config_data.items():
                         if hasattr(config, key):
                             setattr(config, key, value)
-                    config.updated_at = datetime.now()
+                    config.updated_at = datetime.now().isoformat()
                 else:
                     # 创建新配置
-                    config_data["id"] = 1
+                    config_data["id"] = "default"
                     config = cls(**config_data)
                     db.add(config)
 
@@ -146,6 +157,9 @@ class GoogleImagesConfig(Base):
                 db.refresh(config)
                 return config
         except Exception as e:
+            import traceback
+
+            print(traceback.format_exc())
             print(f"保存谷歌生图配置失败: {str(e)}")
             raise e
 
@@ -162,47 +176,38 @@ class GoogleImagesConfig(Base):
             "credits_per_generation": self.credits_per_generation,
             "credits_per_image": self.credits_per_image,
             "additional_config": self.additional_config,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": to_iso(self.created_at),
+            "updated_at": to_iso(self.updated_at),
         }
 
 
 class GoogleImagesTask(Base):
-    """谷歌生图任务表"""
-
     __tablename__ = "google_images_tasks"
 
-    id = Column(String(50), primary_key=True)
+    id = Column(String(50), primary_key=True, nullable=False)
     user_id = Column(String(50), nullable=False)
-    status = Column(String(20), default="submitted", nullable=False)
-
-    # 请求参数
+    status = Column(String(50), nullable=False, default="submitted")
     prompt = Column(Text, nullable=False)
-    model = Column(String(50), default="nano-banana", nullable=False)
-    size = Column(String(20), nullable=True)
-    quality = Column(String(20), nullable=True)
-    style = Column(String(20), nullable=True)
-
-    # 图片数据
-    input_images = Column(JSON, nullable=True)  # 原始输入图片
-    cloud_input_images = Column(JSON, nullable=True)  # 云端输入图片URL
-    result_images = Column(JSON, nullable=True)  # 原始结果图片
-    cloud_result_images = Column(JSON, nullable=True)  # 云端结果图片URL
-
-    # 任务状态
-    progress = Column(String(10), default="0%")
-    fail_reason = Column(Text, nullable=True)
-
-    # 积分消耗
-    credits_cost = Column(Integer, nullable=True)
-
-    # 扩展属性
-    properties = Column(JSON, nullable=True)
-
-    # 时间戳
-    created_at = Column(DateTime, default=func.now(), nullable=False)
-    updated_at = Column(DateTime, nullable=True)
-    finish_time = Column(DateTime, nullable=True)
+    model = Column(String(50), nullable=False, default="nano-banana")
+    images = Column(JSON)  # 在 SQLite 中会存为 TEXT
+    size = Column(String(20), default="1024x1024")
+    n = Column(Integer, default=1)
+    quality = Column(String(20), default="standard")
+    style = Column(String(20), default="natural")
+    credits_cost = Column(Integer, nullable=False, default=20)
+    submit_time = Column(DateTime)
+    start_time = Column(DateTime)
+    finish_time = Column(DateTime)
+    progress = Column(String(20), default="0%")
+    result_images = Column(JSON)
+    cloud_image_urls = Column(JSON)
+    fail_reason = Column(Text)
+    properties = Column(JSON)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, onupdate=func.now())
+    input_images = Column(JSON)
+    cloud_input_images = Column(JSON)
+    cloud_result_images = Column(Text)
 
     @classmethod
     def create_task(cls, task_data: dict):
@@ -213,6 +218,7 @@ class GoogleImagesTask(Base):
         try:
             with get_db() as db:
                 task = cls(**task_data)
+                task.images = json.dumps(task_data.get("images"))
                 db.add(task)
                 db.commit()
                 db.refresh(task)
@@ -258,6 +264,7 @@ class GoogleImagesTask(Base):
                     for key, value in status_data.items():
                         if hasattr(task, key):
                             setattr(task, key, value)
+
                     task.updated_at = datetime.now()
                     db.commit()
                     db.refresh(task)
@@ -301,9 +308,9 @@ class GoogleImagesTask(Base):
             "fail_reason": self.fail_reason,
             "credits_cost": self.credits_cost,
             "properties": self.properties,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "finish_time": self.finish_time.isoformat() if self.finish_time else None,
+            "created_at": to_iso(self.created_at),
+            "updated_at": to_iso(self.updated_at),
+            "finish_time": to_iso(self.finish_time),
         }
 
 

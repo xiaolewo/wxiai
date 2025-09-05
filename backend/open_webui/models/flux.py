@@ -927,6 +927,127 @@ class FluxCreditsManager:
             return True
 
 
+# ======================== 强制表检查机制 ========================
+
+
+def _ensure_flux_tables():
+    """确保Flux相关表存在"""
+    from open_webui.internal.db import SessionLocal
+    from sqlalchemy import inspect, text
+    import json
+
+    db = SessionLocal()
+    try:
+        inspector = inspect(db.bind)
+        existing_tables = inspector.get_table_names()
+
+        # 检查必需的表
+        required_tables = ["flux_config", "flux_tasks", "flux_credits"]
+        missing_tables = [
+            table for table in required_tables if table not in existing_tables
+        ]
+
+        if missing_tables:
+            print(f"🔧 检测到缺失的Flux表: {missing_tables}")
+
+            # 创建表
+            Base.metadata.create_all(
+                db.bind,
+                tables=[
+                    FluxConfig.__table__,
+                    FluxTask.__table__,
+                    FluxCredits.__table__,
+                ],
+            )
+            print("🎨 Flux表已创建")
+
+        # 检查flux_config表是否有model_credits列
+        if "flux_config" in existing_tables or "flux_config" not in missing_tables:
+            try:
+                # 尝试查询model_credits列
+                result = db.execute(
+                    text("SELECT model_credits FROM flux_config LIMIT 1")
+                ).fetchone()
+            except Exception as column_error:
+                if "no such column: model_credits" in str(column_error).lower():
+                    print("🔧 检测到flux_config表缺少model_credits列，正在添加...")
+                    try:
+                        # 添加model_credits列
+                        db.execute(
+                            text(
+                                "ALTER TABLE flux_config ADD COLUMN model_credits TEXT"
+                            )
+                        )
+                        db.commit()
+                        print("🎨 model_credits列已添加")
+                    except Exception as add_col_error:
+                        print(f"🔧 添加model_credits列失败: {add_col_error}")
+
+        # 检查是否需要创建默认配置
+        try:
+            config_count = db.execute(text("SELECT COUNT(*) FROM flux_config")).scalar()
+            if config_count == 0:
+                # 插入默认配置
+                default_model_credits = {
+                    "fal-ai/flux-1/schnell": 5,
+                    "fal-ai/flux-1/dev": 10,
+                    "fal-ai/flux-1/dev/image-to-image": 10,
+                    "fal-ai/flux-pro": 20,
+                    "fal-ai/flux-pro/kontext": 25,
+                    "fal-ai/flux-pro/kontext/multi": 30,
+                    "fal-ai/flux-pro/max": 35,
+                }
+
+                # 尝试插入包含model_credits的配置
+                try:
+                    db.execute(
+                        text(
+                            """
+                        INSERT INTO flux_config 
+                        (id, api_key, base_url, enabled, timeout, max_concurrent_tasks, 
+                         default_model, model_credits, created_at, updated_at) 
+                        VALUES 
+                        ('default', '', 'https://queue.fal.run', 0, 300, 5, 
+                         'fal-ai/flux-1/dev', :model_credits, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """
+                        ),
+                        {"model_credits": json.dumps(default_model_credits)},
+                    )
+                    db.commit()
+                    print("🎨 默认Flux配置已创建")
+                except Exception as insert_error:
+                    if "no such column: model_credits" in str(insert_error).lower():
+                        # 如果model_credits列不存在，则不包含该字段插入
+                        print(
+                            "🔧 model_credits列不存在，创建不带model_credits的默认配置..."
+                        )
+                        db.execute(
+                            text(
+                                """
+                            INSERT INTO flux_config 
+                            (id, api_key, base_url, enabled, timeout, max_concurrent_tasks, 
+                             default_model, created_at, updated_at) 
+                            VALUES 
+                            ('default', '', 'https://queue.fal.run', 0, 300, 5, 
+                             'fal-ai/flux-1/dev', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """
+                            )
+                        )
+                        db.commit()
+                        print("🎨 默认Flux配置已创建（无model_credits字段）")
+                    else:
+                        raise insert_error
+        except Exception as config_error:
+            print(f"🔧 创建默认配置时出错: {config_error}")
+
+    except Exception as e:
+        print(f"🔧 Flux表检查过程中出错: {e}")
+        # 回滚以防出错
+        db.rollback()
+    finally:
+        db.close()
+
+
 # ======================== 工具函数 ========================
 
 
@@ -1011,3 +1132,10 @@ def get_supported_flux_models() -> List[Dict[str, str]]:
             "description": "专门的文本转图像",
         },
     ]
+
+
+# 应用启动时自动检查表
+try:
+    _ensure_flux_tables()
+except Exception as e:
+    print(f"🔧 Flux表自动检查失败: {e}")

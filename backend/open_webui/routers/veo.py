@@ -135,13 +135,18 @@ async def update_veo_config(config_data: VeoConfigForm, user=Depends(get_admin_u
         veo_client = None
         veo_config = None
 
+        # config_data.model_credits_config = str(config_data.model_credits_config)
+
         # 保存配置
-        config = VeoConfig.save_config(config_data.dict())
+        config = VeoConfig.save_config(config_data=config_data.model_dump())
 
         logger.info(f"🔧 【Veo配置】管理员 {user.id} 更新了Veo配置")
 
         return {"success": True, "message": "配置已更新", "config": config.to_dict()}
     except Exception as e:
+        import traceback
+
+        print(traceback.format_exc())
         logger.error(f"🔧 【Veo配置】更新配置失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
 

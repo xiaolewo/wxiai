@@ -253,6 +253,9 @@ def deduct_user_credits(
             logger.error(f"💰 【谷歌生图积分】扣除用户 {user_id} 积分失败")
             return False
     except Exception as e:
+        import traceback
+
+        print(traceback.format_exc())
         logger.error(f"💰 【谷歌生图积分】扣除积分时出错: {str(e)}")
         return False
 
@@ -451,6 +454,9 @@ async def process_google_images_generation(
             "properties": {"original_request": request.dict()},
         }
 
+        print("-" * 100)
+        print(task_data)
+
         task = GoogleImagesTask.create_task(task_data)
         logger.info(f"🎨 【谷歌生图处理】任务记录创建成功: {task.id}")
 
@@ -484,7 +490,7 @@ async def process_google_images_generation(
 
                 for i, image in enumerate(result_images):
                     logger.info(
-                        f"🎨 【谷歌生图处理】处理第 {i+1}/{len(result_images)} 张图片..."
+                        f"🎨 【谷歌生图处理】处理第 {i + 1}/{len(result_images)} 张图片..."
                     )
                     cloud_url = await upload_image_to_cloud(
                         image, user_id, task_id, f"result_{i}"
@@ -494,13 +500,15 @@ async def process_google_images_generation(
                         # 成功上传到云存储
                         cloud_result_images.append(cloud_url)
                         upload_success_count += 1
-                        logger.info(f"✅ 【谷歌生图处理】第 {i+1} 张图片云存储上传成功")
+                        logger.info(
+                            f"✅ 【谷歌生图处理】第 {i + 1} 张图片云存储上传成功"
+                        )
                     else:
                         # 上传失败，使用原始URL
                         cloud_result_images.append(image)
                         upload_failed_count += 1
                         logger.warning(
-                            f"⚠️ 【谷歌生图处理】第 {i+1} 张图片云存储上传失败，使用原始URL"
+                            f"⚠️ 【谷歌生图处理】第 {i + 1} 张图片云存储上传失败，使用原始URL"
                         )
 
                 logger.info(
@@ -512,8 +520,8 @@ async def process_google_images_generation(
                 task_id,
                 {
                     "status": "completed",
-                    "result_images": result_images,
-                    "cloud_result_images": cloud_result_images,
+                    "result_images": json.dumps(result_images),
+                    "cloud_result_images": json.dumps(cloud_result_images),
                     "progress": "100%",
                     "finish_time": datetime.now(),
                 },
@@ -541,6 +549,9 @@ async def process_google_images_generation(
             return {"success": False, "error": api_result["error"], "task_id": task_id}
 
     except Exception as e:
+        import traceback
+
+        print(traceback.format_exc())
         error_msg = f"处理谷歌生图请求时出错: {str(e)}"
         logger.error(f"🎨 【谷歌生图处理】{error_msg}")
         logger.exception("🎨 【谷歌生图处理】异常堆栈:")

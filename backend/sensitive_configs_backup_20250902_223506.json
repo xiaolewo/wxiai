@@ -1,0 +1,71 @@
+{
+	"comfyui_config": [
+		{
+			"id": "default",
+			"access_key": "",
+			"secret_key": "",
+			"base_url": "https://openapi.liblibai.cloud",
+			"enabled": 1,
+			"timeout": 300,
+			"max_concurrent_tasks": 5,
+			"created_at": "2025-09-02 09:19:55",
+			"updated_at": "2025-09-02 13:39:01"
+		}
+	],
+	"google_images_config": [
+		{
+			"id": 1,
+			"enabled": 1,
+			"base_url": "https://api.linkapi.org",
+			"api_key": "",
+			"default_model": "nano-banana",
+			"max_images_per_request": 10,
+			"timeout": 60,
+			"credits_per_generation": 20,
+			"credits_per_image": 5,
+			"additional_config": null,
+			"created_at": "2025-09-02 10:19:21",
+			"updated_at": "2025-09-02 18:42:54.545754"
+		}
+	],
+	"veo_config": [
+		{
+			"id": 1,
+			"enabled": 1,
+			"base_url": "https://api.linkapi.org",
+			"api_key": "",
+			"default_model": "veo3",
+			"max_concurrent_tasks": 3,
+			"task_timeout": 900000,
+			"credits_per_generation": 50,
+			"default_duration": 5,
+			"default_aspect_ratio": "16:9",
+			"additional_config": null,
+			"created_at": "2025-09-02 10:19:21",
+			"updated_at": "2025-09-02 18:58:26.100511",
+			"model_credits_config": "{\"veo3\": 100, \"veo3-fast\": 80, \"veo3-pro\": 150, \"veo3-pro-frames\": 200, \"veo2\": 90, \"veo2-fast\": 70, \"veo2-fast-frames\": 120, \"veo2-fast-components\": 160, \"veo2-pro\": 140, \"veo3-fast-frames\": 90}",
+			"default_enhance_prompt": 1,
+			"query_interval": 15000
+		}
+	],
+	"cloud_storage_config": [
+		{
+			"id": "abec731f-0330-4717-8b1c-a67f681a73f4",
+			"provider": "tencent-cos",
+			"enabled": 1,
+			"secret_id": "",
+			"secret_key": "",
+			"region": "ap-nanjing",
+			"bucket": "web-1347907365",
+			"domain": "https://web-1347907365.cos.ap-nanjing.myqcloud.com",
+			"auto_upload": 1,
+			"allowed_types": "[\"image/*\", \"video/*\"]",
+			"max_file_size": 104857600,
+			"base_path": "generated/",
+			"image_path": "images/",
+			"video_path": "videos/",
+			"created_at": "2025-09-02 10:58:55.309752",
+			"updated_at": "2025-09-02 10:59:01.418482"
+		}
+	]
+}

@@ -69,7 +69,7 @@ async def save_google_images_config(
             )
 
         # 转换为字典保存
-        config_dict = config_data.dict()
+        config_dict = config_data.model_dump()
         config = GoogleImagesConfig.save_config(config_dict)
 
         return {
@@ -79,6 +79,9 @@ async def save_google_images_config(
         }
 
     except Exception as e:
+        import traceback
+
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"保存配置失败: {str(e)}")
 
 
@@ -194,6 +197,10 @@ async def generate_google_images(
 
 
 # ======================== 任务管理 ========================
+def to_iso(dt):
+    if isinstance(dt, datetime):
+        return dt.isoformat()
+    return dt  # 已经是字符串或 None
 
 
 @router.get("/task/{task_id}")
@@ -219,19 +226,22 @@ async def get_google_images_task(
             model=task.model,
             input_images=task.input_images,
             cloud_input_images=task.cloud_input_images,
-            result_images=task.result_images,
-            cloud_result_images=task.cloud_result_images,
+            result_images=json.loads(task.result_images),
+            cloud_result_images=json.loads(task.cloud_result_images),
             credits_cost=task.credits_cost,
             fail_reason=task.fail_reason,
             properties=task.properties,
-            created_at=task.created_at.isoformat() if task.created_at else "",
-            updated_at=task.updated_at.isoformat() if task.updated_at else None,
-            finish_time=task.finish_time.isoformat() if task.finish_time else None,
+            created_at=to_iso(task.created_at) if task.created_at else "",
+            updated_at=to_iso(task.updated_at),
+            finish_time=to_iso(task.finish_time),
         )
 
         return GoogleImagesTaskResponse(success=True, task_id=task.id, task=task_form)
 
     except Exception as e:
+        import traceback
+
+        print(traceback.format_exc())
         return GoogleImagesTaskResponse(success=False, error=f"获取任务失败: {str(e)}")
 
 
@@ -251,16 +261,16 @@ async def get_user_google_images_tasks(
                 status=task.status,
                 prompt=task.prompt,
                 model=task.model,
-                input_images=task.input_images,
+                input_images=json.loads(task.input_images),
                 cloud_input_images=task.cloud_input_images,
-                result_images=task.result_images,
+                result_images=json.loads(task.result_images),
                 cloud_result_images=task.cloud_result_images,
                 credits_cost=task.credits_cost,
                 fail_reason=task.fail_reason,
                 properties=task.properties,
-                created_at=task.created_at.isoformat() if task.created_at else "",
-                updated_at=task.updated_at.isoformat() if task.updated_at else None,
-                finish_time=task.finish_time.isoformat() if task.finish_time else None,
+                created_at=to_iso(task.created_at) if task.created_at else "",
+                updated_at=to_iso(task.updated_at),
+                finish_time=to_iso(task.finish_time),
             )
             task_list.append(task_form.dict())
 
@@ -427,7 +437,7 @@ async def get_google_images_admin_stats(user=Depends(get_admin_user)) -> dict:
                 "today_tasks": today_tasks,
                 "total_credits_consumed": abs(total_credits),
                 "success_rate": (
-                    f"{(completed_tasks/total_tasks*100):.1f}%"
+                    f"{(completed_tasks / total_tasks * 100):.1f}%"
                     if total_tasks > 0
                     else "0%"
                 ),
