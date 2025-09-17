@@ -13,16 +13,15 @@
 	import Audio from './Settings/Audio.svelte';
 	import Images from './Settings/Images.svelte';
 	import Midjourney from './Settings/Midjourney.svelte';
-	import GoogleImages from './Settings/GoogleImages.svelte';
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
-	import ComfyUI from './Settings/ComfyUI.svelte';
 	import Kling from './Settings/Kling.svelte';
 	import KlingLipSync from './Settings/KlingLipSync.svelte';
 	import JimengInpainting from './Settings/JimengInpainting.svelte';
 	import JimengOutpainting from './Settings/JimengOutpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
 	import Veo from './Settings/Veo.svelte';
+	import Hailuo from './Settings/Hailuo.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
 	import Connections from './Settings/Connections.svelte';
@@ -60,15 +59,14 @@
 			'audio',
 			'images',
 			'midjourney',
-			'google-images',
 			'dreamwork',
 			'flux',
-			'comfyui',
 			'kling',
 			'kling-lip-sync',
 			'jimeng-inpainting',
 			'jimeng-outpainting',
 			'jimeng',
+			'hailuo',
 			'veo',
 			'storage',
 			'pipelines',
@@ -485,32 +483,6 @@
 		</button>
 
 		<button
-			id="google-images"
-			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-			'google-images'
-				? ''
-				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
-				goto('/admin/settings/google-images');
-			}}
-		>
-			<div class=" self-center mr-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="currentColor"
-					class="w-4 h-4"
-				>
-					<path
-						d="M12.017 11.986c-.024 4.75-3.86 8.614-8.61 8.614H2.136C.96 20.6.023 19.663.023 18.487V17.22c0-4.75 3.86-8.614 8.61-8.614h1.267c1.176 0 2.113.937 2.113 2.113v1.267Z"
-					/>
-					<circle cx="17.5" cy="6.5" r="4.5" fill="currentColor" opacity="0.7" />
-				</svg>
-			</div>
-			<div class=" self-center">谷歌生图</div>
-		</button>
-
-		<button
 			id="dreamwork"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'dreamwork'
@@ -560,33 +532,6 @@
 				</svg>
 			</div>
 			<div class=" self-center">Flux AI</div>
-		</button>
-
-		<button
-			id="comfyui"
-			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
-			'comfyui'
-				? ''
-				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
-			on:click={() => {
-				goto('/admin/settings/comfyui');
-			}}
-		>
-			<div class=" self-center mr-2">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="currentColor"
-					class="w-4 h-4"
-				>
-					<path
-						fill-rule="evenodd"
-						d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z"
-						clip-rule="evenodd"
-					/>
-				</svg>
-			</div>
-			<div class=" self-center">ComfyUI</div>
 		</button>
 
 		<button
@@ -762,6 +707,30 @@
 		</button>
 
 		<button
+			id="hailuo"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'hailuo'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/hailuo');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+					><path
+						d="M12 2a10 10 0 100 20 10 10 0 000-20Zm.75 5a.75.75 0 00-1.5 0v5.25c0 .414.336.75.75.75H16a.75.75 0 000-1.5h-3.25V7Z"
+					/></svg
+				>
+			</div>
+			<div class=" self-center">🐚 海螺视频</div>
+		</button>
+
+		<button
 			id="storage"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'storage'
@@ -932,12 +901,6 @@
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}
 			/>
-		{:else if selectedTab === 'google-images'}
-			<GoogleImages
-				on:save={() => {
-					toast.success($i18n.t('Settings saved successfully!'));
-				}}
-			/>
 		{:else if selectedTab === 'dreamwork'}
 			<DreamWork
 				on:save={() => {
@@ -946,12 +909,6 @@
 			/>
 		{:else if selectedTab === 'flux'}
 			<Flux
-				on:save={() => {
-					toast.success($i18n.t('Settings saved successfully!'));
-				}}
-			/>
-		{:else if selectedTab === 'comfyui'}
-			<ComfyUI
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}
@@ -982,6 +939,12 @@
 			/>
 		{:else if selectedTab === 'jimeng'}
 			<Jimeng
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'hailuo'}
+			<Hailuo
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

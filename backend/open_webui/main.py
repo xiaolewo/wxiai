@@ -86,9 +86,8 @@ from open_webui.routers import (
     jimeng,
     storage,
     flux,
-    comfyui,
     veo,
-    google_images,
+    hailuo,
 )
 
 from open_webui.routers.retrieval import (
@@ -143,13 +142,12 @@ except ImportError as e:
     logger.warning(f"Failed to import veo models: {e}")
 
 try:
-    from open_webui.models.google_images import (
-        GoogleImagesConfig,
-        GoogleImagesTask,
-        GoogleImagesCredit,
+    from open_webui.models.hailuo import (
+        HailuoConfig,
+        HailuoTask,
     )
 except ImportError as e:
-    logger.warning(f"Failed to import google_images models: {e}")
+    logger.warning(f"Failed to import hailuo models: {e}")
 
 from open_webui.config import (
     # Ollama
@@ -1328,9 +1326,8 @@ app.include_router(
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
-app.include_router(comfyui.router, prefix="/api/v1", tags=["comfyui"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
-app.include_router(google_images.router, prefix="/api/v1", tags=["google_images"])
+app.include_router(hailuo.router, prefix="/api/v1", tags=["hailuo"])
 app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])

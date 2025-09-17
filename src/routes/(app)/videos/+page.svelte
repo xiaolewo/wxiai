@@ -13,18 +13,13 @@
 		type KlingConfig,
 		type KlingGenerateRequest,
 		type KlingVideoMode,
-		type KlingVideoExtendRequest,
-		type KlingVideoExtendCheck,
 		submitKlingTextToVideoTask,
 		submitKlingImageToVideoTask,
 		getKlingTaskStatus,
 		getKlingUserTaskHistory,
 		getKlingUserCredits,
 		getKlingUserConfig,
-		deleteKlingTask,
-		checkKlingVideoExtendEligibility,
-		submitKlingVideoExtendTask,
-		getKlingVideoExtendTaskStatus
+		deleteKlingTask
 	} from '$lib/apis/kling';
 
 	// Import JiMeng API functions
@@ -55,26 +50,34 @@
 		deleteVeoTask
 	} from '$lib/apis/veo';
 
+	// Hailuo (MiniMax) APIs
+	import {
+		getHailuoUserConfig,
+		hailuoGenerate,
+		getHailuoTaskStatus,
+		getHailuoUserTaskHistory,
+		getHailuoUserCredits,
+		deleteHailuoTask,
+		type HailuoGenerateRequest
+	} from '$lib/apis/hailuo';
+
 	const i18n = getContext('i18n');
 
 	let loaded = false;
 	let isGenerating = false;
-	let currentTask: KlingTask | JimengTask | VeoTask | null = null;
-	let generatedVideo: KlingTask | JimengTask | VeoTask | null = null;
-	let taskHistory: (KlingTask | JimengTask | VeoTask)[] = [];
+	let currentTask: any = null;
+	let generatedVideo: any = null;
+	let taskHistory: any[] = [];
 	let userCredits = 0;
 	let loadingData = false;
 	let pollingInterval: NodeJS.Timeout | null = null;
 	let klingConfig: KlingConfig | null = null;
 	let jimengConfig: JimengConfig | null = null;
 	let veoConfig: VeoUserConfig | null = null;
-
-	// 视频延长相关状态
-	let extendingTasks = new Set<string>(); // 正在检查或延长中的任务ID
-	let extendChecks = new Map<string, KlingVideoExtendCheck>(); // 延长资格检查结果缓存
+	let hailuoConfig: any | null = null;
 
 	// Service selection
-	let selectedService: 'kling' | 'jimeng' | 'veo' = 'kling';
+	let selectedService: 'kling' | 'jimeng' | 'veo' | 'hailuo' = 'kling';
 	let lastServiceSwitch = '';
 	let serviceSwitchTimeout: NodeJS.Timeout | null = null;
 
@@ -99,6 +102,8 @@
 				await loadKlingConfig();
 			} else if (selectedService === 'veo' && !veoConfig) {
 				await loadVeoConfig();
+			} else if (selectedService === 'hailuo' && !hailuoConfig) {
+				await loadHailuoConfig();
 			}
 
 			// 立即刷新一次积分
@@ -136,6 +141,11 @@
 					selectedModel = 'veo3'; // 如果当前模型不是Veo模型，使用默认值
 					console.log(`🎯 【Veo模型】回退到默认模型: veo3`);
 				}
+			} else if (selectedService === 'hailuo') {
+				watermark = false;
+				if (hailuoConfig?.default_model) {
+					selectedModel = hailuoConfig.default_model;
+				}
 			}
 		}, 100); // 100ms防抖
 	}
@@ -150,15 +160,13 @@
 	let selectedModel = 'kling-v1'; // 选择的模型版本
 	let watermark = false; // 水印设置
 	let enhancePrompt = true; // Veo提示词优化
+	let hailuoPromptOptimizer = true; // 海螺提示词优化
+	let selectedResolution: '768P' | '1080P' = '768P'; // 海螺分辨率
 
 	// 图生视频参数
 	let inputImage: string | null = null; // base64数据
 	let imageTail: string | null = null; // 尾帧图片
 	let selectedGenerationType: 'text-to-video' | 'image-to-video' = 'text-to-video';
-
-	// 多图参考参数
-	let multiImages: Array<{ image: string; preview: string }> = []; // 多图参考列表
-	const maxMultiImages = 4;
 
 	// Veo专用图片输入
 	let veoImage1: string | null = null; // Veo第一张图片
@@ -169,7 +177,7 @@
 	// 图生视频高级功能
 	let staticMask: string | null = null; // 静态笔刷
 	let dynamicMasks: Array<{ mask: string; trajectories: Array<{ x: number; y: number }> }> = []; // 动态笔刷
-	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' | 'multi-image' = 'basic'; // 图生视频模式
+	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' = 'basic'; // 图生视频模式
 
 	// 摄像机控制参数
 	let cameraControlType:
@@ -249,6 +257,14 @@
 		}
 	];
 
+	// Hailuo 模型选项
+	const hailuoModelOptions = [
+		{ value: 'MiniMax-Hailuo-02', label: 'Hailuo 02', type: 'image' },
+		{ value: 'I2V-01-Director', label: 'I2V-01 Director', type: 'image' },
+		{ value: 'I2V-01-live', label: 'I2V-01 Live', type: 'image' },
+		{ value: 'I2V-01', label: 'I2V-01', type: 'image' }
+	];
+
 	// 根据生成类型和服务获取当前可用的模型选项
 	$: currentModelOptions = (() => {
 		if (selectedService === 'veo') {
@@ -262,6 +278,8 @@
 			return selectedGenerationType === 'text-to-video'
 				? textToVideoModelOptions
 				: imageToVideoModelOptions;
+		} else if (selectedService === 'hailuo') {
+			return hailuoModelOptions; // 海螺仅图生为主，仍允许选择
 		} else {
 			// Jimeng 暂时使用固定选项
 			return [{ value: 'jimeng-default', label: '即梦默认' }];
@@ -312,7 +330,10 @@
 	}
 
 	// 根据选择的Veo模型自动设置图片模式
-	$: if (selectedService === 'veo' && selectedGenerationType === 'image-to-video') {
+	$: if (
+		(selectedService === 'veo' || selectedService === 'hailuo') &&
+		selectedGenerationType === 'image-to-video'
+	) {
 		if (selectedModel.includes('components')) {
 			selectedVeoImageMode = 'components'; // 三张图片模式
 		} else if (selectedModel === 'veo3-pro-frames') {
@@ -321,6 +342,15 @@
 			selectedVeoImageMode = 'frames'; // 首尾帧模式（两张图片）
 		} else {
 			selectedVeoImageMode = 'single'; // 单张图片模式
+		}
+	}
+
+	// 海螺：当选择支持首尾帧的模型（MiniMax-Hailuo-02）时，自动切换到首尾帧模式
+	$: if (selectedService === 'hailuo' && selectedGenerationType === 'image-to-video') {
+		if (selectedModel === 'MiniMax-Hailuo-02') {
+			selectedImageVideoMode = 'first-last';
+		} else if (selectedImageVideoMode === 'first-last') {
+			selectedImageVideoMode = 'basic';
 		}
 	}
 
@@ -333,50 +363,19 @@
 		];
 
 		// 首尾帧模式仅在可灵服务下可用
-		if (selectedService === 'kling') {
+		if (selectedService === 'kling' || selectedService === 'hailuo') {
 			// 在基础模式后插入首尾帧模式
 			baseOptions.splice(1, 0, {
 				value: 'first-last',
 				label: '首尾帧模式',
 				desc: '同时使用首帧和尾帧图片 (自动使用V1.6专家模式)'
 			});
-
-			// 在首尾帧模式后插入多图参考模式
-			baseOptions.splice(2, 0, {
-				value: 'multi-image',
-				label: '多图参考',
-				desc: '使用多张参考图片（仅V1.6，最多4张，积分不变）'
-			});
 		}
 
 		return baseOptions;
 	})();
 
-	// 当选择首尾帧模式时，自动设置模型和视频模式
-	$: {
-		if (selectedImageVideoMode === 'first-last' && selectedService === 'kling') {
-			// 自动设置为可灵V1.6模型和专家模式
-			if (selectedModel !== 'kling-v1-6') {
-				selectedModel = 'kling-v1-6';
-				console.log('🎬 【首尾帧模式】自动切换到可灵V1.6模型');
-			}
-			if (selectedMode !== 'pro') {
-				selectedMode = 'pro';
-				console.log('🎬 【首尾帧模式】自动切换到专家模式');
-			}
-		}
-	}
-
-	// 当选择多图参考模式时，自动设置模型
-	$: {
-		if (selectedImageVideoMode === 'multi-image' && selectedService === 'kling') {
-			// 多图参考模式只支持可灵V1.6模型
-			if (selectedModel !== 'kling-v1-6') {
-				selectedModel = 'kling-v1-6';
-				console.log('🎬 【多图参考模式】自动切换到可灵V1.6模型');
-			}
-		}
-	}
+	// 取消对 selectedImageVideoMode -> selectedModel 的响应式联动，改为点击时设置，避免循环依赖
 
 	// 视频模式选项
 	const modeOptions = [
@@ -385,10 +384,30 @@
 	];
 
 	// 视频时长选项
-	const durationOptions = [
-		{ value: '5', label: '5秒' },
-		{ value: '10', label: '10秒' }
-	];
+	$: durationOptions = (() => {
+		if (selectedService === 'hailuo') {
+			if (selectedResolution === '1080P') {
+				return [{ value: '6', label: '6秒 (1080P 仅支持)' }];
+			}
+			return [
+				{ value: '6', label: '6秒' },
+				{ value: '10', label: '10秒' }
+			];
+		}
+		return [
+			{ value: '5', label: '5秒' },
+			{ value: '10', label: '10秒' }
+		];
+	})();
+
+	// 当分辨率调整为1080P时，自动修正非法时长
+	$: if (
+		selectedService === 'hailuo' &&
+		selectedResolution === '1080P' &&
+		selectedDuration !== '6'
+	) {
+		selectedDuration = '6';
+	}
 
 	// 画面比例选项 - 根据选择的服务动态切换
 	$: aspectRatioOptions = (() => {
@@ -398,7 +417,7 @@
 				{ value: '9:16', label: '9:16 (竖向)' },
 				{ value: '1:1', label: '1:1 (正方形)' }
 			];
-		} else if (selectedService === 'veo') {
+		} else if (selectedService === 'veo' || selectedService === 'hailuo') {
 			return []; // Veo不支持自定义画面比例，由模型决定
 		} else {
 			// Jimeng
@@ -540,6 +559,24 @@
 		}
 	};
 
+	const loadHailuoConfig = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const cfg = await getHailuoUserConfig($user.token);
+			if (cfg) {
+				hailuoConfig = cfg;
+				// 设置海螺提示词优化默认值
+				if (cfg.prompt_optimizer !== undefined) {
+					hailuoPromptOptimizer = !!cfg.prompt_optimizer;
+				}
+				console.log('🐚 海螺配置已加载:', cfg);
+			}
+		} catch (error) {
+			console.error('加载海螺配置失败:', error);
+		}
+	};
+
 	const loadUserData = async () => {
 		console.log('🎬 【数据加载调试】loadUserData开始');
 
@@ -551,7 +588,12 @@
 		loadingData = true;
 		try {
 			// 加载所有配置
-			await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig()]);
+			await Promise.all([
+				loadKlingConfig(),
+				loadJimengConfig(),
+				loadVeoConfig(),
+				loadHailuoConfig()
+			]);
 
 			// 配置加载完成后，根据当前选择的服务设置正确的默认模型
 			if (selectedService === 'veo' && veoConfig?.default_model) {
@@ -568,6 +610,14 @@
 				// 即梦服务使用固定模型
 				selectedModel = 'jimeng-default';
 				console.log(`🌟 【初始化】为即梦服务设置默认模型: jimeng-default`);
+			} else if (selectedService === 'hailuo') {
+				selectedModel = hailuoConfig?.default_model || 'MiniMax-Hailuo-02';
+				selectedResolution = hailuoConfig?.default_resolution || '768P';
+				selectedDuration = String(hailuoConfig?.default_duration || '6');
+				hailuoPromptOptimizer = hailuoConfig?.prompt_optimizer ?? true;
+				console.log(
+					`🐚 【初始化】为海螺服务设置默认: ${selectedModel}, ${selectedResolution}, ${selectedDuration}s`
+				);
 			}
 
 			// 检查当前选择的服务是否可用
@@ -588,9 +638,16 @@
 			if (!currentConfig?.enabled) {
 				toast.error(`${serviceName}视频服务未启用，请联系管理员配置或切换到其他服务`);
 
-				// 尝试切换到可用的服务
-				if (selectedService === 'kling' && (jimengConfig?.enabled || veoConfig?.enabled)) {
-					if (jimengConfig?.enabled) {
+				// 尝试切换到可用的服务（优先海螺）
+				if (
+					selectedService === 'kling' &&
+					(hailuoConfig?.enabled || jimengConfig?.enabled || veoConfig?.enabled)
+				) {
+					if (hailuoConfig?.enabled) {
+						selectedService = 'hailuo';
+						selectedModel = hailuoConfig.default_model || 'MiniMax-Hailuo-02';
+						toast.info('已自动切换到海螺视频服务');
+					} else if (jimengConfig?.enabled) {
 						selectedService = 'jimeng';
 						selectedModel = 'jimeng-default';
 						toast.info('已自动切换到即梦视频服务');
@@ -599,8 +656,15 @@
 						selectedModel = veoConfig.default_model || 'veo3';
 						toast.info('已自动切换到Veo视频服务');
 					}
-				} else if (selectedService === 'jimeng' && (klingConfig?.enabled || veoConfig?.enabled)) {
-					if (klingConfig?.enabled) {
+				} else if (
+					selectedService === 'jimeng' &&
+					(hailuoConfig?.enabled || klingConfig?.enabled || veoConfig?.enabled)
+				) {
+					if (hailuoConfig?.enabled) {
+						selectedService = 'hailuo';
+						selectedModel = hailuoConfig.default_model || 'MiniMax-Hailuo-02';
+						toast.info('已自动切换到海螺视频服务');
+					} else if (klingConfig?.enabled) {
 						selectedService = 'kling';
 						selectedModel = 'kling-v1';
 						toast.info('已自动切换到可灵视频服务');
@@ -609,7 +673,25 @@
 						selectedModel = veoConfig.default_model || 'veo3';
 						toast.info('已自动切换到Veo视频服务');
 					}
-				} else if (selectedService === 'veo' && (klingConfig?.enabled || jimengConfig?.enabled)) {
+				} else if (
+					selectedService === 'veo' &&
+					(hailuoConfig?.enabled || klingConfig?.enabled || jimengConfig?.enabled)
+				) {
+					if (hailuoConfig?.enabled) {
+						selectedService = 'hailuo';
+						selectedModel = hailuoConfig.default_model || 'MiniMax-Hailuo-02';
+						toast.info('已自动切换到海螺视频服务');
+					} else if (klingConfig?.enabled) {
+						selectedService = 'kling';
+						selectedModel = 'kling-v1';
+						toast.info('已自动切换到可灵视频服务');
+					} else if (jimengConfig?.enabled) {
+						selectedService = 'jimeng';
+						selectedModel = 'jimeng-default';
+						toast.info('已自动切换到即梦视频服务');
+					}
+				} else if (selectedService === 'hailuo' && !hailuoConfig?.enabled) {
+					// 当前是海螺但不可用，降级到可用服务
 					if (klingConfig?.enabled) {
 						selectedService = 'kling';
 						selectedModel = 'kling-v1';
@@ -618,6 +700,10 @@
 						selectedService = 'jimeng';
 						selectedModel = 'jimeng-default';
 						toast.info('已自动切换到即梦视频服务');
+					} else if (veoConfig?.enabled) {
+						selectedService = 'veo';
+						selectedModel = veoConfig.default_model || 'veo3';
+						toast.info('已自动切换到Veo视频服务');
 					}
 				}
 			}
@@ -635,6 +721,9 @@
 			} else if (selectedService === 'veo') {
 				getCreditsFunction = getVeoUserCredits;
 				serviceDisplayName = 'Veo';
+			} else if (selectedService === 'hailuo') {
+				getCreditsFunction = getHailuoUserCredits;
+				serviceDisplayName = '海螺';
 			}
 
 			const credits = await getCreditsFunction($user.token);
@@ -646,7 +735,7 @@
 			}
 
 			// 加载用户历史记录 - 混合显示三种服务的记录
-			const [klingHistory, jimengHistory, veoHistory] = await Promise.all([
+			const [klingHistory, jimengHistory, veoHistory, hailuoHistory] = await Promise.all([
 				klingConfig?.enabled
 					? getKlingUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] },
@@ -655,6 +744,9 @@
 					: { data: [] },
 				veoConfig?.enabled
 					? getVeoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+					: { data: [] },
+				hailuoConfig?.enabled
+					? getHailuoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
 					: { data: [] }
 			]);
 
@@ -662,7 +754,8 @@
 			const allTasks = [
 				...(klingHistory.data || []),
 				...(jimengHistory.data || []),
-				...(veoHistory.data || [])
+				...(veoHistory.data || []),
+				...(hailuoHistory.data || [])
 			].sort((a, b) => {
 				const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
 				const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
@@ -710,6 +803,9 @@
 		} else if (selectedService === 'veo') {
 			serviceDisplayName = 'Veo';
 			getCreditsFunction = getVeoUserCredits;
+		} else if (selectedService === 'hailuo') {
+			serviceDisplayName = '海螺';
+			getCreditsFunction = getHailuoUserCredits;
 		}
 
 		console.log(`💰 【积分刷新】开始获取${serviceDisplayName}积分...`);
@@ -743,11 +839,14 @@
 		} else if (selectedService === 'veo') {
 			currentConfig = veoConfig;
 			serviceName = 'Veo';
+		} else if (selectedService === 'hailuo') {
+			currentConfig = hailuoConfig;
+			serviceName = '海螺';
 		}
 
 		// 生成前重新获取最新配置，确保积分设置是最新的
 		console.log(`🎬 【${serviceName}】生成前刷新配置和积分...`);
-		await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig()]);
+		await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig(), loadHailuoConfig()]);
 
 		// 重新获取积分余额以确保是最新的
 		let getCreditsFunction;
@@ -757,6 +856,8 @@
 			getCreditsFunction = getJimengUserCredits;
 		} else if (selectedService === 'veo') {
 			getCreditsFunction = getVeoUserCredits;
+		} else if (selectedService === 'hailuo') {
+			getCreditsFunction = getHailuoUserCredits;
 		}
 
 		const latestCredits = await getCreditsFunction($user.token);
@@ -799,10 +900,7 @@
 				}
 			} else {
 				// 可灵和即梦使用原有验证
-				// 多图参考模式跳过单图验证
-				if (selectedService === 'kling' && selectedImageVideoMode === 'multi-image') {
-					// 多图模式验证将在可灵特有功能验证中处理
-				} else if (!inputImage) {
+				if (!inputImage) {
 					toast.error('图生视频模式需要上传输入图片');
 					return;
 				}
@@ -820,23 +918,6 @@
 						toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
 						return;
 					}
-
-					// 多图参考模式验证
-					if (selectedImageVideoMode === 'multi-image') {
-						if (multiImages.length === 0) {
-							toast.error('多图参考模式需要至少上传1张图片');
-							return;
-						}
-						if (multiImages.length > maxMultiImages) {
-							toast.error(`多图参考模式最多支持${maxMultiImages}张图片`);
-							return;
-						}
-						// 验证模型是否为 kling-v1-6
-						if (selectedModel !== 'kling-v1-6') {
-							toast.error('多图参考模式只支持 kling-v1-6 模型');
-							return;
-						}
-					}
 				}
 			}
 		}
@@ -844,7 +925,11 @@
 		isGenerating = true;
 		try {
 			// 构建生成请求 - 根据选择的服务
-			let request: KlingGenerateRequest | JimengGenerateRequest | VeoGenerateRequest;
+			let request:
+				| KlingGenerateRequest
+				| JimengGenerateRequest
+				| VeoGenerateRequest
+				| HailuoGenerateRequest;
 
 			if (selectedService === 'kling') {
 				request = {
@@ -872,6 +957,15 @@
 					model: selectedModel,
 					enhance_prompt: enhancePrompt
 				} as VeoGenerateRequest;
+			} else if (selectedService === 'hailuo') {
+				// 海螺请求参数
+				request = {
+					prompt: prompt.trim(),
+					model: selectedModel,
+					duration: parseInt(selectedDuration || '6'),
+					resolution: selectedResolution || '768P',
+					prompt_optimizer: hailuoPromptOptimizer
+				} as unknown as HailuoGenerateRequest;
 			}
 
 			// 如果是图生视频，添加图片和相关参数
@@ -883,6 +977,14 @@
 					if (veoImage2) images.push(veoImage2);
 					if (veoImage3) images.push(veoImage3);
 					(request as VeoGenerateRequest).images = images;
+				} else if (selectedService === 'hailuo') {
+					// 海螺接受 Data URL，直接传入首帧/尾帧
+					if (inputImage) {
+						(request as any).first_frame_image = inputImage;
+					}
+					if (selectedImageVideoMode === 'first-last' && imageTail) {
+						(request as any).last_frame_image = imageTail;
+					}
 				} else {
 					// 可灵和即梦使用原有的inputImage
 					if (inputImage) {
@@ -907,14 +1009,7 @@
 				const klingRequest = request as KlingGenerateRequest;
 
 				// 根据选择的模式添加不同的参数
-				if (selectedImageVideoMode === 'multi-image' && multiImages.length > 0) {
-					// 多图参考模式
-					klingRequest.generationMode = 'multi_image';
-					klingRequest.imageList = multiImages.map((img) => ({
-						image: img.image.startsWith('data:') ? img.image.split(',')[1] : img.image
-					}));
-					console.log('🎬 【可灵多图】设置多图参考:', multiImages.length, '张图片');
-				} else if (selectedImageVideoMode === 'first-last' && imageTail) {
+				if (selectedImageVideoMode === 'first-last' && imageTail) {
 					// 尾帧模式
 					let tailBase64 = imageTail;
 					if (imageTail.startsWith('data:')) {
@@ -1008,8 +1103,13 @@
 						? (request as KlingGenerateRequest).modelName
 						: selectedService === 'veo'
 							? (request as VeoGenerateRequest).model
-							: 'jimeng-default',
-				hasInputImage: !!(request as any).image || !!(request as any).images,
+							: selectedService === 'hailuo'
+								? (request as any).model
+								: 'jimeng-default',
+				hasInputImage:
+					!!(request as any).image ||
+					!!(request as any).images ||
+					!!(request as any).first_frame_image,
 				prompt: request.prompt
 			});
 
@@ -1030,6 +1130,8 @@
 					selectedGenerationType === 'image-to-video'
 						? await submitVeoImageToVideoTask($user.token, request as VeoGenerateRequest)
 						: await submitVeoTextToVideoTask($user.token, request as VeoGenerateRequest);
+			} else if (selectedService === 'hailuo') {
+				result = await hailuoGenerate($user.token, request as any);
 			}
 
 			if (result && result.success) {
@@ -1040,7 +1142,9 @@
 							? getKlingUserCredits
 							: selectedService === 'jimeng'
 								? getJimengUserCredits
-								: getVeoUserCredits;
+								: selectedService === 'veo'
+									? getVeoUserCredits
+									: getHailuoUserCredits;
 					const credits = await getCreditsFunction($user.token);
 					if (credits) {
 						userCredits = credits.balance || 0;
@@ -1054,12 +1158,7 @@
 				const baseTask = {
 					id: result.task_id,
 					userId: $user.id,
-					action:
-						selectedGenerationType === 'image-to-video'
-							? selectedService === 'kling' && selectedImageVideoMode === 'multi-image'
-								? 'MULTI_IMAGE_TO_VIDEO'
-								: 'IMAGE_TO_VIDEO'
-							: 'TEXT_TO_VIDEO',
+					action: selectedGenerationType === 'image-to-video' ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
 					status: 'submitted',
 					prompt: prompt.trim(),
 					duration: selectedDuration,
@@ -1168,13 +1267,24 @@
 
 			console.log(`💰 【Veo积分计算】模型 ${selectedModel} = ${credits}积分`);
 			return credits;
+		} else if (selectedService === 'hailuo') {
+			const cfg = hailuoConfig;
+			// 读取模型-分辨率-时长
+			const res = selectedResolution || '768P';
+			const dur = String(parseInt(selectedDuration || '6'));
+			let credits = 100;
+			try {
+				credits = cfg.model_credits_config[selectedModel][res][dur] || 100;
+			} catch (e) {}
+			console.log(`💰 【海螺积分计算】模型 ${selectedModel} / ${res}/${dur}s = ${credits}积分`);
+			return credits;
 		}
 
 		return 50; // 默认值
 	})();
 
 	// 轮询任务状态
-	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng' | 'veo') => {
+	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng' | 'veo' | 'hailuo') => {
 		let serviceName;
 		if (service === 'kling') {
 			serviceName = '可灵';
@@ -1182,6 +1292,8 @@
 			serviceName = '即梦';
 		} else if (service === 'veo') {
 			serviceName = 'Veo';
+		} else if (service === 'hailuo') {
+			serviceName = '海螺';
 		}
 
 		console.log(`🎬 【${serviceName}轮询】开始轮询任务:`, taskId);
@@ -1211,6 +1323,8 @@
 					getTaskStatusFunction = getJimengTaskStatus;
 				} else if (service === 'veo') {
 					getTaskStatusFunction = getVeoTaskStatus;
+				} else if (service === 'hailuo') {
+					getTaskStatusFunction = getHailuoTaskStatus as any;
 				}
 
 				const task = await getTaskStatusFunction($user.token, taskId);
@@ -1250,7 +1364,9 @@
 									? getKlingUserCredits
 									: service === 'jimeng'
 										? getJimengUserCredits
-										: getVeoUserCredits;
+										: service === 'veo'
+											? getVeoUserCredits
+											: getHailuoUserCredits;
 							const credits = await getCreditsFunction($user.token);
 							if (credits) {
 								const oldBalance = userCredits;
@@ -1302,7 +1418,7 @@
 	// 图片上传处理
 	const handleImageUpload = async (
 		event: Event,
-		type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3' | 'multi'
+		type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3'
 	) => {
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
@@ -1343,25 +1459,6 @@
 			} else if (type === 'veo3') {
 				veoImage3 = base64;
 				console.log('🎯 【Veo】第3张图片上传成功:', file.name);
-			} else if (type === 'multi') {
-				// 多图模式：检查数量限制
-				if (multiImages.length >= maxMultiImages) {
-					toast.error(`最多只能上传${maxMultiImages}张图片`);
-					return;
-				}
-
-				multiImages = [
-					...multiImages,
-					{
-						image: base64,
-						preview: base64
-					}
-				];
-				console.log(
-					'🎬 【可灵多图】图片上传成功:',
-					file.name,
-					`(${multiImages.length}/${maxMultiImages})`
-				);
 			}
 		} catch (error) {
 			console.error('🎬 【可灵】图片上传失败:', error);
@@ -1370,65 +1467,6 @@
 
 		// 清空input值，允许重复上传同一文件
 		target.value = '';
-	};
-
-	// 批量多图上传处理
-	const handleMultiImagesUpload = async (event: Event) => {
-		const target = event.target as HTMLInputElement;
-		const files = Array.from(target.files || []);
-
-		if (files.length === 0) return;
-
-		// 检查数量限制
-		if (multiImages.length + files.length > maxMultiImages) {
-			toast.error(`最多只能上传${maxMultiImages}张图片，当前已有${multiImages.length}张`);
-			return;
-		}
-
-		for (const file of files) {
-			// 验证文件类型
-			if (!file.type.startsWith('image/')) {
-				toast.error(`文件 ${file.name} 不是图片格式`);
-				continue;
-			}
-
-			// 验证文件大小 (10MB)
-			if (file.size > 10 * 1024 * 1024) {
-				toast.error(`图片 ${file.name} 大小不能超过10MB`);
-				continue;
-			}
-
-			try {
-				// 转换为base64
-				const base64 = await fileToBase64(file);
-
-				multiImages = [
-					...multiImages,
-					{
-						image: base64,
-						preview: base64
-					}
-				];
-
-				console.log(
-					'🎬 【可灵多图】批量上传成功:',
-					file.name,
-					`(${multiImages.length}/${maxMultiImages})`
-				);
-			} catch (error) {
-				console.error('🎬 【可灵多图】上传失败:', file.name, error);
-				toast.error(`图片 ${file.name} 上传失败`);
-			}
-		}
-
-		// 清空input值
-		target.value = '';
-	};
-
-	// 删除多图中的某张图片
-	const removeMultiImage = (index: number) => {
-		multiImages = multiImages.filter((_, i) => i !== index);
-		console.log('🎬 【可灵多图】删除图片:', index, `剩余(${multiImages.length}/${maxMultiImages})`);
 	};
 
 	// 文件转Base64
@@ -1442,7 +1480,7 @@
 	};
 
 	// 删除任务
-	const handleDeleteTask = async (task: KlingTask | JimengTask | VeoTask) => {
+	const handleDeleteTask = async (task: any) => {
 		if (!$user?.token) {
 			toast.error('请先登录');
 			return;
@@ -1455,7 +1493,13 @@
 			// 确定服务类型
 			const taskServiceType = task.serviceType || 'kling'; // 默认为kling
 			const serviceName =
-				taskServiceType === 'kling' ? '可灵' : taskServiceType === 'jimeng' ? '即梦' : 'Veo';
+				taskServiceType === 'kling'
+					? '可灵'
+					: taskServiceType === 'jimeng'
+						? '即梦'
+						: taskServiceType === 'veo'
+							? 'Veo'
+							: '海螺';
 
 			console.log(`🗑️ 删除${serviceName}任务: ${task.id}`);
 
@@ -1464,7 +1508,9 @@
 					? deleteKlingTask
 					: taskServiceType === 'jimeng'
 						? deleteJimengTask
-						: deleteVeoTask;
+						: taskServiceType === 'veo'
+							? deleteVeoTask
+							: deleteHailuoTask;
 			const success = await deleteFunction($user.token, task.id);
 
 			if (success) {
@@ -1591,15 +1637,9 @@
 			enhancePrompt = task.enhance_prompt !== undefined ? task.enhance_prompt : true;
 		}
 
-		if (task.action === 'IMAGE_TO_VIDEO' || task.action === 'MULTI_IMAGE_TO_VIDEO') {
+		if (task.action === 'IMAGE_TO_VIDEO') {
 			selectedGenerationType = 'image-to-video';
-
-			if (task.action === 'MULTI_IMAGE_TO_VIDEO') {
-				selectedImageVideoMode = 'multi-image';
-				multiImages = task.inputImages || [];
-			} else {
-				inputImage = task.inputImage || null;
-			}
+			inputImage = task.inputImage || null;
 		} else {
 			selectedGenerationType = 'text-to-video';
 		}
@@ -1607,191 +1647,6 @@
 		// 开始生成
 		await generateVideo();
 		toast.info('开始重新生成视频...');
-	};
-
-	// ======================== 视频延长功能 ========================
-
-	// 检查视频延长资格并缓存结果
-	const checkVideoExtendEligibility = async (task: KlingTask) => {
-		if (!$user?.token || task.serviceType !== 'kling' || !task.videoId) {
-			return null;
-		}
-
-		// 检查缓存
-		if (extendChecks.has(task.videoId)) {
-			return extendChecks.get(task.videoId);
-		}
-
-		try {
-			extendingTasks.add(task.id);
-			extendingTasks = extendingTasks; // 触发响应性更新
-
-			const result = await checkKlingVideoExtendEligibility($user.token, task.videoId);
-			extendChecks.set(task.videoId, result);
-			return result;
-		} catch (error) {
-			console.error('检查延长资格失败:', error);
-			return null;
-		} finally {
-			extendingTasks.delete(task.id);
-			extendingTasks = extendingTasks; // 触发响应性更新
-		}
-	};
-
-	// 处理视频延长
-	const handleVideoExtend = async (task: KlingTask) => {
-		if (!$user?.token || task.serviceType !== 'kling' || !task.videoId) {
-			toast.error('无法延长此视频');
-			return;
-		}
-
-		// 先检查资格
-		const eligibility = await checkVideoExtendEligibility(task);
-		if (!eligibility || !eligibility.canExtend) {
-			toast.error(eligibility?.reason || '无法延长此视频');
-			return;
-		}
-
-		try {
-			extendingTasks.add(task.id);
-			extendingTasks = extendingTasks; // 触发响应性更新
-
-			const extendRequest: KlingVideoExtendRequest = {
-				videoId: task.videoId,
-				prompt: task.prompt, // 使用原始提示词
-				negativePrompt: task.negativePrompt,
-				cfgScale: task.cfgScale
-			};
-
-			console.log(`🎬 【可灵延长】提交延长请求: ${task.videoId}, 积分: ${eligibility.creditsCost}`);
-			const result = await submitKlingVideoExtendTask($user.token, extendRequest);
-
-			if (result.success) {
-				// 创建延长任务记录（模拟）
-				const extendTask: KlingTask = {
-					id: result.task_id,
-					userId: $user.id,
-					externalTaskId: '',
-					action: 'VIDEO_EXTEND',
-					status: 'submitted',
-					taskStatusMsg: '延长任务已提交',
-					modelName: task.modelName,
-					prompt: task.prompt,
-					negativePrompt: task.negativePrompt,
-					cfgScale: task.cfgScale,
-					mode: task.mode,
-					duration: task.duration,
-					aspectRatio: task.aspectRatio,
-					parentTaskId: task.id,
-					isExtended: true,
-					extendCount: (eligibility.extendCount || 0) + 1,
-					creditsCost: result.credits_cost || eligibility.creditsCost || 0,
-					progress: '延长中...',
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					properties: {
-						serviceType: 'kling',
-						action: 'VIDEO_EXTEND',
-						originalVideoId: task.videoId
-					}
-				};
-
-				// 添加到任务历史
-				taskHistory = [extendTask, ...taskHistory];
-
-				// 开始轮询延长任务状态
-				pollExtendTaskStatus(result.task_id);
-
-				// 刷新积分
-				await refreshCredits();
-
-				// 清除缓存
-				extendChecks.delete(task.videoId);
-
-				toast.success(
-					`视频延长任务已提交，消耗 ${result.credits_cost || eligibility.creditsCost} 积分`
-				);
-			}
-		} catch (error) {
-			console.error('延长视频失败:', error);
-			toast.error('延长视频失败: ' + (error.message || error));
-		} finally {
-			extendingTasks.delete(task.id);
-			extendingTasks = extendingTasks; // 触发响应性更新
-		}
-	};
-
-	// 轮询延长任务状态
-	const pollExtendTaskStatus = async (taskId: string) => {
-		if (!$user?.token) return;
-
-		const maxAttempts = 60; // 最多轮询60次
-		const interval = 10000; // 每10秒轮询一次
-		let attempts = 0;
-
-		const poll = async () => {
-			try {
-				attempts++;
-				console.log(`🔍 【可灵延长】轮询延长任务状态: ${taskId} (${attempts}/${maxAttempts})`);
-
-				const task = await getKlingVideoExtendTaskStatus($user.token, taskId);
-
-				// 更新任务历史中的任务状态
-				taskHistory = taskHistory.map((t) => (t.id === taskId ? { ...task } : t));
-
-				if (task.status === 'succeed') {
-					console.log(`✅ 【可灵延长】延长任务完成: ${taskId}`);
-					toast.success('视频延长完成！');
-					// 刷新积分
-					await refreshCredits();
-					return; // 停止轮询
-				} else if (task.status === 'failed') {
-					console.log(`❌ 【可灵延长】延长任务失败: ${taskId}`);
-					toast.error('视频延长失败: ' + (task.failReason || '未知错误'));
-					return; // 停止轮询
-				}
-
-				// 继续轮询
-				if (attempts < maxAttempts) {
-					setTimeout(poll, interval);
-				} else {
-					console.log(`⏱️ 【可灵延长】延长任务轮询超时: ${taskId}`);
-					toast.warning('延长任务状态查询超时，请稍后手动刷新');
-				}
-			} catch (error) {
-				console.error('轮询延长任务状态失败:', error);
-				if (attempts < maxAttempts) {
-					setTimeout(poll, interval);
-				}
-			}
-		};
-
-		// 延迟一点开始轮询，给后端时间处理
-		setTimeout(poll, 3000);
-	};
-
-	// 计算视频总时长（包括延长）
-	const calculateTotalDuration = (task: KlingTask | JimengTask | VeoTask) => {
-		if (task.serviceType !== 'kling') {
-			return task.duration; // 非可灵任务直接返回原时长
-		}
-
-		const klingTask = task as KlingTask;
-
-		// 如果是延长任务，显示累计时长
-		if (klingTask.isExtended && klingTask.originalDuration) {
-			const originalDuration = parseInt(klingTask.originalDuration) || 0;
-			const extendDuration = parseInt(klingTask.duration) || 0;
-			return (originalDuration + extendDuration * (klingTask.extendCount || 1)).toString();
-		}
-
-		// 如果有视频实际时长，使用实际时长
-		if (klingTask.videoDuration) {
-			return klingTask.videoDuration;
-		}
-
-		// 否则返回设置的时长
-		return klingTask.duration;
 	};
 
 	// 积分余额定期刷新
@@ -1839,7 +1694,7 @@
 						<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							🎬 视频生成服务
 						</h3>
-						<div class="grid grid-cols-3 gap-1 mb-3">
+						<div class="grid grid-cols-4 gap-1 mb-3">
 							<button
 								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
 								'kling'
@@ -1865,6 +1720,15 @@
 								on:click={() => (selectedService = 'veo')}
 							>
 								🎯 Veo AI
+							</button>
+							<button
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
+								'hailuo'
+									? 'bg-rose-500 text-white border-rose-500'
+									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+								on:click={() => (selectedService = 'hailuo')}
+							>
+								🐚 海螺
 							</button>
 						</div>
 
@@ -1893,7 +1757,7 @@
 									<div class="text-xl">🌟</div>
 								</div>
 							</div>
-						{:else}
+						{:else if selectedService === 'veo'}
 							<div class="rounded-lg p-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
 								<div class="flex items-center justify-between">
 									<div>
@@ -1903,6 +1767,18 @@
 										</div>
 									</div>
 									<div class="text-xl">🎯</div>
+								</div>
+							</div>
+						{:else}
+							<div class="rounded-lg p-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white">
+								<div class="flex items-center justify-between">
+									<div>
+										<div class="font-medium">海螺 Hailuo</div>
+										<div class="text-xs opacity-75">
+											{hailuoConfig?.enabled ? '已启用' : '未配置'}
+										</div>
+									</div>
+									<div class="text-xl">🐚</div>
 								</div>
 							</div>
 						{/if}
@@ -1915,7 +1791,9 @@
 								? '可灵'
 								: selectedService === 'jimeng'
 									? '即梦'
-									: 'Veo'}视频生成
+									: selectedService === 'veo'
+										? 'Veo'
+										: '海螺'}视频生成
 						</div>
 						<div>消耗积分: {requiredCredits}积分/次</div>
 						<div class="flex justify-between items-center">
@@ -1982,7 +1860,9 @@
 										? klingConfig?.enabled
 										: selectedService === 'jimeng'
 											? jimengConfig?.enabled
-											: veoConfig?.enabled)}
+											: selectedService === 'veo'
+												? veoConfig?.enabled
+												: hailuoConfig?.enabled)}
 								class="px-4 py-1 {selectedService === 'kling'
 									? 'bg-purple-500 hover:bg-purple-600'
 									: selectedService === 'jimeng'
@@ -2014,7 +1894,14 @@
 											option.value
 												? 'bg-blue-500 text-white border-blue-500'
 												: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-											on:click={() => (selectedImageVideoMode = option.value)}
+											on:click={() => {
+												selectedImageVideoMode = option.value;
+												// 若选择可灵 + 首尾帧模式，则设置推荐模型与专家模式，避免用户漏选
+												if (selectedService === 'kling' && option.value === 'first-last') {
+													if (selectedModel !== 'kling-v1-6') selectedModel = 'kling-v1-6';
+													if (selectedMode !== 'pro') selectedMode = 'pro';
+												}
+											}}
 											title={option.desc}
 										>
 											{option.label}
@@ -2174,58 +2061,56 @@
 								{/if}
 							</div>
 						{:else}
-							<!-- 可灵和即梦的输入图片 (多图参考模式下隐藏) -->
-							{#if !(selectedService === 'kling' && selectedImageVideoMode === 'multi-image')}
-								<div>
-									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-										{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
-											? '首帧图片'
-											: '输入图片'}
-									</label>
-									<div
-										class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-									>
-										{#if inputImage}
-											<div class="relative">
-												<img
-													src={inputImage}
-													alt="输入图片"
-													class="w-full h-32 object-cover rounded"
-												/>
-												<button
-													on:click={() => (inputImage = null)}
-													class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
-													title="删除图片"
-												>
-													×
-												</button>
-											</div>
-										{:else}
-											<div class="text-center">
-												<input
-													type="file"
-													id="input-image"
-													accept="image/*"
-													class="hidden"
-													on:change={(e) => handleImageUpload(e, 'input')}
-												/>
-												<button
-													type="button"
-													on:click={() => document.getElementById('input-image')?.click()}
-													class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
-												>
-													选择图片
-												</button>
-												<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
-											</div>
-										{/if}
-									</div>
+							<!-- 可灵和即梦的输入图片 -->
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+									{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
+										? '首帧图片'
+										: '输入图片'}
+								</label>
+								<div
+									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+								>
+									{#if inputImage}
+										<div class="relative">
+											<img
+												src={inputImage}
+												alt="输入图片"
+												class="w-full h-32 object-cover rounded"
+											/>
+											<button
+												on:click={() => (inputImage = null)}
+												class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-colors"
+												title="删除图片"
+											>
+												×
+											</button>
+										</div>
+									{:else}
+										<div class="text-center">
+											<input
+												type="file"
+												id="input-image"
+												accept="image/*"
+												class="hidden"
+												on:change={(e) => handleImageUpload(e, 'input')}
+											/>
+											<button
+												type="button"
+												on:click={() => document.getElementById('input-image')?.click()}
+												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+											>
+												选择图片
+											</button>
+											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+										</div>
+									{/if}
 								</div>
-							{/if}
+							</div>
 						{/if}
 
 						<!-- 可灵特有的尾帧图片 (首尾帧模式) -->
-						{#if selectedService === 'kling' && selectedImageVideoMode === 'first-last'}
+						{#if (selectedService === 'kling' || selectedService === 'hailuo') && selectedImageVideoMode === 'first-last'}
 							<div>
 								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
 									>尾帧图片</label
@@ -2314,82 +2199,6 @@
 											<div class="text-xs text-gray-500 mt-2">可选：静态笔刷涂抹区域</div>
 										</div>
 									{/if}
-								</div>
-							</div>
-						{/if}
-
-						<!-- 可灵特有的多图参考 (多图参考模式) -->
-						{#if selectedService === 'kling' && selectedImageVideoMode === 'multi-image'}
-							<div>
-								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-									多图参考上传 ({multiImages.length}/{maxMultiImages})
-								</label>
-
-								<!-- 图片网格显示 -->
-								{#if multiImages.length > 0}
-									<div class="grid grid-cols-2 gap-2 mb-4">
-										{#each multiImages as image, index}
-											<div class="relative">
-												<img
-													src={image.preview}
-													alt="参考图片 {index + 1}"
-													class="w-full h-24 object-cover rounded border"
-												/>
-												<button
-													on:click={() => removeMultiImage(index)}
-													class="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs transition-colors"
-													title="删除图片"
-												>
-													×
-												</button>
-												<div
-													class="absolute bottom-1 left-1 bg-black bg-opacity-50 text-white text-xs px-1 rounded"
-												>
-													{index + 1}
-												</div>
-											</div>
-										{/each}
-									</div>
-								{/if}
-
-								<!-- 上传区域 -->
-								<div
-									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
-								>
-									<div class="text-center">
-										<input
-											type="file"
-											id="multi-images"
-											accept="image/*"
-											multiple
-											class="hidden"
-											on:change={handleMultiImagesUpload}
-										/>
-										<button
-											type="button"
-											on:click={() => document.getElementById('multi-images')?.click()}
-											class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors mr-2"
-											disabled={multiImages.length >= maxMultiImages}
-										>
-											{multiImages.length === 0 ? '选择图片' : '继续添加'}
-										</button>
-
-										{#if multiImages.length > 0}
-											<button
-												type="button"
-												on:click={() => (multiImages = [])}
-												class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded transition-colors"
-											>
-												清空全部
-											</button>
-										{/if}
-
-										<div class="text-xs text-gray-500 mt-2">
-											• 支持 JPG、PNG、WebP 格式，单张图片最大 10MB<br />
-											• 最多上传 {maxMultiImages} 张图片，仅支持 kling-v1-6 模型<br />
-											• 积分费用与单图模式相同，多图不额外收费
-										</div>
-									</div>
 								</div>
 							</div>
 						{/if}
@@ -2704,7 +2513,7 @@
 						</div>
 
 						<!-- 模型版本选择 -->
-						{#if selectedService === 'kling' || selectedService === 'veo'}
+						{#if selectedService === 'kling' || selectedService === 'veo' || selectedService === 'hailuo'}
 							<div>
 								<div class="mb-1 text-xs text-gray-500">模型版本</div>
 								<select
@@ -2751,7 +2560,7 @@
 								</div>
 							{/if}
 
-							{#if selectedService !== 'veo'}
+							{#if selectedService !== 'veo' && selectedService !== 'hailuo'}
 								<div>
 									<div class="mb-1 text-xs text-gray-500">画面比例</div>
 									<select
@@ -2765,7 +2574,7 @@
 								</div>
 							{/if}
 
-							{#if selectedService !== 'veo'}
+							{#if selectedService !== 'veo' && selectedService !== 'hailuo'}
 								<div>
 									<div class="mb-1 text-xs text-gray-500">
 										CFG Scale
@@ -2797,6 +2606,19 @@
 								</div>
 							{/if}
 						</div>
+
+						{#if selectedService === 'hailuo'}
+							<div class="mt-2">
+								<div class="mb-1 text-xs text-gray-500">分辨率</div>
+								<select
+									bind:value={selectedResolution}
+									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+								>
+									<option value="768P">768P</option>
+									<option value="1080P">1080P</option>
+								</select>
+							</div>
+						{/if}
 					</div>
 
 					<!-- 即梦特有的水印设置 -->
@@ -2855,6 +2677,32 @@
 								/>
 								<label
 									for="enhance-prompt-checkbox"
+									class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
+								>
+									启用智能提示词优化
+								</label>
+							</div>
+							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+								开启后，AI 会自动优化您的提示词以获得更好的生成效果
+							</div>
+						</div>
+					{/if}
+
+					<!-- 海螺特有的提示词优化设置 -->
+					{#if selectedService === 'hailuo'}
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+								提示词优化设置
+							</label>
+							<div class="flex items-center space-x-2">
+								<input
+									type="checkbox"
+									id="hailuo-prompt-optimizer-checkbox"
+									bind:checked={hailuoPromptOptimizer}
+									class="w-4 h-4 text-teal-600 bg-gray-100 border-gray-300 rounded focus:ring-teal-500 dark:focus:ring-teal-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+								/>
+								<label
+									for="hailuo-prompt-optimizer-checkbox"
 									class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer"
 								>
 									启用智能提示词优化
@@ -3352,6 +3200,12 @@
 											>
 												Veo AI
 											</span>
+										{:else if task.serviceType === 'hailuo'}
+											<span
+												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-teal-500 to-cyan-500"
+											>
+												海螺 AI
+											</span>
 										{:else}
 											<span
 												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -3382,7 +3236,13 @@
 														<button
 															on:click|stopPropagation={() => {
 																const serviceName =
-																	task?.serviceType === 'jimeng' ? 'jimeng' : 'kling';
+																	task?.serviceType === 'jimeng'
+																		? 'jimeng'
+																		: task?.serviceType === 'veo'
+																			? 'veo'
+																			: task?.serviceType === 'hailuo'
+																				? 'hailuo'
+																				: 'kling';
 																downloadVideo(task.videoUrl, `${serviceName}-${task.id}.mp4`);
 															}}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
@@ -3403,40 +3263,6 @@
 														>
 															重新生成
 														</button>
-														<!-- 可灵视频延长按钮 -->
-														{#if task.serviceType === 'kling' && task.status === 'succeed' && task.videoUrl && task.videoId && ['kling-v1', 'kling-v1-5', 'kling-v1-6'].includes(task.modelName)}
-															{#await checkVideoExtendEligibility(task)}
-																<button
-																	disabled
-																	class="px-2 py-1 bg-purple-400 bg-opacity-90 text-white text-xs rounded transition-all font-medium cursor-not-allowed"
-																>
-																	检查中...
-																</button>
-															{:then eligibility}
-																{#if eligibility && eligibility.canExtend}
-																	<button
-																		on:click|stopPropagation={() => handleVideoExtend(task)}
-																		disabled={extendingTasks.has(task.id)}
-																		class="px-2 py-1 bg-purple-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-																		title={`延长视频 (${eligibility.creditsCost}积分)`}
-																	>
-																		{extendingTasks.has(task.id)
-																			? '延长中...'
-																			: `延长 (${eligibility.creditsCost})`}
-																	</button>
-																{:else if eligibility && !eligibility.canExtend}
-																	<button
-																		disabled
-																		class="px-2 py-1 bg-gray-400 bg-opacity-90 text-white text-xs rounded transition-all font-medium cursor-not-allowed"
-																		title={eligibility.reason || '无法延长'}
-																	>
-																		无法延长
-																	</button>
-																{/if}
-															{:catch error}
-																<!-- 检查失败时不显示按钮 -->
-															{/await}
-														{/if}
 														<button
 															on:click|stopPropagation={() => handleDeleteTask(task)}
 															class="px-2 py-1 bg-red-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
@@ -3501,12 +3327,11 @@
 													? '即梦'
 													: task.serviceType === 'veo'
 														? 'Veo'
-														: '可灵'} ({task.action === 'IMAGE_TO_VIDEO' ||
-												task.action === 'MULTI_IMAGE_TO_VIDEO'
+														: task.serviceType === 'hailuo'
+															? '海螺'
+															: '可灵'} ({task.action === 'IMAGE_TO_VIDEO'
 													? '图生视频'
-													: task.action === 'VIDEO_EXTEND'
-														? '延长视频'
-														: '文生视频'})
+													: '文生视频'})
 											</span>
 											<span
 												>{new Date(
@@ -3523,13 +3348,7 @@
 												{:else if task.serviceType === 'veo'}
 													{task.model || 'veo3'}
 												{:else}
-													<!-- 可灵任务显示 -->
-													{task.mode || 'std'} • {calculateTotalDuration(task)}秒 • {task.aspectRatio}
-													{#if task.serviceType === 'kling' && task.isExtended}
-														<span class="text-purple-600 dark:text-purple-400 ml-1"
-															>[已延长{task.extendCount || 1}次]</span
-														>
-													{/if}
+													{task.mode || 'std'} • {task.duration}秒 • {task.aspectRatio}
 												{/if}
 											</span>
 											<span
@@ -3601,6 +3420,12 @@
 							>
 								Veo AI
 							</span>
+						{:else if selectedVideoForViewing?.serviceType === 'hailuo'}
+							<span
+								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-teal-500 to-cyan-500"
+							>
+								海螺 AI
+							</span>
 						{:else}
 							<span
 								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -3656,15 +3481,7 @@
 							{:else if selectedVideoForViewing?.serviceType === 'veo'}
 								{selectedVideoForViewing?.model || 'veo3'}
 							{:else}
-								<!-- 可灵任务显示 -->
-								{selectedVideoForViewing?.mode || 'std'} • {calculateTotalDuration(
-									selectedVideoForViewing
-								)}秒 • {selectedVideoForViewing.aspectRatio}
-								{#if selectedVideoForViewing?.serviceType === 'kling' && selectedVideoForViewing.isExtended}
-									<span class="text-purple-600 dark:text-purple-400 ml-1"
-										>[已延长{selectedVideoForViewing.extendCount || 1}次]</span
-									>
-								{/if}
+								{selectedVideoForViewing?.mode || 'std'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{/if}
 						</div>
 					</div>
@@ -3673,7 +3490,13 @@
 						<button
 							on:click={() => {
 								const serviceName =
-									selectedVideoForViewing?.serviceType === 'jimeng' ? 'jimeng' : 'kling';
+									selectedVideoForViewing?.serviceType === 'jimeng'
+										? 'jimeng'
+										: selectedVideoForViewing?.serviceType === 'veo'
+											? 'veo'
+											: selectedVideoForViewing?.serviceType === 'hailuo'
+												? 'hailuo'
+												: 'kling';
 								downloadVideo(
 									selectedVideoForViewing.videoUrl,
 									`${serviceName}-${selectedVideoForViewing.id}.mp4`

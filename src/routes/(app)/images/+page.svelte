@@ -58,30 +58,13 @@
 		getFluxUserTaskHistory,
 		getFluxUserCredits,
 		getFluxUserConfig,
+		getFluxModels,
 		deleteFluxTask,
 		uploadFluxImage,
 		uploadFluxImages,
 		formatFluxProgress,
 		getFluxTaskImageUrl
 	} from '$lib/apis/flux';
-
-	// Import Google Images API functions
-	import {
-		type GoogleImagesTask,
-		type GoogleImagesConfig,
-		type GoogleImagesGenerateRequest,
-		generateGoogleImages,
-		getGoogleImagesTaskStatus,
-		getGoogleImagesUserTaskHistory,
-		getGoogleImagesUserCredits,
-		getGoogleImagesUserConfig,
-		deleteGoogleImagesTask,
-		validateImageData,
-		formatGoogleImagesProgress,
-		getGoogleImagesTaskImageUrl,
-		calculateGoogleImagesCredits,
-		convertGoogleImagesTaskToMJFormat
-	} from '$lib/apis/google_images';
 
 	// Import MJ streaming/callback system
 	import { mjCallbackHandler, type MJTaskUpdate } from '$lib/apis/midjourney/streaming';
@@ -101,10 +84,9 @@
 	let mjConfig: MJConfig | null = null;
 	let dreamWorkConfig: DreamWorkConfig | null = null;
 	let fluxConfig: FluxConfig | null = null;
-	let googleImagesConfig: GoogleImagesConfig | null = null;
 
 	// 服务选择
-	type ImageService = 'midjourney' | 'dreamwork' | 'flux' | 'google_images';
+	type ImageService = 'midjourney' | 'dreamwork' | 'flux';
 	let selectedService: ImageService = 'midjourney';
 	let availableServices: { id: ImageService; name: string; icon: string; enabled: boolean }[] = [];
 
@@ -140,51 +122,8 @@
 	let dreamWorkWatermarkEnabled = true;
 	let dreamWorkInputImage: string | null = null; // 图生图的输入图片(base64)
 
-	// Flux 参数 - 固定的7个模型，与管理员面板保持一致
-	const fluxModels = [
-		{
-			id: 'fal-ai/flux-1/schnell',
-			name: 'FLUX.1 [Schnell] - 快速模型',
-			type: 'basic',
-			description: '快速模型'
-		},
-		{
-			id: 'fal-ai/flux-1/dev',
-			name: 'FLUX.1 [Dev] - 标准模型',
-			type: 'basic',
-			description: '标准模型'
-		},
-		{
-			id: 'fal-ai/flux-1/dev/image-to-image',
-			name: 'FLUX.1 [Dev] 图生图',
-			type: 'basic',
-			description: '图生图'
-		},
-		{
-			id: 'fal-ai/flux-pro',
-			name: 'FLUX.1 [Pro] - 专业模型',
-			type: 'pro',
-			description: '专业模型'
-		},
-		{
-			id: 'fal-ai/flux-pro/kontext',
-			name: 'FLUX.1 Kontext [Pro]',
-			type: 'pro',
-			description: 'Kontext Pro'
-		},
-		{
-			id: 'fal-ai/flux-pro/kontext/multi',
-			name: 'FLUX.1 Kontext [Multi] - 多图编辑',
-			type: 'pro',
-			description: '多图编辑'
-		},
-		{
-			id: 'fal-ai/flux-pro/max',
-			name: 'FLUX.1 Kontext [Max Multi] - 高级多图',
-			type: 'pro',
-			description: '高级多图'
-		}
-	];
+	// Flux 参数
+	let fluxModels: FluxModel[] = [];
 	let selectedFluxModel = 'fal-ai/flux-1/schnell'; // 默认快速模型
 	let fluxNumImages = 1; // 图片数量
 	let fluxGuidanceScale = 3.5;
@@ -197,10 +136,6 @@
 	let fluxInputImageUrl: string | null = null; // 单图输入
 	let fluxInputImageUrls: string[] = []; // 多图输入
 	let fluxStrength = 0.95; // 图生图强度
-
-	// Google Images 参数
-	let googleImagesModel = 'nano-banana';
-	let googleImagesInputImages: string[] = []; // 参考图片列表
 
 	// 参考图片
 	let referenceImages: MJReferenceImage[] = [];
@@ -471,33 +406,17 @@
 				fluxConfig = config;
 				console.log('Flux配置已加载:', config);
 
+				// 加载支持的模型列表
+				const models = await getFluxModels($user.token);
+				fluxModels = models;
+
 				// 设置默认模型
-				if (config.default_model && fluxModels.find((m) => m.id === config.default_model)) {
+				if (config.default_model && models.find((m) => m.id === config.default_model)) {
 					selectedFluxModel = config.default_model;
 				}
 			}
 		} catch (error) {
 			console.error('加载Flux配置失败:', error);
-		}
-	};
-
-	// 加载谷歌生图配置
-	const loadGoogleImagesConfig = async () => {
-		if (!$user?.token) return;
-
-		try {
-			const config = await getGoogleImagesUserConfig($user.token);
-			if (config) {
-				googleImagesConfig = config;
-				console.log('谷歌生图配置已加载:', config);
-
-				// 设置默认参数
-				if (config.default_model && config.supported_models.includes(config.default_model)) {
-					googleImagesModel = config.default_model;
-				}
-			}
-		} catch (error) {
-			console.error('加载谷歌生图配置失败:', error);
 		}
 	};
 
@@ -520,12 +439,6 @@
 				name: 'Flux AI',
 				icon: '⚡',
 				enabled: fluxConfig?.enabled || false
-			},
-			{
-				id: 'google_images',
-				name: '谷歌生图',
-				icon: '🔍',
-				enabled: googleImagesConfig?.enabled || false
 			}
 		];
 
@@ -581,7 +494,6 @@
 			await loadMJConfig();
 			await loadDreamWorkConfig();
 			await loadFluxConfig();
-			await loadGoogleImagesConfig();
 			await updateAvailableServices();
 
 			// 加载用户积分 - 确保使用用户token进行隔离
@@ -661,21 +573,6 @@
 				console.error('加载Flux历史记录失败:', error);
 			}
 
-			// 4. 加载谷歌生图历史记录
-			try {
-				const googleImagesHistory = await getGoogleImagesUserTaskHistory($user.token, 1, 20);
-				if (googleImagesHistory && googleImagesHistory.data) {
-					console.log('🔍 加载谷歌生图历史记录:', googleImagesHistory.data.length, '个任务');
-					// 转换为统一格式并添加serviceType标识
-					const googleImagesTasksWithType = googleImagesHistory.data.map((task) =>
-						convertGoogleImagesTaskToMJFormat(task)
-					);
-					allTasks = [...allTasks, ...googleImagesTasksWithType];
-				}
-			} catch (error) {
-				console.error('加载谷歌生图历史记录失败:', error);
-			}
-
 			if (allTasks.length > 0) {
 				// 保留当前正在进行的任务，避免被覆盖
 				const currentTaskInHistory = currentTask ? [currentTask] : [];
@@ -727,7 +624,7 @@
 				console.log(
 					'📋 历史记录已更新，保留本地状态:',
 					taskHistory.length,
-					'个任务（MJ+DreamWork+Flux+谷歌生图）'
+					'个任务（MJ+DreamWork+Flux）'
 				);
 				console.log(
 					'📋 DreamWork任务数量:',
@@ -740,10 +637,6 @@
 				console.log(
 					'📋 Flux任务数量:',
 					taskHistory.filter((t) => t.properties?.serviceType === 'flux').length
-				);
-				console.log(
-					'📋 谷歌生图任务数量:',
-					taskHistory.filter((t) => t.properties?.serviceType === 'google_images').length
 				);
 
 				// 🔥 加载数据后强制修复本地任务显示
@@ -899,15 +792,7 @@
 					? dreamWorkConfig?.creditsPerGeneration || 10
 					: selectedService === 'flux'
 						? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1) // Flux按模型和图片数量计算积分
-						: selectedService === 'google_images'
-							? googleImagesConfig
-								? calculateGoogleImagesCredits(googleImagesConfig, {
-										model: googleImagesModel,
-										prompt: prompt.trim(),
-										images: googleImagesInputImages
-									})
-								: 20
-							: 5;
+						: 5;
 
 		if (userCredits < requiredCredits) {
 			toast.error('积分不足');
@@ -1304,87 +1189,6 @@
 					console.error('⚡ 【Flux前端】任务提交失败:', error);
 					throw error;
 				}
-			} else if (selectedService === 'google_images') {
-				// === 谷歌生图 生成逻辑 ===
-				if (!googleImagesConfig || !googleImagesConfig.enabled) {
-					toast.error('谷歌生图服务未配置或未启用');
-					isGenerating = false;
-					return;
-				}
-
-				// 谷歌生图必须有参考图片
-				if (googleImagesInputImages.length === 0) {
-					toast.error('谷歌生图需要至少上传一张参考图片才能生成');
-					isGenerating = false;
-					return;
-				}
-
-				console.log('🔍 【谷歌生图前端】开始生成图像:', {
-					model: googleImagesModel,
-					prompt: prompt.trim(),
-					hasInputImages: googleImagesInputImages.length > 0,
-					inputImagesCount: googleImagesInputImages.length
-				});
-
-				// 验证每张图片数据
-				const validImages = googleImagesInputImages.filter((img) => validateImageData(img));
-				if (validImages.length !== googleImagesInputImages.length) {
-					toast.error(`发现 ${googleImagesInputImages.length - validImages.length} 张无效图片`);
-				}
-				if (validImages.length === 0) {
-					toast.error('没有有效的参考图片，请重新上传');
-					isGenerating = false;
-					return;
-				}
-
-				// 构建谷歌生图请求
-				const googleImagesRequest: GoogleImagesGenerateRequest = {
-					model: googleImagesModel,
-					prompt: prompt.trim(),
-					images: validImages
-				};
-
-				try {
-					// 调用谷歌生图API
-					const result = await generateGoogleImages($user.token, googleImagesRequest);
-
-					if (result && result.success) {
-						// 提交成功，创建任务记录
-						currentTask = {
-							id: result.task_id || 'google_' + Date.now(),
-							action: 'GENERATE',
-							status: 'SUBMITTED',
-							prompt: prompt.trim(),
-							promptEn: prompt.trim(),
-							description: `谷歌生图: ${prompt.trim()}`,
-							submitTime: Date.now(),
-							startTime: 0,
-							finishTime: 0,
-							progress: '0%',
-							creditsCost: requiredCredits,
-							properties: {
-								serviceType: 'google_images',
-								model: googleImagesModel
-							}
-						};
-
-						toast.success(`谷歌生图任务已提交，开始生成图片...`);
-
-						// 立即添加到历史记录
-						taskHistory = [currentTask, ...taskHistory];
-
-						// 谷歌生图通常比较快，开始轮询结果
-						if (result.task_id) {
-							pollGoogleImagesTaskStatus(result.task_id);
-						}
-					} else {
-						console.error('🔍 【谷歌生图前端】API返回错误:', result);
-						throw new Error(result?.message || result?.error || '谷歌生图任务提交失败');
-					}
-				} catch (error) {
-					console.error('🔍 【谷歌生图前端】任务提交失败:', error);
-					throw error;
-				}
 			} else {
 				toast.error('不支持的生成服务');
 				isGenerating = false;
@@ -1630,89 +1434,6 @@
 		poll();
 	};
 
-	// 谷歌生图 任务状态轮询
-	const pollGoogleImagesTaskStatus = async (taskId: string) => {
-		const maxAttempts = 30; // 最多轮询30次 (约5分钟)
-		let attempts = 0;
-
-		const poll = async () => {
-			try {
-				attempts++;
-				console.log(`🔍 【谷歌生图轮询】第${attempts}次查询任务状态: ${taskId}`);
-
-				const task = await getGoogleImagesTaskStatus($user.token, taskId);
-
-				if (task) {
-					// 转换为统一格式
-					const convertedTask = convertGoogleImagesTaskToMJFormat(task);
-
-					// 更新当前任务状态
-					if (currentTask && currentTask.id === taskId) {
-						currentTask = {
-							...currentTask,
-							status: convertedTask.status,
-							progress: convertedTask.progress,
-							imageUrl: convertedTask.imageUrl,
-							failReason: convertedTask.failReason,
-							finishTime: convertedTask.finishTime
-						};
-					}
-
-					// 更新历史记录中的任务
-					taskHistory = taskHistory.map((t) =>
-						t.id === taskId
-							? {
-									...t,
-									status: convertedTask.status,
-									progress: convertedTask.progress,
-									imageUrl: convertedTask.imageUrl,
-									failReason: convertedTask.failReason,
-									finishTime: convertedTask.finishTime
-								}
-							: t
-					);
-
-					if (task.status === 'completed') {
-						console.log('🔍 【谷歌生图轮询】任务完成成功:', task);
-						toast.success('谷歌生图图片生成完成!');
-						generatedImage = currentTask;
-						isGenerating = false;
-						currentTask = null;
-						return;
-					} else if (task.status === 'failed') {
-						console.log('🔍 【谷歌生图轮询】任务失败:', task.fail_reason);
-						toast.error(`谷歌生图生成失败: ${task.fail_reason || '未知错误'}`);
-						isGenerating = false;
-						currentTask = null;
-						return;
-					}
-				}
-
-				// 如果还没完成且未达到最大尝试次数，继续轮询
-				if (attempts < maxAttempts) {
-					setTimeout(poll, 10000); // 10秒后再次轮询
-				} else {
-					console.log('🔍 【谷歌生图轮询】达到最大轮询次数，停止轮询');
-					toast.error('谷歌生图任务轮询超时');
-					isGenerating = false;
-					currentTask = null;
-				}
-			} catch (error) {
-				console.error('🔍 【谷歌生图轮询】轮询出错:', error);
-				if (attempts < maxAttempts) {
-					setTimeout(poll, 10000); // 出错也继续重试
-				} else {
-					toast.error('谷歌生图任务状态查询失败');
-					isGenerating = false;
-					currentTask = null;
-				}
-			}
-		};
-
-		// 开始轮询
-		poll();
-	};
-
 	// 删除参考图片
 	const removeReferenceImage = (id: string, type: 'normal' | 'style' | 'character') => {
 		if (type === 'normal') {
@@ -1864,57 +1585,6 @@
 	// 删除多图中的某张图片
 	const removeFluxImage = (index: number) => {
 		fluxInputImageUrls = fluxInputImageUrls.filter((_, i) => i !== index);
-	};
-
-	// 谷歌生图 图片上传处理
-	const handleGoogleImagesUpload = async (event: Event) => {
-		const target = event.target as HTMLInputElement;
-		const files = target.files;
-
-		if (!files || files.length === 0) return;
-
-		// 检查数量限制
-		const maxImages = googleImagesConfig?.max_images_per_request || 5;
-		if (googleImagesInputImages.length + files.length > maxImages) {
-			toast.error(`最多可上传${maxImages}张参考图片`);
-			return;
-		}
-
-		for (const file of Array.from(files)) {
-			// 验证文件类型
-			if (!file.type.startsWith('image/')) {
-				toast.error(`${file.name} 不是图片文件`);
-				continue;
-			}
-
-			// 验证文件大小 (5MB)
-			if (file.size > 5 * 1024 * 1024) {
-				toast.error(`${file.name} 文件过大（超过5MB）`);
-				continue;
-			}
-
-			try {
-				console.log('🔍 【谷歌生图】开始上传图片:', file.name);
-				const base64 = await fileToBase64(file);
-				googleImagesInputImages = [...googleImagesInputImages, base64];
-				console.log('🔍 【谷歌生图】图片转换成功:', file.name);
-			} catch (error) {
-				console.error('🔍 【谷歌生图】图片上传失败:', error);
-				toast.error(`${file.name} 上传失败: ${error.message || error}`);
-			}
-		}
-
-		if (files.length > 0) {
-			toast.success(`成功上传 ${files.length} 张图片`);
-		}
-
-		// 清空input值，允许重复上传同一文件
-		target.value = '';
-	};
-
-	// 删除谷歌生图中的某张图片
-	const removeGoogleImagesImage = (index: number) => {
-		googleImagesInputImages = googleImagesInputImages.filter((_, i) => i !== index);
 	};
 
 	// 🔥 简化轮询 - 直接有效
@@ -2193,8 +1863,6 @@
 					success = await deleteDreamWorkTask($user.token, task.id);
 				} else if (serviceType === 'flux') {
 					success = await deleteFluxTask($user.token, task.id);
-				} else if (serviceType === 'google_images') {
-					success = await deleteGoogleImagesTask($user.token, task.id);
 				} else {
 					success = await deleteTask($user.token, task.id);
 				}
@@ -2323,9 +1991,7 @@
 								? 'MidJourney'
 								: selectedService === 'dreamwork'
 									? '即梦 (DreamWork)'
-									: selectedService === 'flux'
-										? 'Flux AI'
-										: '谷歌生图'}
+									: 'Flux AI'}
 						</div>
 						{#if selectedService === 'midjourney'}
 							<div>消耗积分: {modeConfig[selectedMode].credits}积分/次</div>
@@ -2335,16 +2001,6 @@
 							<div>
 								消耗积分: {getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}积分 ({fluxNumImages ||
 									1}张图片)
-							</div>
-						{:else if selectedService === 'google_images' && googleImagesConfig}
-							<div>
-								消耗积分: {googleImagesConfig
-									? calculateGoogleImagesCredits(googleImagesConfig, {
-											model: googleImagesModel,
-											prompt: prompt.trim(),
-											images: googleImagesInputImages
-										})
-									: 20}积分
 							</div>
 						{/if}
 						<div class="flex justify-between items-center">
@@ -2375,9 +2031,7 @@
 							<div class="text-xs text-gray-500">{prompt.length}/2000</div>
 							<button
 								on:click={generateImage}
-								disabled={isGenerating ||
-									!prompt.trim() ||
-									(selectedService === 'google_images' && googleImagesInputImages.length === 0)}
+								disabled={isGenerating || !prompt.trim()}
 								class="px-4 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
@@ -2390,15 +2044,7 @@
 											? dreamWorkConfig?.creditsPerGeneration || 10
 											: selectedService === 'flux'
 												? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
-												: selectedService === 'google_images'
-													? googleImagesConfig
-														? calculateGoogleImagesCredits(googleImagesConfig, {
-																model: googleImagesModel,
-																prompt: prompt.trim(),
-																images: googleImagesInputImages
-															})
-														: 20
-													: 5}积分)
+												: 5}积分)
 								{/if}
 							</button>
 						</div>
@@ -2615,7 +2261,7 @@
 							>
 								{#each fluxModels as model}
 									<option value={model.id}>
-										{model.name}
+										{model.name} - {model.description}
 										{#if model.id.includes('schnell')}
 											(最多4张)
 										{:else if model.id.includes('dev')}
@@ -2968,83 +2614,6 @@
 							<label for="flux-safety-checker" class="text-sm text-gray-600 dark:text-gray-400"
 								>启用安全检查</label
 							>
-						</div>
-					{:else if selectedService === 'google_images' && googleImagesConfig}
-						<!-- 谷歌生图 参数 -->
-
-						<!-- 模型信息 -->
-						<div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-							<div class="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300 mb-2">
-								<span>🤖</span>
-								<span>当前模型: <strong>nano-banana</strong></span>
-							</div>
-							<div class="text-xs text-orange-600 dark:text-orange-400">
-								⚠️ 注意：谷歌生图必须上传参考图片才能正常生成
-							</div>
-						</div>
-
-						<!-- 参考图片上传 -->
-						<div>
-							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-								参考图片（必需）<span class="text-red-500 ml-1">*</span>
-							</label>
-
-							<!-- 上传按钮 -->
-							<label
-								class="flex items-center justify-center w-full py-3 px-4 text-sm border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-400 transition-colors"
-							>
-								<span class="mr-2">📁</span>
-								选择参考图片（最多{googleImagesConfig.max_images_per_request}张）
-								<input
-									type="file"
-									accept="image/*"
-									multiple
-									on:change={handleGoogleImagesUpload}
-									class="hidden"
-								/>
-							</label>
-
-							<!-- 已上传图片预览 -->
-							{#if googleImagesInputImages.length > 0}
-								<div class="mt-3 grid grid-cols-2 gap-2">
-									{#each googleImagesInputImages as imageData, index}
-										<div class="relative group">
-											<img
-												src={imageData}
-												alt="参考图片 {index + 1}"
-												class="w-full h-24 object-cover rounded-lg border"
-											/>
-											<button
-												type="button"
-												on:click={() => removeGoogleImagesImage(index)}
-												class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity"
-											>
-												×
-											</button>
-											<div
-												class="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-1 rounded"
-											>
-												图片 {index + 1}
-											</div>
-										</div>
-									{/each}
-								</div>
-								<div class="text-xs text-gray-500 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded">
-									💰 已上传 {googleImagesInputImages.length} 张参考图片，每张额外消耗 {googleImagesConfig.credits_per_image}
-									积分
-								</div>
-							{:else}
-								<div
-									class="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-center"
-								>
-									<div class="text-red-600 dark:text-red-400 text-sm">
-										⚠️ 请上传至少一张参考图片
-									</div>
-									<div class="text-red-500 dark:text-red-300 text-xs mt-1">
-										谷歌生图必须基于参考图片才能正常工作
-									</div>
-								</div>
-							{/if}
 						</div>
 					{/if}
 
@@ -3478,16 +3047,12 @@
 												? 'bg-gradient-to-r from-purple-500 to-pink-500'
 												: task.properties?.serviceType === 'flux'
 													? 'bg-gradient-to-r from-blue-500 to-cyan-500'
-													: task.properties?.serviceType === 'google_images'
-														? 'bg-gradient-to-r from-green-500 to-blue-500'
-														: 'bg-purple-600'}"
+													: 'bg-purple-600'}"
 										>
 											{#if task.properties?.serviceType === 'dreamwork'}
 												即梦 (DreamWork)
 											{:else if task.properties?.serviceType === 'flux'}
 												Flux AI
-											{:else if task.properties?.serviceType === 'google_images'}
-												谷歌生图
 											{:else}
 												{task.properties?.botType === 'NIJI_JOURNEY' ? 'Niji3.0' : 'MidJourney'}
 											{/if}
@@ -3519,7 +3084,7 @@
 															on:click|stopPropagation={() =>
 																downloadImage(
 																	task.imageUrl,
-																	`${task.properties?.serviceType === 'dreamwork' ? 'dreamwork' : task.properties?.serviceType === 'flux' ? 'flux' : task.properties?.serviceType === 'google_images' ? 'google-images' : 'mj'}-${task.id}.png`
+																	`${task.properties?.serviceType === 'dreamwork' ? 'dreamwork' : task.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${task.id}.png`
 																)}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
 														>
@@ -3605,8 +3170,6 @@
 													即梦 ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
 												{:else if task.properties?.serviceType === 'flux'}
 													Flux ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
-												{:else if task.properties?.serviceType === 'google_images'}
-													谷歌生图 (nano-banana)
 												{:else}
 													MidJourney (fast)
 												{/if}
@@ -3708,16 +3271,12 @@
 								? 'bg-gradient-to-r from-purple-500 to-pink-500'
 								: selectedImageForViewing.properties?.serviceType === 'flux'
 									? 'bg-gradient-to-r from-blue-500 to-cyan-500'
-									: selectedImageForViewing.properties?.serviceType === 'google_images'
-										? 'bg-gradient-to-r from-green-500 to-blue-500'
-										: 'bg-purple-600'}"
+									: 'bg-purple-600'}"
 						>
 							{#if selectedImageForViewing.properties?.serviceType === 'dreamwork'}
 								即梦 (DreamWork)
 							{:else if selectedImageForViewing.properties?.serviceType === 'flux'}
 								Flux AI
-							{:else if selectedImageForViewing.properties?.serviceType === 'google_images'}
-								谷歌生图
 							{:else}
 								{selectedImageForViewing.properties?.botType === 'NIJI_JOURNEY'
 									? 'Niji3.0'
@@ -3781,7 +3340,7 @@
 							on:click={() =>
 								downloadImage(
 									selectedImageForViewing.imageUrl,
-									`${selectedImageForViewing.properties?.serviceType === 'dreamwork' ? 'dreamwork' : selectedImageForViewing.properties?.serviceType === 'flux' ? 'flux' : selectedImageForViewing.properties?.serviceType === 'google_images' ? 'google-images' : 'mj'}-${selectedImageForViewing.id}.png`
+									`${selectedImageForViewing.properties?.serviceType === 'dreamwork' ? 'dreamwork' : selectedImageForViewing.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${selectedImageForViewing.id}.png`
 								)}
 							class="px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
 						>

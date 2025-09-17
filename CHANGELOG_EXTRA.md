@@ -5,29 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.9] - 2025.08.31
-
-### Added
-
-- 新增可灵视频延长
-- 新增可灵多图参考生成视频
-- 新增谷歌banana生图
-
-### Changed
-
-- 修复Flux模型过多，名字不统一
-- 修复谷歌生图的生成按钮的积分显示问题
-
-## [1.1.8] - 2025.08.30
-
-### Added
-
-- 新增谷歌veo视频生成
-
-### Changed
-
-- 修复
-
 ## [1.1.7] - 2025.08.27
 
 ### Added

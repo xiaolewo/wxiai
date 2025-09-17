@@ -698,40 +698,6 @@
 				</div>
 
 				<div class="">
-					<Tooltip content="ComfyUI 工作流" placement="right">
-						<a
-							class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
-							href="/comfyui"
-							on:click={async (e) => {
-								e.stopImmediatePropagation();
-								e.preventDefault();
-								goto('/comfyui');
-								itemClickHandler();
-							}}
-							draggable="false"
-						>
-							<div class=" self-center flex items-center justify-center size-9">
-								<svg
-									xmlns="http://www.w3.org/2000/svg"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke-width="1.5"
-									stroke="currentColor"
-									class="size-4.5"
-								>
-									<path
-										fill-rule="evenodd"
-										d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z"
-										clip-rule="evenodd"
-										fill="currentColor"
-									/>
-								</svg>
-							</div>
-						</a>
-					</Tooltip>
-				</div>
-
-				<div class="">
 					<Tooltip content="视频生成" placement="right">
 						<a
 							class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
@@ -1020,36 +986,6 @@
 						</div>
 						<div class="flex self-center translate-y-[0.5px]">
 							<div class=" self-center text-sm font-primary">{$i18n.t('Image Generation')}</div>
-						</div>
-					</a>
-				</div>
-
-				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
-					<a
-						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-						href="/comfyui"
-						on:click={itemClickHandler}
-						draggable="false"
-					>
-						<div class="self-center">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="2"
-								stroke="currentColor"
-								class="size-4.5"
-							>
-								<path
-									fill-rule="evenodd"
-									d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z"
-									clip-rule="evenodd"
-									fill="currentColor"
-								/>
-							</svg>
-						</div>
-						<div class="flex self-center translate-y-[0.5px]">
-							<div class=" self-center text-sm font-primary">ComfyUI 工作流</div>
 						</div>
 					</a>
 				</div>

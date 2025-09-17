@@ -23,8 +23,6 @@ from open_webui.models.kling import (
     KlingConfigForm,
     KlingTaskForm,
     KlingGenerateRequest,
-    KlingVideoExtendRequest,
-    KlingVideoExtendCheck,
 )
 from open_webui.utils.kling import (
     KlingApiClient,
@@ -61,48 +59,29 @@ def get_kling_client():
 @router.get("/config")
 async def get_kling_config(user=Depends(get_admin_user)):
     """获取可灵配置 - 管理员专用"""
-    import logging
-    import traceback
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        logger.info(f"🎬 【可灵配置】管理员 {user.id} 请求获取配置")
-
-        config = KlingConfig.get_config()
-        if not config:
-            logger.info("🎬 【可灵配置】数据库中无配置，返回默认配置")
-            # 返回默认配置
-            default_config = KlingConfig()
-            return {
-                "enabled": False,
-                "base_url": "https://api.klingai.com",
-                "api_key": "",
-                "text_to_video_model": "kling-v1",
-                "image_to_video_model": "kling-v1",
-                "default_mode": "std",
-                "default_duration": "5",
-                "default_aspect_ratio": "16:9",
-                "default_cfg_scale": 0.5,
-                "credits_per_std_5s": 50,
-                "credits_per_std_10s": 100,
-                "credits_per_pro_5s": 100,
-                "credits_per_pro_10s": 200,
-                "model_credits_config": default_config._get_default_model_credits(),
-                "max_concurrent_tasks": 3,
-                "task_timeout": 600000,
-            }
-
-        logger.info(f"🎬 【可灵配置】找到配置，ID: {config.id}")
-        config_dict = config.to_dict()
-        logger.info(f"🎬 【可灵配置】配置转换成功，包含 {len(config_dict)} 个字段")
-        return config_dict
-
-    except Exception as e:
-        logger.error(f"❌ 【可灵配置】获取配置失败: {str(e)}")
-        logger.error("🔧 【可灵配置】详细错误:")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"获取可灵配置失败: {str(e)}")
+    config = KlingConfig.get_config()
+    if not config:
+        # 返回默认配置
+        default_config = KlingConfig()
+        return {
+            "enabled": False,
+            "base_url": "https://api.klingai.com",
+            "api_key": "",
+            "text_to_video_model": "kling-v1",
+            "image_to_video_model": "kling-v1",
+            "default_mode": "std",
+            "default_duration": "5",
+            "default_aspect_ratio": "16:9",
+            "default_cfg_scale": 0.5,
+            "credits_per_std_5s": 50,
+            "credits_per_std_10s": 100,
+            "credits_per_pro_5s": 100,
+            "credits_per_pro_10s": 200,
+            "model_credits_config": default_config._get_default_model_credits(),
+            "max_concurrent_tasks": 3,
+            "task_timeout": 600000,
+        }
+    return config.to_dict()
 
 
 @router.get("/config/user")
@@ -148,22 +127,14 @@ async def get_kling_user_config(user=Depends(get_verified_user)):
 @router.post("/config")
 async def save_kling_config(config_data: dict, user=Depends(get_admin_user)):
     """保存可灵配置 - 管理员专用"""
-    import logging
-    import traceback
-
-    logger = logging.getLogger(__name__)
     global kling_client, kling_config
 
     try:
-        logger.info(f"🎬 【可灵配置】管理员 {user.id} 请求保存配置")
-        logger.info(f"🎬 【可灵配置】配置数据: {len(config_data)} 个字段")
-
         # 验证必需字段
         enabled = config_data.get("enabled", False)
         if enabled and (
             not config_data.get("base_url") or not config_data.get("api_key")
         ):
-            logger.error("🎬 【可灵配置】启用时缺少必要字段")
             raise HTTPException(
                 status_code=400, detail="启用时需要提供Base URL和API Key"
             )
@@ -182,23 +153,19 @@ async def save_kling_config(config_data: dict, user=Depends(get_admin_user)):
         config_data.setdefault("max_concurrent_tasks", 3)
         config_data.setdefault("task_timeout", 600000)
 
-        logger.info("🎬 【可灵配置】开始保存配置到数据库")
         # 保存配置
         config = KlingConfig.save_config(config_data)
-        logger.info(f"🎬 【可灵配置】配置保存成功，ID: {config.id}")
 
         # 重置客户端
         kling_client = None
         kling_config = None
-        logger.info("🎬 【可灵配置】客户端缓存已重置")
 
         return {"message": "配置保存成功", "config": config.to_dict()}
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"❌ 【可灵配置】保存配置失败: {str(e)}")
-        logger.error("🔧 【可灵配置】详细错误:")
-        logger.error(traceback.format_exc())
+        import traceback
+
+        print(f"Error saving Kling config: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"保存配置失败: {str(e)}")
 
 
@@ -429,162 +396,6 @@ async def test_kling_connection(user=Depends(get_admin_user)):
         raise HTTPException(status_code=500, detail=f"连接测试失败: {str(e)}")
 
 
-# ======================== 视频延长功能 ========================
-
-
-@router.get("/video/{video_id}/extend/check")
-async def check_video_extend_eligibility(
-    video_id: str, user=Depends(get_verified_user)
-):
-    """检查视频延长资格"""
-    try:
-        print(f"🎬 【可灵延长】检查延长资格: 视频ID={video_id}, 用户={user.id}")
-
-        # 查找视频任务
-        task = KlingTask.get_task_by_video_id(video_id)
-        if not task:
-            print(f"❌ 【可灵延长】视频任务不存在: {video_id}")
-            raise HTTPException(status_code=404, detail="视频任务不存在")
-
-        # 验证任务所有权
-        if task.user_id != user.id:
-            print(
-                f"❌ 【可灵延长】无权访问视频: 任务用户={task.user_id}, 请求用户={user.id}"
-            )
-            raise HTTPException(status_code=403, detail="无权访问此视频")
-
-        # 检查延长资格
-        can_extend, reason, credits_cost = task.can_extend()
-
-        # 获取当前总时长和延长次数
-        current_duration = task.get_total_duration()
-        root_task = KlingTask.get_original_task(task.id) or task
-        extend_count = KlingTask.get_task_extend_count(root_task.id)
-
-        result = KlingVideoExtendCheck(
-            can_extend=can_extend,
-            reason=reason if not can_extend else None,
-            credits_cost=credits_cost if can_extend else None,
-            current_duration=str(current_duration),
-            extend_count=extend_count,
-        )
-
-        print(
-            f"🎬 【可灵延长】检查结果: can_extend={can_extend}, credits_cost={credits_cost}"
-        )
-        return result.dict()
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ 【可灵延长】检查资格失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"检查延长资格失败: {str(e)}")
-
-
-@router.post("/video/extend")
-async def submit_video_extend_task(
-    request: KlingVideoExtendRequest,
-    background_tasks: BackgroundTasks,
-    user=Depends(get_verified_user),
-):
-    """提交视频延长任务"""
-    try:
-        print(
-            f"🎬 【可灵延长】收到视频延长请求: 视频ID={request.video_id}, 用户={user.id}"
-        )
-
-        # 使用工具函数处理延长任务
-        from open_webui.utils.kling import process_kling_video_extend
-
-        task = await process_kling_video_extend(
-            user_id=user.id,
-            video_id=request.video_id,
-            prompt=request.prompt,
-            negative_prompt=request.negative_prompt,
-            cfg_scale=request.cfg_scale,
-        )
-
-        # 添加后台轮询任务
-        background_tasks.add_task(poll_kling_task_status, task.id, user.id)
-
-        print(f"🎬 【可灵延长】延长任务创建成功: {task.id}")
-        return {
-            "success": True,
-            "task_id": task.id,
-            "message": "视频延长任务提交成功",
-            "credits_cost": task.credits_cost,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ 【可灵延长】提交延长任务失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"提交视频延长任务失败: {str(e)}")
-
-
-@router.get("/video/extend/{task_id}")
-async def get_video_extend_task_status(task_id: str, user=Depends(get_verified_user)):
-    """获取视频延长任务状态"""
-    try:
-        print(f"🎬 【可灵延长】查询延长任务状态: {task_id}, 用户: {user.id}")
-
-        # 查询任务
-        task = KlingTask.get_task_by_id(task_id)
-        if not task:
-            print(f"❌ 【可灵延长】延长任务不存在: {task_id}")
-            raise HTTPException(status_code=404, detail="延长任务不存在")
-
-        # 验证任务所有权
-        if task.user_id != user.id:
-            print(
-                f"❌ 【可灵延长】无权访问延长任务: 任务用户={task.user_id}, 请求用户={user.id}"
-            )
-            raise HTTPException(status_code=403, detail="无权访问此延长任务")
-
-        # 验证是否为延长任务
-        if not task.is_extended:
-            print(f"❌ 【可灵延长】任务不是延长任务: {task_id}")
-            raise HTTPException(status_code=400, detail="该任务不是视频延长任务")
-
-        # 如果任务已完成，直接返回
-        if task.status in ["succeed", "failed"]:
-            print(f"🎬 【可灵延长】延长任务已完成: {task.id}, 状态: {task.status}")
-            return task.to_dict()
-
-        # 如果任务还在进行中，查询远程状态
-        if task.external_task_id:
-            try:
-                print(f"🔍 【可灵延长】查询远程延长状态: {task.external_task_id}")
-                client = get_kling_client()
-                remote_status = await client.query_video_extend_task(
-                    task.external_task_id
-                )
-                print(f"📡 【可灵延长】远程延长响应: {str(remote_status)[:200]}...")
-                task.update_from_api_response(remote_status)
-                print(f"🎬 【可灵延长】更新延长状态成功: {task.status}")
-            except Exception as e:
-                print(f"⚠️ 【可灵延长】查询远程延长状态失败: {e}")
-                # 查询失败不影响返回本地状态
-
-        print(f"📤 【可灵延长】返回延长任务状态: {task_id}")
-        return task.to_dict()
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ 【可灵延长】获取延长任务状态失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"获取延长任务状态失败: {str(e)}")
-
-
 # ======================== 任务提交 ========================
 
 
@@ -632,71 +443,46 @@ async def submit_image_to_video_task(
     background_tasks: BackgroundTasks,
     user=Depends(get_verified_user),
 ):
-    """统一的图生视频任务提交（支持单图和多图模式）"""
+    """提交图生视频任务"""
     try:
         print(f"🎬 【可灵后端】收到图生视频请求: 用户={user.id}")
         print(
             f"🎬 【可灵后端】请求参数: model={request.model_name}, prompt={request.prompt[:50]}..., mode={request.mode}, duration={request.duration}"
         )
-        print(f"🎬 【可灵后端】生成模式: {request.generation_mode}")
-
-        # 根据生成模式选择处理方式
-        if request.generation_mode == "multi_image":
-            # 多图模式验证
-            if request.model_name != "kling-v1-6":
-                print("❌ 【可灵后端】多图模式只支持 kling-v1-6 模型")
-                raise HTTPException(
-                    status_code=400, detail="多图参考生视频只支持 kling-v1-6 模型"
-                )
-
-            if not request.image_list or len(request.image_list) > 4:
-                print(
-                    f"❌ 【可灵后端】多图数量错误: {len(request.image_list) if request.image_list else 0}"
-                )
-                raise HTTPException(status_code=400, detail="多图参考需要1-4张图片")
-
-            print(f"🎬 【可灵后端】多图模式: {len(request.image_list)}张图片")
-            action = "MULTI_IMAGE_TO_VIDEO"
-
-        else:
-            # 单图模式验证（原有逻辑）
-            if not request.image:
-                print("❌ 【可灵后端】缺少输入图片")
-                raise HTTPException(status_code=400, detail="图生视频需要输入图片")
-
-            # 验证图片数据基本格式
-            image_data = request.image.strip()
-            if len(image_data) < 100:
-                print(f"❌ 【可灵后端】图片数据太短: {len(image_data)}字符")
-                raise HTTPException(
-                    status_code=400, detail=f"图片数据太短: {len(image_data)}字符"
-                )
-
-            # 记录图片数据前缀用于调试
-            prefix = image_data[:50] if len(image_data) > 50 else image_data
-            print(f"🎬 【可灵后端】图片数据前缀: {prefix}...")
-            action = "IMAGE_TO_VIDEO"
-
-        # 记录动态笔刷信息
+        print(
+            f"🎬 【可灵后端】输入图片: {len(request.image) if request.image else 0}字符"
+        )
         if request.dynamic_masks:
             print(f"🎬 【可灵后端】动态笔刷: {len(request.dynamic_masks)}组")
 
+        # 验证输入图片
+        if not request.image:
+            print("❌ 【可灵后端】缺少输入图片")
+            raise HTTPException(status_code=400, detail="图生视频需要输入图片")
+
+        # 验证图片数据基本格式
+        image_data = request.image.strip()
+        if len(image_data) < 100:
+            print(f"❌ 【可灵后端】图片数据太短: {len(image_data)}字符")
+            raise HTTPException(
+                status_code=400, detail=f"图片数据太短: {len(image_data)}字符"
+            )
+
+        # 记录图片数据前缀用于调试
+        prefix = image_data[:50] if len(image_data) > 50 else image_data
+        print(f"🎬 【可灵后端】图片数据前缀: {prefix}...")
+
         # 使用工具函数处理任务
-        print(f"🎬 【可灵后端】开始处理{action}任务...")
+        print(f"🎬 【可灵后端】开始处理图生视频任务...")
         task = await process_kling_generation(
-            user_id=user.id, request=request, action=action
+            user_id=user.id, request=request, action="IMAGE_TO_VIDEO"
         )
 
         # 添加后台轮询任务
         background_tasks.add_task(poll_kling_task_status, task.id, user.id)
 
         print(f"🎬 【可灵后端】任务创建成功: {task.id}")
-        message = (
-            "多图参考生视频任务提交成功"
-            if action == "MULTI_IMAGE_TO_VIDEO"
-            else "图生视频任务提交成功"
-        )
-        return {"success": True, "task_id": task.id, "message": message}
+        return {"success": True, "task_id": task.id, "message": "图生视频任务提交成功"}
 
     except HTTPException:
         raise

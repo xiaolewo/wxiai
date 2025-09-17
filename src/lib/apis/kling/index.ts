@@ -4,11 +4,7 @@ import { WEBUI_API_BASE_URL } from '$lib/constants';
 export type KlingTaskStatus = 'submitted' | 'processing' | 'succeed' | 'failed';
 
 // 可灵任务动作类型
-export type KlingTaskAction =
-	| 'TEXT_TO_VIDEO'
-	| 'IMAGE_TO_VIDEO'
-	| 'MULTI_IMAGE_TO_VIDEO'
-	| 'VIDEO_EXTEND';
+export type KlingTaskAction = 'TEXT_TO_VIDEO' | 'IMAGE_TO_VIDEO';
 
 // 可灵视频模式类型
 export type KlingVideoMode = 'std' | 'pro';
@@ -79,10 +75,6 @@ export interface KlingGenerateRequest {
 	staticMask?: string; // 静态笔刷
 	dynamicMasks?: DynamicMask[]; // 动态笔刷
 
-	// 多图参考生成专用
-	generationMode?: string; // 'single_image' | 'multi_image'
-	imageList?: Array<{ image: string }>; // 多图参考列表，最多4张
-
 	// 摄像机控制
 	cameraControl?: CameraControl;
 
@@ -116,17 +108,6 @@ export interface KlingTask {
 	dynamicMasks?: DynamicMask[];
 	cameraControl?: CameraControl;
 
-	// 多图参考参数
-	generationMode?: string;
-	inputImages?: Array<{ image: string }>;
-	imageCount?: number;
-
-	// 视频延长参数
-	parentTaskId?: string;
-	isExtended?: boolean;
-	originalDuration?: string;
-	extendCount?: number;
-
 	// 任务管理
 	creditsCost: number;
 	submitTime?: string;
@@ -152,25 +133,6 @@ export interface KlingHistoryResponse {
 	total: number;
 	page: number;
 	limit: number;
-}
-
-// 视频延长请求参数
-export interface KlingVideoExtendRequest {
-	videoId: string;
-	prompt?: string;
-	negativePrompt?: string;
-	cfgScale?: number;
-	callbackUrl?: string;
-}
-
-// 视频延长资格检查响应
-export interface KlingVideoExtendCheck {
-	canExtend: boolean;
-	reason?: string;
-	creditsCost?: number;
-	currentDuration: string;
-	extendCount: number;
-	maxDuration?: string;
 }
 
 // ======================== API 函数 ========================
@@ -420,9 +382,7 @@ export const submitKlingImageToVideoTask = async (
 		dynamic_masks: request.dynamicMasks,
 		camera_control: request.cameraControl,
 		callback_url: request.callbackUrl,
-		external_task_id: request.externalTaskId,
-		generation_mode: request.generationMode,
-		image_list: request.imageList
+		external_task_id: request.externalTaskId
 	};
 
 	// 移除undefined字段
@@ -494,15 +454,7 @@ const convertTaskFields = (task: any): KlingTask => {
 		staticMask: task.static_mask,
 		dynamicMasks: task.dynamic_masks,
 		cameraControl: task.camera_control,
-		creditsCost: task.credits_cost,
-		generationMode: task.generation_mode,
-		inputImages: task.input_images,
-		imageCount: task.image_count,
-		// 视频延长字段转换
-		parentTaskId: task.parent_task_id,
-		isExtended: task.is_extended,
-		originalDuration: task.original_duration,
-		extendCount: task.extend_count
+		creditsCost: task.credits_cost
 	};
 };
 
@@ -651,133 +603,6 @@ export const getKlingUserStats = async (token: string): Promise<any> => {
 		})
 		.catch((err) => {
 			error = err.detail ?? 'Failed to get user stats';
-			console.log(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-// ======================== 视频延长功能 ========================
-
-// 检查视频延长资格
-export const checkKlingVideoExtendEligibility = async (
-	token: string,
-	videoId: string
-): Promise<KlingVideoExtendCheck> => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/kling/video/${videoId}/extend/check`, {
-		method: 'GET',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			const data = await res.json();
-
-			// 转换字段名从下划线到驼峰
-			return {
-				canExtend: data.can_extend,
-				reason: data.reason,
-				creditsCost: data.credits_cost,
-				currentDuration: data.current_duration,
-				extendCount: data.extend_count || 0,
-				maxDuration: data.max_duration || '180'
-			};
-		})
-		.catch((err) => {
-			error = err.detail ?? 'Failed to check video extend eligibility';
-			console.log(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-// 提交视频延长任务
-export const submitKlingVideoExtendTask = async (
-	token: string,
-	request: KlingVideoExtendRequest
-): Promise<{ success: boolean; task_id: string; message: string; credits_cost: number }> => {
-	let error = null;
-
-	// 转换参数名称为后端期望的格式
-	const backendRequest = {
-		video_id: request.videoId,
-		prompt: request.prompt,
-		negative_prompt: request.negativePrompt,
-		cfg_scale: request.cfgScale,
-		callback_url: request.callbackUrl
-	};
-
-	// 移除undefined字段
-	Object.keys(backendRequest).forEach((key) => {
-		if (backendRequest[key] === undefined) {
-			delete backendRequest[key];
-		}
-	});
-
-	console.log('🎬 【可灵延长】提交视频延长任务:', backendRequest);
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/kling/video/extend`, {
-		method: 'POST',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify(backendRequest)
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail ?? 'Failed to submit video extend task';
-			console.log(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-// 获取视频延长任务状态
-export const getKlingVideoExtendTaskStatus = async (
-	token: string,
-	taskId: string
-): Promise<KlingTask> => {
-	let error = null;
-
-	const res = await fetch(`${WEBUI_API_BASE_URL}/kling/video/extend/${taskId}`, {
-		method: 'GET',
-		headers: {
-			Authorization: `Bearer ${token}`,
-			'Content-Type': 'application/json'
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			const data = await res.json();
-
-			// 转换字段名从下划线到驼峰
-			return convertTaskFields(data);
-		})
-		.catch((err) => {
-			error = err.detail ?? 'Failed to get video extend task status';
 			console.log(err);
 			return null;
 		});

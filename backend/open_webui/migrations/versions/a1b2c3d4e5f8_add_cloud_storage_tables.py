@@ -15,7 +15,7 @@ import open_webui.internal.db
 
 # revision identifiers, used by Alembic.
 revision: str = "a1b2c3d4e5f8"
-down_revision: Union[str, None] = "6fc1adfb106d"
+down_revision: Union[str, None] = "a1b2c3d4e5f7"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -93,18 +93,6 @@ def upgrade() -> None:
     op.create_index("idx_generated_files_created_at", "generated_files", ["created_at"])
     op.create_index(
         "idx_generated_files_user_status", "generated_files", ["user_id", "status"]
-    )
-
-    # 4. 插入默认云存储配置
-    op.execute(
-        """
-        INSERT INTO cloud_storage_config 
-        (id, provider, enabled, secret_id, secret_key, region, bucket, domain, 
-         auto_upload, allowed_types, max_file_size, base_path, image_path, video_path) 
-        VALUES 
-        ('default', 'tencent-cos', 0, '', '', 'ap-beijing', '', '', 
-         1, '["image/*", "video/*"]', 104857600, 'generated/', 'images/', 'videos/')
-        """
     )
 
     # ### end Alembic commands ###

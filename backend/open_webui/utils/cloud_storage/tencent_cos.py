@@ -332,232 +332,54 @@ class TencentCOSService:
         Returns:
             Dict: 上传结果
         """
-        # 重试下载最多3次
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                # 下载文件
-                logger.info(
-                    f"正在从URL下载文件 (尝试 {attempt + 1}/{max_retries}): {file_url}"
+        try:
+            # 下载文件
+            logger.info(f"正在从URL下载文件: {file_url}")
+
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+
+            response = requests.get(file_url, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            file_data = response.content
+            content_type = response.headers.get("content-type")
+
+            # 如果没有提供文件名，从URL中提取
+            if not filename:
+                parsed_url = urlparse(file_url)
+                filename = (
+                    os.path.basename(parsed_url.path)
+                    or f"downloaded_{uuid.uuid4().hex[:8]}"
                 )
 
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                    "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                    "Sec-Fetch-Dest": "image",
-                    "Sec-Fetch-Mode": "no-cors",
-                    "Sec-Fetch-Site": "cross-site",
-                    "Referer": "https://google.datas.systems/",
-                }
+            logger.info(f"文件下载完成，大小: {len(file_data)} bytes")
 
-                # 增加超时时间，对于大文件下载
-                timeout = 60 if attempt > 0 else 30
-                logger.info(f"发起HTTP请求: timeout={timeout}s")
-                logger.debug(f"请求头详情: {headers}")
+            # 上传到COS
+            result = await self.upload_file_from_bytes(
+                file_data=file_data,
+                filename=filename,
+                file_type=file_type,
+                user_id=user_id,
+                content_type=content_type,
+            )
 
-                # 先尝试HEAD请求检查URL是否可访问
-                if attempt == 0:
-                    logger.info(f"先进行HEAD请求检查URL可访问性: {file_url}")
-                    try:
-                        with requests.Session() as session:
-                            session.headers.update(headers)
-                            head_response = session.head(
-                                file_url, timeout=10, allow_redirects=True
-                            )
-                            logger.info(
-                                f"HEAD响应: status_code={head_response.status_code}"
-                            )
-                            logger.debug(f"HEAD响应头: {dict(head_response.headers)}")
+            # 如果上传成功，确保返回的URL是预签名URL
+            if result.get("success") and result.get("cloud_path"):
+                # 文件已设置为公共读取，直接使用公共URL
+                logger.info(f"上传成功，使用公共URL: {result.get('cloud_url')}")
 
-                            if head_response.status_code == 404:
-                                logger.error(f"HEAD请求确认URL不存在: {file_url}")
-                                return {
-                                    "success": False,
-                                    "message": f"图片URL不存在: {file_url}",
-                                }
-                            elif head_response.status_code >= 400:
-                                logger.warning(
-                                    f"HEAD请求返回错误状态: {head_response.status_code}"
-                                )
-                                # 但继续尝试GET请求，因为有些服务器不支持HEAD
-                    except Exception as head_error:
-                        logger.warning(
-                            f"HEAD请求失败，但继续尝试GET请求: {str(head_error)}"
-                        )
+            return result
 
-                # 主要下载请求 - 使用session保持连接
-                with requests.Session() as session:
-                    # 设置session的默认headers
-                    session.headers.update(headers)
-
-                    response = session.get(
-                        file_url, timeout=timeout, stream=True, allow_redirects=True
-                    )
-
-                logger.info(
-                    f"GET响应: status_code={response.status_code}, content-type={response.headers.get('content-type', 'unknown')}"
-                )
-                logger.info(
-                    f"GET响应头: {dict(list(response.headers.items())[:10])}"
-                )  # 打印前10个响应头
-
-                # 检查响应状态
-                if response.status_code == 404:
-                    logger.warning(f"图片URL返回404，可能已过期: {file_url}")
-                    if attempt < max_retries - 1:
-                        logger.info(f"等待 {(attempt + 1) * 2} 秒后重试...")
-                        import time
-
-                        time.sleep((attempt + 1) * 2)
-                        continue
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"图片URL已失效，尝试{max_retries}次均返回404: {file_url}",
-                        }
-                elif response.status_code == 403:
-                    logger.warning(f"图片URL返回403，访问被拒绝: {file_url}")
-                    if attempt < max_retries - 1:
-                        logger.info(f"等待 {(attempt + 1) * 3} 秒后重试...")
-                        import time
-
-                        time.sleep((attempt + 1) * 3)
-                        continue
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"图片URL访问被拒绝，尝试{max_retries}次均返回403: {file_url}",
-                        }
-                elif response.status_code >= 500:
-                    logger.warning(
-                        f"图片URL返回服务器错误 {response.status_code}: {file_url}"
-                    )
-                    if attempt < max_retries - 1:
-                        logger.info(f"服务器错误，等待 {(attempt + 1) * 5} 秒后重试...")
-                        import time
-
-                        time.sleep((attempt + 1) * 5)
-                        continue
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"服务器持续错误，尝试{max_retries}次均返回{response.status_code}: {file_url}",
-                        }
-
-                response.raise_for_status()
-
-                # 分块下载以处理大文件
-                logger.info(
-                    f"开始下载文件内容，Content-Length: {response.headers.get('content-length', 'unknown')}"
-                )
-                file_data = b""
-                downloaded_size = 0
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        file_data += chunk
-                        downloaded_size += len(chunk)
-                        if downloaded_size % 50000 == 0:  # 每50KB记录一次
-                            logger.debug(f"已下载: {downloaded_size} bytes")
-
-                logger.info(f"文件下载完成，总大小: {len(file_data)} bytes")
-
-                content_type = response.headers.get("content-type", "image/png")
-
-                # 如果没有提供文件名，从URL中提取
-                if not filename:
-                    parsed_url = urlparse(file_url)
-                    filename = (
-                        os.path.basename(parsed_url.path)
-                        or f"downloaded_{uuid.uuid4().hex[:8]}"
-                    )
-
-                # 确保文件扩展名正确
-                if not os.path.splitext(filename)[1] and content_type:
-                    if "png" in content_type:
-                        filename += ".png"
-                    elif "jpeg" in content_type or "jpg" in content_type:
-                        filename += ".jpg"
-                    elif "webp" in content_type:
-                        filename += ".webp"
-
-                logger.info(
-                    f"文件下载完成，大小: {len(file_data)} bytes, 类型: {content_type}"
-                )
-
-                # 验证下载的文件是否为有效图片
-                if len(file_data) < 100:
-                    logger.warning(
-                        f"下载的文件过小，可能不是有效图片: {len(file_data)} bytes"
-                    )
-                    if attempt < max_retries - 1:
-                        logger.info(f"文件过小，等待 {(attempt + 1) * 2} 秒后重试...")
-                        import time
-
-                        time.sleep((attempt + 1) * 2)
-                        continue
-
-                # 验证文件头是否为图片格式
-                if not self._is_valid_image_data(file_data):
-                    logger.warning(f"下载的数据不是有效的图片格式")
-                    if attempt < max_retries - 1:
-                        logger.info(
-                            f"数据格式无效，等待 {(attempt + 1) * 2} 秒后重试..."
-                        )
-                        import time
-
-                        time.sleep((attempt + 1) * 2)
-                        continue
-
-                # 上传到COS
-                result = await self.upload_file_from_bytes(
-                    file_data=file_data,
-                    filename=filename,
-                    file_type=file_type,
-                    user_id=user_id,
-                    content_type=content_type,
-                )
-
-                # 如果上传成功，确保返回的URL是预签名URL
-                if result.get("success") and result.get("cloud_path"):
-                    # 文件已设置为公共读取，直接使用公共URL
-                    logger.info(f"上传成功，使用公共URL: {result.get('cloud_url')}")
-
-                return result
-
-            except requests.exceptions.Timeout as e:
-                logger.warning(f"下载超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt < max_retries - 1:
-                    logger.info(f"等待 {(attempt + 1) * 2} 秒后重试...")
-                    import time
-
-                    time.sleep((attempt + 1) * 2)
-                    continue
-            except requests.exceptions.RequestException as e:
-                logger.warning(
-                    f"网络请求失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-                )
-                if attempt < max_retries - 1:
-                    logger.info(f"等待 {(attempt + 1) * 2} 秒后重试...")
-                    import time
-
-                    time.sleep((attempt + 1) * 2)
-                    continue
-            except Exception as e:
-                logger.warning(
-                    f"下载过程中出现错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-                )
-                if attempt < max_retries - 1:
-                    continue
-
-        # 如果所有重试都失败了，返回最后的错误
-        error_msg = f"下载文件失败，已重试{max_retries}次: URL={file_url} - 所有重试均失败，可能的原因：1)图片URL已过期 2)防爬虫限制 3)网络连接问题"
-        logger.error(error_msg)
-        logger.error(f"最后尝试的请求头: {headers}")
-        return {"success": False, "message": error_msg}
+        except requests.exceptions.RequestException as e:
+            error_msg = f"下载文件失败: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "message": error_msg}
+        except Exception as e:
+            error_msg = f"处理URL文件失败: {str(e)}"
+            logger.error(error_msg)
+            return {"success": False, "message": error_msg}
 
     async def delete_file(self, object_key: str) -> Dict[str, Any]:
         """删除COS中的文件
@@ -631,37 +453,6 @@ class TencentCOSService:
             error_msg = f"获取文件信息失败: {str(e)}"
             logger.error(error_msg)
             return {"success": False, "message": error_msg}
-
-    def _is_valid_image_data(self, data: bytes) -> bool:
-        """验证数据是否为有效的图片格式
-
-        Args:
-            data: 文件数据
-
-        Returns:
-            bool: 是否为有效图片
-        """
-        if len(data) < 8:
-            return False
-
-        # 检查常见图片格式的文件头
-        # JPEG: FF D8 FF
-        if data.startswith(b"\xff\xd8\xff"):
-            return True
-        # PNG: 89 50 4E 47 0D 0A 1A 0A
-        if data.startswith(b"\x89PNG\r\n\x1a\n"):
-            return True
-        # GIF: 47 49 46 38
-        if data.startswith(b"GIF8"):
-            return True
-        # WebP: RIFF...WEBP
-        if data.startswith(b"RIFF") and b"WEBP" in data[:12]:
-            return True
-        # BMP: 42 4D
-        if data.startswith(b"BM"):
-            return True
-
-        return False
 
     def get_file_url(self, object_key: str) -> str:
         """获取文件的访问URL
