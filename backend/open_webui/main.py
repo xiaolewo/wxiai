@@ -84,6 +84,7 @@ from open_webui.routers import (
     jimeng_inpainting,
     jimeng_outpainting,
     jimeng,
+    jimeng4,
     storage,
     flux,
     veo,
@@ -148,6 +149,14 @@ try:
     )
 except ImportError as e:
     logger.warning(f"Failed to import hailuo models: {e}")
+
+try:
+    from open_webui.models.jimeng4 import (
+        Jimeng4Config,
+        Jimeng4Task,
+    )
+except ImportError as e:
+    logger.warning(f"Failed to import jimeng4 models: {e}")
 
 from open_webui.config import (
     # Ollama
@@ -1325,6 +1334,7 @@ app.include_router(
     tags=["jimeng-outpainting"],
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
+app.include_router(jimeng4.router, prefix="/api/v1", tags=["jimeng4"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
 app.include_router(hailuo.router, prefix="/api/v1", tags=["hailuo"])
