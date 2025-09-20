@@ -66,6 +66,28 @@
 		getFluxTaskImageUrl
 	} from '$lib/apis/flux';
 
+	// Import Jimeng4 API functions
+	import {
+		type Jimeng4Task,
+		type Jimeng4Config,
+		type Jimeng4GenerateRequest,
+		getJimeng4UserConfig,
+		submitJimeng4Task,
+		getJimeng4TaskHistory,
+		getJimeng4TaskStatus,
+		deleteJimeng4Task,
+		uploadJimeng4ReferenceImage
+	} from '$lib/apis/jimeng4';
+
+	import {
+		type BananaConfig,
+		type BananaTask,
+		submitBananaTask,
+		getBananaUserConfig,
+		listBananaTasks,
+		deleteBananaTask
+	} from '$lib/apis/banana';
+
 	// Import MJ streaming/callback system
 	import { mjCallbackHandler, type MJTaskUpdate } from '$lib/apis/midjourney/streaming';
 
@@ -84,9 +106,19 @@
 	let mjConfig: MJConfig | null = null;
 	let dreamWorkConfig: DreamWorkConfig | null = null;
 	let fluxConfig: FluxConfig | null = null;
+	let bananaConfig: BananaConfig | null = null;
+
+	let bananaModel = 'nano-banana';
+	let bananaAspectRatio = '1:1';
+	let bananaResponseFormat = 'url';
+	let bananaReferenceUrls: string[] = [];
+	let bananaUploadedImages: string[] = [];
+	let bananaStream = false;
+	let bananaReferenceInput = '';
+	let isBananaEdit = false;
 
 	// 服务选择
-	type ImageService = 'midjourney' | 'dreamwork' | 'flux';
+	type ImageService = 'midjourney' | 'dreamwork' | 'jimeng4' | 'flux' | 'banana';
 	let selectedService: ImageService = 'midjourney';
 	let availableServices: { id: ImageService; name: string; icon: string; enabled: boolean }[] = [];
 
@@ -121,6 +153,86 @@
 	let dreamWorkGuidanceScale = 2.5;
 	let dreamWorkWatermarkEnabled = true;
 	let dreamWorkInputImage: string | null = null; // 图生图的输入图片(base64)
+
+	// Jimeng4 参数
+	let jimeng4Config: Jimeng4Config | null = null;
+	let jimeng4Model = 'doubao-seedream-4-0-250828';
+	const JIMENG4_SIZE_PRESETS = [
+		{ value: '2048x2048', ratio: '1:1', label: '1:1 · 2048×2048' },
+		{ value: '2304x1728', ratio: '4:3', label: '4:3 · 2304×1728' },
+		{ value: '1728x2304', ratio: '3:4', label: '3:4 · 1728×2304' },
+		{ value: '2560x1440', ratio: '16:9', label: '16:9 · 2560×1440' },
+		{ value: '1440x2560', ratio: '9:16', label: '9:16 · 1440×2560' },
+		{ value: '2496x1664', ratio: '3:2', label: '3:2 · 2496×1664' },
+		{ value: '1664x2496', ratio: '2:3', label: '2:3 · 1664×2496' },
+		{ value: '3024x1296', ratio: '21:9', label: '21:9 · 3024×1296' }
+	] as const;
+	const DEFAULT_JIMENG4_SIZE = JIMENG4_SIZE_PRESETS[0].value;
+
+	const ratioToPixel: Record<string, string> = {
+		'1:1': '2048x2048',
+		'4:3': '2304x1728',
+		'3:4': '1728x2304',
+		'16:9': '2560x1440',
+		'9:16': '1440x2560',
+		'3:2': '2496x1664',
+		'2:3': '1664x2496',
+		'21:9': '3024x1296'
+	};
+
+	const resolutionSet = new Set(JIMENG4_SIZE_PRESETS.map((item) => item.value));
+
+	const normalizeJimeng4Size = (size?: string | null): string => {
+		if (!size) return DEFAULT_JIMENG4_SIZE;
+		const trimmed = size.trim();
+		if (resolutionSet.has(trimmed)) return trimmed;
+		const normalizedResolution = trimmed.replace(/×/g, 'x').replace(/\s+/g, '').toLowerCase();
+		if (resolutionSet.has(normalizedResolution)) {
+			return normalizedResolution;
+		}
+		const ratio = ratioToPixel[trimmed];
+		if (ratio) return ratio;
+		const aliasMap: Record<string, string> = {
+			'1K': '2048x2048',
+			'2K': '2048x2048',
+			'4K': '4096x4096'
+		};
+		const alias = aliasMap[trimmed.toUpperCase()];
+		if (alias) return alias;
+		const match = trimmed.match(/^(\d+)\s*x\s*(\d+)$/i);
+		if (match) {
+			return `${match[1]}x${match[2]}`;
+		}
+		const ratioMatch = trimmed.match(/^(\d+:\d+)$/);
+		if (ratioMatch) {
+			return ratioToPixel[ratioMatch[1]] || DEFAULT_JIMENG4_SIZE;
+		}
+		return DEFAULT_JIMENG4_SIZE;
+	};
+
+	let jimeng4Size = DEFAULT_JIMENG4_SIZE;
+	$: jimeng4SelectedSizePreset = JIMENG4_SIZE_PRESETS.find((item) => item.value === jimeng4Size);
+
+	const BANANA_MAX_IMAGES = 4;
+	const bananaModelOptions = [
+		{ value: 'nano-banana', label: 'Nano Banana (标准)' },
+		{ value: 'nano-banana-hd', label: 'Nano Banana HD (4K)' }
+	];
+	const bananaAspectRatioOptions = ['1:1', '3:4', '4:3', '16:9', '9:16', '2:3', '3:2', '21:9'];
+	const bananaResponseOptions = [
+		{ value: 'url', label: 'URL (下载链接)' },
+		{ value: 'b64_json', label: 'Base64 JSON' }
+	];
+
+	let jimeng4Watermark = true;
+	let jimeng4SequentialMode = 'auto';
+	let jimeng4N = 1;
+	let jimeng4Stream = false;
+	let jimeng4ReferenceInput = '';
+	let jimeng4ReferenceUrls: string[] = [];
+	let jimeng4ManualReferenceUrls: string[] = [];
+	let jimeng4UploadedReferences: { url: string; fileId?: string; name?: string }[] = [];
+	let jimeng4Uploading = false;
 
 	// Flux 参数
 	let fluxModels: FluxModel[] = [];
@@ -188,6 +300,26 @@
 		v7: { label: 'V7', description: '最新版本，最高质量' }
 	};
 
+	$: jimeng4ManualReferenceUrls = jimeng4ReferenceInput
+		.split(/[\n,]/)
+		.map((url) => url.trim())
+		.filter((url) => url.length > 0);
+
+	$: jimeng4ReferenceUrls = Array.from(
+		new Set([
+			...jimeng4ManualReferenceUrls,
+			...jimeng4UploadedReferences.map((ref) => ref.url).filter((url) => !!url)
+		])
+	).filter((url) => url && url.length > 0);
+
+	$: bananaReferenceUrls = bananaReferenceInput
+		.split(/[\n,;]/)
+		.map((url) => url.trim())
+		.filter((url) => url.length > 0)
+		.slice(0, BANANA_MAX_IMAGES);
+
+	$: isBananaEdit = bananaReferenceUrls.length > 0 || bananaUploadedImages.length > 0;
+
 	// 图片比例配置
 	const aspectRatioConfig = {
 		'1:1': { label: '头像', icon: '👤' },
@@ -200,6 +332,8 @@
 		'21:9': { label: '超长横幅', icon: '🖥️' },
 		custom: { label: '自定义', icon: '⚙️' }
 	};
+
+	const JIMENG4_MAX_REFERENCE_IMAGES = 5;
 
 	// 计算Flux模型积分 - 基于后台配置的动态计算
 	const getFluxModelCredits = (model: string): number => {
@@ -396,6 +530,271 @@
 		}
 	};
 
+	const loadJimeng4Config = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const config = await getJimeng4UserConfig($user.token);
+			if (config) {
+				const normalizedSize = normalizeJimeng4Size(config.defaultSize);
+				jimeng4Config = { ...config, defaultSize: normalizedSize };
+				jimeng4Model = config.defaultModel;
+				jimeng4Size = normalizedSize;
+				jimeng4Watermark = config.defaultWatermark;
+				jimeng4SequentialMode = config.defaultSequentialMode;
+				jimeng4N = config.defaultN;
+			}
+		} catch (error) {
+			console.error('加载即梦4配置失败:', error);
+		}
+	};
+
+	const loadBananaConfig = async () => {
+		if (!$user?.token) return;
+		try {
+			const config = await getBananaUserConfig($user.token);
+			if (config) {
+				bananaConfig = config;
+				bananaModel = config.defaultModel;
+				bananaResponseFormat = config.defaultOutputFormat;
+				bananaAspectRatio = config.defaultAspectRatio;
+			}
+		} catch (error) {
+			console.error('加载Banana配置失败:', error);
+		}
+	};
+
+	const handleJimeng4ReferenceUpload = async (event: Event) => {
+		const input = event.target as HTMLInputElement;
+		const files = input?.files ? Array.from(input.files) : [];
+		if (files.length === 0) {
+			return;
+		}
+
+		if (!$user?.token) {
+			toast.error('请先登录');
+			input.value = '';
+			return;
+		}
+
+		let availableSlots = JIMENG4_MAX_REFERENCE_IMAGES - jimeng4ReferenceUrls.length;
+		if (availableSlots <= 0) {
+			toast.error(`最多支持 ${JIMENG4_MAX_REFERENCE_IMAGES} 张参考图`);
+			input.value = '';
+			return;
+		}
+
+		jimeng4Uploading = true;
+		let reachedLimit = availableSlots <= 0;
+		try {
+			for (const file of files) {
+				if (availableSlots <= 0) {
+					reachedLimit = true;
+					break;
+				}
+
+				if (!file.type.startsWith('image/')) {
+					toast.error(`${file.name} 不是图片文件`);
+					continue;
+				}
+
+				try {
+					const response = await uploadJimeng4ReferenceImage($user.token, file);
+					if (response.success && response.url) {
+						if (jimeng4ReferenceUrls.includes(response.url)) {
+							toast.info(`${file.name} 已在参考列表中`);
+							continue;
+						}
+						jimeng4UploadedReferences = [
+							...jimeng4UploadedReferences,
+							{ url: response.url, fileId: response.fileId, name: file.name }
+						];
+						availableSlots -= 1;
+						reachedLimit = availableSlots <= 0;
+						toast.success(`${file.name} 上传成功`);
+					} else {
+						toast.error(response.message || `${file.name} 上传失败`);
+					}
+				} catch (uploadError) {
+					console.error('上传参考图失败:', uploadError);
+					toast.error(uploadError instanceof Error ? uploadError.message : `${file.name} 上传失败`);
+				}
+			}
+			if (!reachedLimit && availableSlots <= 0) {
+				reachedLimit = true;
+			}
+		} finally {
+			jimeng4Uploading = false;
+			if (input) {
+				input.value = '';
+			}
+		}
+
+		if (reachedLimit) {
+			toast.info(`参考图数量已达上限 (${JIMENG4_MAX_REFERENCE_IMAGES} 张)`);
+		}
+	};
+
+	const removeJimeng4UploadedReference = (index: number) => {
+		const removed = jimeng4UploadedReferences[index];
+		jimeng4UploadedReferences = jimeng4UploadedReferences.filter((_, i) => i !== index);
+		if (removed) {
+			toast.success('已移除上传的参考图');
+		}
+	};
+
+	const handleBananaImageUpload = async (event: Event) => {
+		const input = event.target as HTMLInputElement;
+		const files = input?.files ? Array.from(input.files) : [];
+		if (!files.length) return;
+
+		let availableSlots = BANANA_MAX_IMAGES - bananaUploadedImages.length;
+		if (availableSlots <= 0) {
+			toast.error(`最多支持 ${BANANA_MAX_IMAGES} 张参考图`);
+			if (input) input.value = '';
+			return;
+		}
+
+		for (const file of files) {
+			if (availableSlots <= 0) {
+				toast.info(`参考图数量已达上限 (${BANANA_MAX_IMAGES} 张)`);
+				break;
+			}
+
+			if (!file.type.startsWith('image/')) {
+				toast.error(`${file.name} 不是图片文件`);
+				continue;
+			}
+
+			try {
+				const base64 = await new Promise<string>((resolve, reject) => {
+					const reader = new FileReader();
+					reader.onload = () => resolve(reader.result as string);
+					reader.onerror = (err) => reject(err);
+					reader.readAsDataURL(file);
+				});
+
+				bananaUploadedImages = [...bananaUploadedImages, base64];
+				availableSlots -= 1;
+				toast.success(`${file.name} 上传成功`);
+			} catch (error) {
+				console.error('上传Banana参考图失败:', error);
+				toast.error(`${file.name} 上传失败`);
+			}
+		}
+
+		if (input) input.value = '';
+	};
+
+	const removeBananaUploadedImage = (index: number) => {
+		bananaUploadedImages = bananaUploadedImages.filter((_, i) => i !== index);
+		toast.success('已移除上传的图片');
+	};
+
+	const transformJimeng4Task = (
+		task: Jimeng4Task,
+		options: { prompt?: string; description?: string; n?: number } = {}
+	): MJTask => {
+		const normalizedStatus = (task.status || '').toUpperCase();
+		const actionType =
+			(task.request_image_urls?.length ?? 0) > 0 ? 'IMAGE_TO_IMAGE' : 'TEXT_TO_IMAGE';
+		const promptText = options.prompt ?? task.prompt;
+		const baseImageCount = options.n ?? task.n ?? 1;
+		const cloudUrls = Array.isArray(task.cloud_image_urls)
+			? task.cloud_image_urls.filter((url) => !!url)
+			: [];
+		const responseUrls = Array.isArray(task.response_urls)
+			? task.response_urls.filter((url) => !!url)
+			: [];
+		const existingImageUrl = task.imageUrl ? [task.imageUrl] : [];
+		const galleryUrls = Array.from(new Set([...existingImageUrl, ...cloudUrls, ...responseUrls]));
+		const imageUrl = galleryUrls[0] || '';
+		const description =
+			options.description ??
+			`即梦4${actionType === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'}(${galleryUrls.length || baseImageCount}张): ${promptText}`;
+		const createdAt = task.created_at ? new Date(task.created_at).getTime() : Date.now();
+		const updatedAt = task.updated_at ? new Date(task.updated_at).getTime() : createdAt;
+		const finishTime = task.completed_at
+			? new Date(task.completed_at).getTime()
+			: normalizedStatus === 'SUCCESS' || normalizedStatus === 'FAILED'
+				? updatedAt
+				: 0;
+		const imageCount = galleryUrls.length > 0 ? galleryUrls.length : baseImageCount || 0;
+
+		return {
+			id: task.id,
+			action: actionType,
+			status: normalizedStatus || 'SUBMITTED',
+			prompt: task.prompt,
+			promptEn: promptText,
+			description,
+			submitTime: createdAt,
+			startTime: updatedAt,
+			finishTime,
+			progress:
+				normalizedStatus === 'FAILED'
+					? '失败'
+					: imageUrl || normalizedStatus === 'SUCCESS'
+						? '100%'
+						: normalizedStatus || '处理中...',
+			imageUrl,
+			imageCount,
+			failReason: task.fail_reason,
+			properties: {
+				serviceType: 'jimeng4',
+				model: task.model,
+				mode: actionType === 'IMAGE_TO_IMAGE' ? 'jimeng4-image' : 'jimeng4-text',
+				referenceUrls: task.request_image_urls ?? [],
+				responseUrls: responseUrls,
+				cloudImageUrls: cloudUrls,
+				imageUrls: galleryUrls,
+				imageCount
+			},
+			buttons: [],
+			creditsCost:
+				task.credits_cost ?? (jimeng4Config?.creditsPerImage || 30) * Math.max(1, imageCount)
+		} as unknown as MJTask;
+	};
+
+	const transformBananaTask = (task: BananaTask): MJTask => {
+		const responseUrls = (task.response_urls ?? []).filter(Boolean);
+		const cloudUrls = (task.cloud_image_urls ?? []).filter(Boolean);
+		const primaryUrls = cloudUrls.length > 0 ? cloudUrls : responseUrls;
+		const galleryUrls = Array.from(new Set(primaryUrls));
+		const imageUrl = galleryUrls[0] || '';
+		const createdAt = task.created_at ? new Date(task.created_at).getTime() : Date.now();
+		const updatedAt = task.updated_at ? new Date(task.updated_at).getTime() : createdAt;
+		const finishedAt = task.completed_at ? new Date(task.completed_at).getTime() : updatedAt;
+		const imageCount = galleryUrls.length || 1;
+
+		return {
+			id: task.id,
+			action: task.task_type === 'edit' ? 'BananaEdit' : 'BananaGenerate',
+			status: (task.status || 'submitted').toUpperCase(),
+			prompt: task.prompt,
+			promptEn: task.prompt,
+			description: `Banana ${task.task_type === 'edit' ? '图生图' : '文生图'}(${imageCount}张)`,
+			submitTime: createdAt,
+			startTime: createdAt,
+			finishTime: finishedAt,
+			progress: imageUrl ? '100%' : task.status,
+			imageUrl,
+			imageCount,
+			failReason: task.fail_reason,
+			properties: {
+				serviceType: 'banana',
+				mode: task.task_type,
+				model: task.model,
+				aspectRatio: task.aspect_ratio,
+				responseUrls,
+				cloudImageUrls: cloudUrls,
+				imageUrls: galleryUrls
+			},
+			buttons: [],
+			creditsCost: task.credits_cost
+		} as unknown as MJTask;
+	};
+
 	// 加载Flux配置
 	const loadFluxConfig = async () => {
 		if (!$user?.token) return;
@@ -435,10 +834,22 @@
 				enabled: dreamWorkConfig?.enabled || false
 			},
 			{
+				id: 'jimeng4',
+				name: '即梦4',
+				icon: '🖼️',
+				enabled: jimeng4Config?.enabled || false
+			},
+			{
 				id: 'flux',
 				name: 'Flux AI',
 				icon: '⚡',
 				enabled: fluxConfig?.enabled || false
+			},
+			{
+				id: 'banana',
+				name: 'Banana',
+				icon: '🍌',
+				enabled: bananaConfig?.enabled || false
 			}
 		];
 
@@ -493,7 +904,9 @@
 			// 加载配置 - 获取最新的积分设置
 			await loadMJConfig();
 			await loadDreamWorkConfig();
+			await loadJimeng4Config();
 			await loadFluxConfig();
+			await loadBananaConfig();
 			await updateAvailableServices();
 
 			// 加载用户积分 - 确保使用用户token进行隔离
@@ -543,7 +956,33 @@
 				console.error('加载DreamWork历史记录失败:', error);
 			}
 
-			// 3. 加载Flux历史记录
+			// 3. 加载即梦4历史记录
+			try {
+				const jimeng4History = await getJimeng4TaskHistory($user.token, 20, 0);
+				if (jimeng4History && jimeng4History.items) {
+					console.log('🖼️ 加载即梦4历史记录:', jimeng4History.items.length, '个任务');
+					const jimeng4TasksWithType = jimeng4History.items.map((task) =>
+						transformJimeng4Task(task)
+					);
+					allTasks = [...allTasks, ...jimeng4TasksWithType];
+				}
+			} catch (error) {
+				console.error('加载即梦4历史记录失败:', error);
+			}
+
+			// 4. 加载Banana历史记录
+			try {
+				const bananaHistory = await listBananaTasks($user.token, 1, 20);
+				if (bananaHistory && bananaHistory.items) {
+					console.log('🍌 加载Banana历史记录:', bananaHistory.items.length, '个任务');
+					const bananaTasks = bananaHistory.items.map((task) => transformBananaTask(task));
+					allTasks = [...allTasks, ...bananaTasks];
+				}
+			} catch (error) {
+				console.error('加载Banana历史记录失败:', error);
+			}
+
+			// 4. 加载Flux历史记录
 			try {
 				const fluxHistory = await getFluxUserTaskHistory($user.token, 1, 20);
 				if (fluxHistory && fluxHistory.data) {
@@ -603,6 +1042,16 @@
 								...(serverTask.properties || {}),
 								serviceType: 'dreamwork'
 							};
+						} else if (serverTask.model && serverTask.model.includes('seedream-4')) {
+							serverTask.properties = {
+								...(serverTask.properties || {}),
+								serviceType: 'jimeng4'
+							};
+						} else if (serverTask.action?.startsWith('Banana')) {
+							serverTask.properties = {
+								...(serverTask.properties || {}),
+								serviceType: 'banana'
+							};
 						} else {
 							serverTask.properties = {
 								...(serverTask.properties || {}),
@@ -624,7 +1073,7 @@
 				console.log(
 					'📋 历史记录已更新，保留本地状态:',
 					taskHistory.length,
-					'个任务（MJ+DreamWork+Flux）'
+					'个任务（MJ+DreamWork+Jimeng4+Flux+Banana）'
 				);
 				console.log(
 					'📋 DreamWork任务数量:',
@@ -635,8 +1084,16 @@
 					taskHistory.filter((t) => t.properties?.serviceType === 'midjourney').length
 				);
 				console.log(
+					'📋 即梦4任务数量:',
+					taskHistory.filter((t) => t.properties?.serviceType === 'jimeng4').length
+				);
+				console.log(
 					'📋 Flux任务数量:',
 					taskHistory.filter((t) => t.properties?.serviceType === 'flux').length
+				);
+				console.log(
+					'📋 Banana任务数量:',
+					taskHistory.filter((t) => t.properties?.serviceType === 'banana').length
 				);
 
 				// 🔥 加载数据后强制修复本地任务显示
@@ -747,25 +1204,54 @@
 		for (const task of suspiciousTasks) {
 			try {
 				console.log(`🔧 查询任务 ${task.id} 的远程状态...`);
-				const remoteTask = await getTaskStatus($user.token, task.id);
+				const serviceType = task.properties?.serviceType || 'midjourney';
+				let remoteTask: MJTask | null = null;
 
-				if (remoteTask && remoteTask.imageUrl) {
-					console.log(`🔧 发现任务 ${task.id} 远程有图片: ${remoteTask.imageUrl}`);
+				if (serviceType === 'jimeng4') {
+					try {
+						const remoteJimeng4 = await getJimeng4TaskStatus($user.token, task.id);
+						if (remoteJimeng4) {
+							remoteTask = transformJimeng4Task(remoteJimeng4, {
+								prompt: task.prompt,
+								description: task.description,
+								n: remoteJimeng4.n ?? 1
+							});
+						}
+					} catch (apiError) {
+						console.error(`🔧 查询即梦4任务 ${task.id} 失败:`, apiError);
+					}
+				} else {
+					remoteTask = await getTaskStatus($user.token, task.id);
+				}
 
-					// 更新本地任务数据
-					taskHistory = taskHistory.map((t) =>
-						t.id === task.id
-							? {
-									...t,
-									...remoteTask,
-									status: 'SUCCESS',
-									progress: '100%',
-									imageUrl: remoteTask.imageUrl
-								}
-							: t
-					);
+				if (remoteTask) {
+					if (remoteTask.imageUrl) {
+						console.log(`🔧 发现任务 ${task.id} 远程有图片: ${remoteTask.imageUrl}`);
+					}
 
-					refreshedCount++;
+					let mergedLatest: MJTask | null = null;
+					taskHistory = taskHistory.map((t) => {
+						if (t.id !== task.id) return t;
+
+						const mergedTask = {
+							...t,
+							...remoteTask,
+							status: remoteTask.imageUrl ? 'SUCCESS' : remoteTask.status || t.status,
+							progress: remoteTask.imageUrl ? '100%' : remoteTask.progress || t.progress,
+							imageUrl: remoteTask.imageUrl || t.imageUrl,
+							failReason: remoteTask.failReason ?? t.failReason
+						} as MJTask;
+
+						mergedLatest = mergedTask;
+						return mergedTask;
+					});
+
+					if (remoteTask.imageUrl) {
+						refreshedCount++;
+						if (!generatedImage || generatedImage.id === task.id) {
+							generatedImage = mergedLatest ?? remoteTask;
+						}
+					}
 				}
 			} catch (error) {
 				console.error(`🔧 查询任务 ${task.id} 失败:`, error);
@@ -790,9 +1276,15 @@
 				? modeConfig[selectedMode].credits
 				: selectedService === 'dreamwork'
 					? dreamWorkConfig?.creditsPerGeneration || 10
-					: selectedService === 'flux'
-						? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1) // Flux按模型和图片数量计算积分
-						: 5;
+					: selectedService === 'jimeng4'
+						? (jimeng4Config?.creditsPerImage || 30) * (jimeng4N || 1)
+						: selectedService === 'flux'
+							? getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)
+							: selectedService === 'banana'
+								? isBananaEdit
+									? bananaConfig?.creditsPerEdit || 10
+									: bananaConfig?.creditsPerGeneration || 10
+								: 5;
 
 		if (userCredits < requiredCredits) {
 			toast.error('积分不足');
@@ -1020,6 +1512,49 @@
 					console.error('🎨 【DreamWork前端】API返回错误:', result);
 					throw new Error(result?.message || '即梦任务提交失败');
 				}
+			} else if (selectedService === 'jimeng4') {
+				if (!jimeng4Config || !jimeng4Config.enabled) {
+					toast.error('即梦4服务未配置或未启用');
+					isGenerating = false;
+					return;
+				}
+
+				const sizeToUse = normalizeJimeng4Size(jimeng4Size);
+				const jimeng4Request: Jimeng4GenerateRequest = {
+					prompt: prompt.trim(),
+					model: jimeng4Model,
+					size: sizeToUse,
+					n: jimeng4N,
+					sequential_image_generation: jimeng4SequentialMode,
+					response_format: 'url',
+					stream: jimeng4Stream,
+					watermark: jimeng4Watermark
+				};
+
+				if (jimeng4ReferenceUrls.length > 0) {
+					jimeng4Request.image = jimeng4ReferenceUrls;
+				}
+
+				const result = await submitJimeng4Task($user.token, jimeng4Request);
+				if (result?.task) {
+					const actionType = jimeng4ReferenceUrls.length > 0 ? 'IMAGE_TO_IMAGE' : 'TEXT_TO_IMAGE';
+					const description = `即梦4${actionType === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'}(${jimeng4N}张): ${prompt.trim()}`;
+					const enrichedTask = transformJimeng4Task(result.task, {
+						prompt: prompt.trim(),
+						description,
+						n: jimeng4N
+					});
+
+					taskHistory = [enrichedTask, ...taskHistory];
+					generatedImage = enrichedTask;
+					await refreshCreditsOnly();
+					toast.success('即梦4图片已生成');
+				} else {
+					toast.error('即梦4任务提交失败');
+				}
+
+				isGenerating = false;
+				currentTask = null;
 			} else if (selectedService === 'flux') {
 				// === Flux 生成逻辑 ===
 				if (!fluxConfig || !fluxConfig.enabled) {
@@ -1189,6 +1724,40 @@
 					console.error('⚡ 【Flux前端】任务提交失败:', error);
 					throw error;
 				}
+			} else if (selectedService === 'banana') {
+				if (!bananaConfig || !bananaConfig.enabled) {
+					toast.error('Banana服务未配置或未启用');
+					isGenerating = false;
+					return;
+				}
+
+				const bananaRequest = {
+					prompt: prompt.trim(),
+					model: bananaModel,
+					aspect_ratio: bananaAspectRatio,
+					response_format: bananaResponseFormat,
+					reference_urls: bananaReferenceUrls.length ? bananaReferenceUrls : undefined,
+					images: bananaUploadedImages.length ? bananaUploadedImages : undefined
+				};
+
+				try {
+					const result = await submitBananaTask($user.token, bananaRequest);
+					if (result?.task) {
+						const bananaTask = transformBananaTask(result.task);
+						taskHistory = [bananaTask, ...taskHistory];
+						generatedImage = bananaTask;
+						await refreshCreditsOnly();
+						toast.success('Banana 图片生成成功');
+					} else {
+						toast.error('Banana 任务提交失败');
+					}
+				} catch (error) {
+					console.error('Banana 生成失败:', error);
+					toast.error('Banana 生成失败');
+				}
+
+				isGenerating = false;
+				currentTask = null;
 			} else {
 				toast.error('不支持的生成服务');
 				isGenerating = false;
@@ -1751,10 +2320,24 @@
 
 	// 图像查看模态框
 	let selectedImageForViewing: MJTask | null = null;
+	let selectedImageGallery: string[] = [];
+	let selectedImageIndex = 0;
+	let selectedModalImageUrl = '';
 	let isImageModalOpen = false;
+
+	$: selectedModalImageUrl =
+		selectedImageGallery[selectedImageIndex] ||
+		selectedImageForViewing?.imageUrl ||
+		selectedImageForViewing?.properties?.cloudImageUrls?.[0] ||
+		selectedImageForViewing?.properties?.responseUrls?.[0] ||
+		'';
 
 	// 复制图片到剪贴板
 	const copyImageToClipboard = async (imageUrl: string) => {
+		if (!imageUrl) {
+			toast.error('暂无可复制的图片');
+			return;
+		}
 		try {
 			const response = await fetch(imageUrl);
 			const blob = await response.blob();
@@ -1768,6 +2351,10 @@
 
 	// 下载图片
 	const downloadImage = async (imageUrl: string, filename: string) => {
+		if (!imageUrl) {
+			toast.error('暂无可下载的图片');
+			return;
+		}
 		try {
 			const response = await fetch(imageUrl);
 			const blob = await response.blob();
@@ -1804,12 +2391,30 @@
 	// 打开图片查看模态框
 	const openImageModal = (task: MJTask) => {
 		selectedImageForViewing = task;
+		const gallery = Array.isArray(task.properties?.imageUrls)
+			? (task.properties?.imageUrls as string[])
+			: [];
+		const fallbackUrls = [
+			task.imageUrl,
+			...(Array.isArray(task.properties?.cloudImageUrls)
+				? (task.properties?.cloudImageUrls as string[])
+				: []),
+			...(Array.isArray(task.properties?.responseUrls)
+				? (task.properties?.responseUrls as string[])
+				: [])
+		];
+		selectedImageGallery = Array.from(
+			new Set([...gallery, ...fallbackUrls].filter((url) => Boolean(url)))
+		) as string[];
+		selectedImageIndex = 0;
 		isImageModalOpen = true;
 	};
 
 	// 关闭图片查看模态框
 	const closeImageModal = () => {
 		selectedImageForViewing = null;
+		selectedImageGallery = [];
+		selectedImageIndex = 0;
 		isImageModalOpen = false;
 	};
 
@@ -1861,8 +2466,12 @@
 			try {
 				if (serviceType === 'dreamwork') {
 					success = await deleteDreamWorkTask($user.token, task.id);
+				} else if (serviceType === 'jimeng4') {
+					success = await deleteJimeng4Task($user.token, task.id);
 				} else if (serviceType === 'flux') {
 					success = await deleteFluxTask($user.token, task.id);
+				} else if (serviceType === 'banana') {
+					success = await deleteBananaTask($user.token, task.id);
 				} else {
 					success = await deleteTask($user.token, task.id);
 				}
@@ -1991,16 +2600,35 @@
 								? 'MidJourney'
 								: selectedService === 'dreamwork'
 									? '即梦 (DreamWork)'
-									: 'Flux AI'}
+									: selectedService === 'jimeng4'
+										? '即梦4'
+										: selectedService === 'flux'
+											? 'Flux AI'
+											: selectedService === 'banana'
+												? 'Banana'
+												: '图像服务'}
 						</div>
 						{#if selectedService === 'midjourney'}
 							<div>消耗积分: {modeConfig[selectedMode].credits}积分/次</div>
 						{:else if selectedService === 'dreamwork' && dreamWorkConfig}
 							<div>消耗积分: {dreamWorkConfig.creditsPerGeneration}积分/次</div>
+						{:else if selectedService === 'jimeng4' && jimeng4Config}
+							<div>
+								消耗积分: {(jimeng4Config.creditsPerImage || 30) * (jimeng4N || 1)}积分 ({jimeng4N ||
+									1}张)
+							</div>
 						{:else if selectedService === 'flux'}
 							<div>
 								消耗积分: {getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}积分 ({fluxNumImages ||
 									1}张图片)
+							</div>
+						{:else if selectedService === 'banana' && bananaConfig}
+							<div>
+								消耗积分:
+								{isBananaEdit
+									? (bananaConfig.creditsPerEdit ?? 10)
+									: (bananaConfig.creditsPerGeneration ?? 10)}
+								积分/次
 							</div>
 						{/if}
 						<div class="flex justify-between items-center">
@@ -2042,9 +2670,15 @@
 										? modeConfig[selectedMode].credits
 										: selectedService === 'dreamwork'
 											? dreamWorkConfig?.creditsPerGeneration || 10
-											: selectedService === 'flux'
-												? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
-												: 5}积分)
+											: selectedService === 'jimeng4'
+												? (jimeng4Config?.creditsPerImage || 30) * (jimeng4N || 1)
+												: selectedService === 'flux'
+													? `${getFluxModelCredits(selectedFluxModel) * (fluxNumImages || 1)}`
+													: selectedService === 'banana'
+														? isBananaEdit
+															? (bananaConfig?.creditsPerEdit ?? 10)
+															: (bananaConfig?.creditsPerGeneration ?? 10)
+														: 5}积分)
 								{/if}
 							</button>
 						</div>
@@ -2247,6 +2881,133 @@
 							<label for="dreamwork-watermark" class="text-sm text-gray-600 dark:text-gray-400"
 								>启用水印</label
 							>
+						</div>
+					{:else if selectedService === 'jimeng4' && jimeng4Config}
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>模型编码</label
+							>
+							<input
+								bind:value={jimeng4Model}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								placeholder="如 doubao-seedream-4-0-250828"
+							/>
+						</div>
+
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>输出尺寸</label
+								>
+								<select
+									bind:value={jimeng4Size}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									{#each JIMENG4_SIZE_PRESETS as preset}
+										<option value={preset.value}>{preset.label}</option>
+									{/each}
+								</select>
+								<div class="text-xs text-gray-500 mt-1">
+									当前选择：{jimeng4SelectedSizePreset?.label ?? jimeng4Size}
+								</div>
+							</div>
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>生成张数</label
+								>
+								<input
+									type="number"
+									min="1"
+									max="10"
+									bind:value={jimeng4N}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>连续模式</label
+								>
+								<select
+									bind:value={jimeng4SequentialMode}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="auto">自动</option>
+									<option value="fast">快速</option>
+									<option value="balanced">均衡</option>
+								</select>
+							</div>
+							<div class="flex flex-col gap-2 mt-6">
+								<label class="flex items-center text-sm text-gray-700 dark:text-gray-300 gap-2">
+									<input type="checkbox" bind:checked={jimeng4Watermark} /> 启用水印
+								</label>
+								<label class="flex items-center text-sm text-gray-700 dark:text-gray-300 gap-2">
+									<input type="checkbox" bind:checked={jimeng4Stream} /> Stream模式
+								</label>
+							</div>
+						</div>
+
+						<div>
+							<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+								>参考图片URL（每行一个，可选）</label
+							>
+							<textarea
+								bind:value={jimeng4ReferenceInput}
+								class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800 dark:text-white resize-none"
+								rows="3"
+								placeholder="https://example.com/a.jpg\nhttps://example.com/b.jpg"
+							></textarea>
+							<div class="text-xs text-gray-500 mt-1">
+								当前引用 {jimeng4ReferenceUrls.length} 张图片
+							</div>
+							<div class="mt-3 space-y-2">
+								<div class="flex items-center justify-between">
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300"
+										>上传参考图</label
+									>
+									{#if jimeng4Uploading}
+										<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+											<Spinner className="size-3" />
+											上传中...
+										</div>
+									{/if}
+								</div>
+								<input
+									type="file"
+									accept="image/*"
+									multiple
+									on:change={handleJimeng4ReferenceUpload}
+									class="w-full text-xs text-gray-600 dark:text-gray-300"
+								/>
+								<div class="text-xs text-gray-500 dark:text-gray-400">
+									支持 JPG/PNG/WebP，单张 ≤ 10MB，最多 {JIMENG4_MAX_REFERENCE_IMAGES} 张（包含手动填写）
+								</div>
+								{#if jimeng4UploadedReferences.length > 0}
+									<div class="flex flex-wrap gap-2 mt-2">
+										{#each jimeng4UploadedReferences as ref, index (ref.url)}
+											<div
+												class="relative w-16 h-16 rounded overflow-hidden border border-gray-200 dark:border-gray-600"
+											>
+												<img
+													src={ref.url}
+													alt={ref.name ?? `参考图${index + 1}`}
+													class="w-full h-full object-cover"
+												/>
+												<button
+													type="button"
+													on:click={() => removeJimeng4UploadedReference(index)}
+													title="移除参考图"
+													class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white text-xs hover:bg-red-600"
+												>
+													✕
+												</button>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
 						</div>
 					{:else if selectedService === 'flux' && fluxConfig}
 						<!-- Flux 参数 -->
@@ -2873,6 +3634,142 @@
 								</div>
 							</details>
 						</div>
+					{:else if selectedService === 'banana' && bananaConfig}
+						<div class="space-y-3">
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>生成模型</label
+								>
+								<select
+									bind:value={bananaModel}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									{#each bananaModelOptions as option}
+										<option value={option.value}>{option.label}</option>
+									{/each}
+								</select>
+							</div>
+
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+										>输出格式</label
+									>
+									<select
+										bind:value={bananaResponseFormat}
+										class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+									>
+										{#each bananaResponseOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+									<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+										URL 推荐用于直接展示，Base64 适合离线处理
+									</div>
+								</div>
+								<div>
+									<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+										>图片比例</label
+									>
+									<select
+										bind:value={bananaAspectRatio}
+										class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+									>
+										{#each bananaAspectRatioOptions as ratio}
+											<option value={ratio}>{ratio}</option>
+										{/each}
+									</select>
+								</div>
+							</div>
+
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>参考图 URL（可选）</label
+								>
+								<textarea
+									bind:value={bananaReferenceInput}
+									class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-800 dark:text-white resize-none"
+									rows="3"
+									placeholder={`每行一个图片链接，最多 ${BANANA_MAX_IMAGES} 个`}
+								></textarea>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									当前解析 {bananaReferenceUrls.length} 个链接
+								</div>
+								{#if bananaReferenceUrls.length > 0}
+									<div class="flex flex-wrap gap-2 mt-2">
+										{#each bananaReferenceUrls as url}
+											<span
+												class="px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded"
+												title={url}
+											>
+												{url}
+											</span>
+										{/each}
+									</div>
+								{/if}
+							</div>
+
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
+									>上传参考图（可选，最多 {BANANA_MAX_IMAGES} 张）</label
+								>
+								<div
+									class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4"
+								>
+									{#if bananaUploadedImages.length > 0}
+										<div class="flex flex-wrap gap-2 mb-3">
+											{#each bananaUploadedImages as image, index}
+												<div
+													class="relative w-16 h-16 rounded overflow-hidden border border-gray-200 dark:border-gray-600"
+												>
+													<img
+														src={image}
+														alt={`参考图${index + 1}`}
+														class="w-full h-full object-cover"
+													/>
+													<button
+														type="button"
+														on:click={() => removeBananaUploadedImage(index)}
+														title="移除图片"
+														class="absolute top-1 right-1 w-5 h-5 flex items-center justify-center rounded-full bg-black/60 text-white text-xs hover:bg-red-600"
+													>
+														✕
+													</button>
+												</div>
+											{/each}
+										</div>
+									{:else}
+										<div class="text-center text-xs text-gray-500 dark:text-gray-400">
+											支持 JPG/PNG，单张 ≤ 5MB
+										</div>
+									{/if}
+									<div class="text-center">
+										<input
+											id="banana-upload-input"
+											type="file"
+											accept="image/*"
+											multiple
+											class="hidden"
+											on:change={handleBananaImageUpload}
+										/>
+										<button
+											type="button"
+											on:click={() => document.getElementById('banana-upload-input')?.click()}
+											class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
+											disabled={bananaUploadedImages.length >= BANANA_MAX_IMAGES}
+										>
+											{bananaUploadedImages.length > 0 ? '添加更多图片' : '选择图片'}
+										</button>
+									</div>
+									<div class="text-xs text-gray-500 dark:text-gray-400 mt-2">
+										已上传 {bananaUploadedImages.length} 张，可再添加 {Math.max(
+											0,
+											BANANA_MAX_IMAGES - bananaUploadedImages.length
+										)} 张
+									</div>
+								</div>
+							</div>
+						</div>
 					{/if}
 
 					<!-- 最新生成的图像 -->
@@ -2899,7 +3796,35 @@
 											console.log('✅ 图片加载成功:', generatedImage.imageUrl);
 										}}
 									/>
+									{#if (generatedImage.properties?.imageCount ?? generatedImage.properties?.imageUrls?.length ?? 0) > 1}
+										<div
+											class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full"
+										>
+											共 {generatedImage.properties?.imageCount ??
+												generatedImage.properties?.imageUrls?.length} 张
+										</div>
+									{/if}
 								</div>
+								{#if (generatedImage.properties?.imageUrls?.length ?? 0) > 1}
+									<div class="flex gap-2 mt-2 overflow-x-auto">
+										{#each generatedImage.properties.imageUrls as url, idx (url)}
+											<button
+												on:click={() => {
+													generatedImage = { ...generatedImage, imageUrl: url };
+												}}
+												class={`relative w-12 h-12 rounded overflow-hidden border ${generatedImage.imageUrl === url ? 'border-green-500' : 'border-transparent'}`}
+												type="button"
+												title={`查看第${idx + 1}张`}
+											>
+												<img
+													src={url}
+													alt={`即梦4参考图 ${idx + 1}`}
+													class="w-full h-full object-cover"
+												/>
+											</button>
+										{/each}
+									</div>
+								{/if}
 							{:else}
 								<div
 									class="w-full h-32 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center text-gray-500"
@@ -3045,14 +3970,22 @@
 											class="px-2 py-1 text-xs font-medium text-white rounded {task.properties
 												?.serviceType === 'dreamwork'
 												? 'bg-gradient-to-r from-purple-500 to-pink-500'
-												: task.properties?.serviceType === 'flux'
-													? 'bg-gradient-to-r from-blue-500 to-cyan-500'
-													: 'bg-purple-600'}"
+												: task.properties?.serviceType === 'jimeng4'
+													? 'bg-gradient-to-r from-rose-500 to-orange-500'
+													: task.properties?.serviceType === 'flux'
+														? 'bg-gradient-to-r from-blue-500 to-cyan-500'
+														: task.properties?.serviceType === 'banana'
+															? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-black'
+															: 'bg-purple-600'}"
 										>
 											{#if task.properties?.serviceType === 'dreamwork'}
 												即梦 (DreamWork)
+											{:else if task.properties?.serviceType === 'jimeng4'}
+												即梦4 (Seedream)
 											{:else if task.properties?.serviceType === 'flux'}
 												Flux AI
+											{:else if task.properties?.serviceType === 'banana'}
+												Banana
 											{:else}
 												{task.properties?.botType === 'NIJI_JOURNEY' ? 'Niji3.0' : 'MidJourney'}
 											{/if}
@@ -3068,6 +4001,13 @@
 												class="w-full h-full object-cover cursor-pointer"
 												on:click={() => openImageModal(task)}
 											/>
+											{#if (task.properties?.imageCount ?? task.properties?.imageUrls?.length ?? 0) > 1}
+												<div
+													class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full"
+												>
+													{task.properties?.imageCount ?? task.properties?.imageUrls?.length} 张
+												</div>
+											{/if}
 											<!-- 悬停操作层 -->
 											<div
 												class="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center opacity-0 hover:opacity-100"
@@ -3084,7 +4024,17 @@
 															on:click|stopPropagation={() =>
 																downloadImage(
 																	task.imageUrl,
-																	`${task.properties?.serviceType === 'dreamwork' ? 'dreamwork' : task.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${task.id}.png`
+																	`${
+																		task.properties?.serviceType === 'dreamwork'
+																			? 'dreamwork'
+																			: task.properties?.serviceType === 'jimeng4'
+																				? 'jimeng4'
+																				: task.properties?.serviceType === 'flux'
+																					? 'flux'
+																					: task.properties?.serviceType === 'banana'
+																						? 'banana'
+																						: 'mj'
+																	}-${task.id}.png`
 																)}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
 														>
@@ -3168,8 +4118,16 @@
 											<span>
 												{#if task.properties?.serviceType === 'dreamwork'}
 													即梦 ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
+												{:else if task.properties?.serviceType === 'jimeng4'}
+													即梦4 ({(task.properties?.imageCount ??
+														task.properties?.imageUrls?.length ??
+														1) > 1
+														? `${task.properties?.imageCount ?? task.properties?.imageUrls?.length}张`
+														: '单张'})
 												{:else if task.properties?.serviceType === 'flux'}
 													Flux ({task.action === 'IMAGE_TO_IMAGE' ? '图生图' : '文生图'})
+												{:else if task.properties?.serviceType === 'banana'}
+													Banana ({task.properties?.mode === 'edit' ? '图生图' : '文生图'})
 												{:else}
 													MidJourney (fast)
 												{/if}
@@ -3269,14 +4227,22 @@
 							class="px-2 py-1 text-xs font-medium text-white rounded {selectedImageForViewing
 								.properties?.serviceType === 'dreamwork'
 								? 'bg-gradient-to-r from-purple-500 to-pink-500'
-								: selectedImageForViewing.properties?.serviceType === 'flux'
-									? 'bg-gradient-to-r from-blue-500 to-cyan-500'
-									: 'bg-purple-600'}"
+								: selectedImageForViewing.properties?.serviceType === 'jimeng4'
+									? 'bg-gradient-to-r from-rose-500 to-orange-500'
+									: selectedImageForViewing.properties?.serviceType === 'flux'
+										? 'bg-gradient-to-r from-blue-500 to-cyan-500'
+										: selectedImageForViewing.properties?.serviceType === 'banana'
+											? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-black'
+											: 'bg-purple-600'}"
 						>
 							{#if selectedImageForViewing.properties?.serviceType === 'dreamwork'}
 								即梦 (DreamWork)
+							{:else if selectedImageForViewing.properties?.serviceType === 'jimeng4'}
+								即梦4 (Seedream)
 							{:else if selectedImageForViewing.properties?.serviceType === 'flux'}
 								Flux AI
+							{:else if selectedImageForViewing.properties?.serviceType === 'banana'}
+								Banana
 							{:else}
 								{selectedImageForViewing.properties?.botType === 'NIJI_JOURNEY'
 									? 'Niji3.0'
@@ -3303,13 +4269,67 @@
 				</div>
 
 				<!-- 图片显示区域 -->
-				<div class="relative">
-					<img
-						src={selectedImageForViewing.imageUrl}
-						alt={selectedImageForViewing.prompt}
-						class="w-full max-h-[70vh] object-contain"
-					/>
-				</div>
+				{#if selectedModalImageUrl}
+					<div class="relative bg-black/5 flex items-center justify-center">
+						<img
+							src={selectedModalImageUrl}
+							alt={selectedImageForViewing.prompt}
+							class="w-full max-h-[70vh] object-contain"
+						/>
+
+						{#if selectedImageGallery.length > 1}
+							<button
+								type="button"
+								on:click={() => {
+									selectedImageIndex =
+										(selectedImageIndex - 1 + selectedImageGallery.length) %
+										selectedImageGallery.length;
+								}}
+								class="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-black/70"
+								aria-label="上一张"
+							>
+								‹
+							</button>
+							<button
+								type="button"
+								on:click={() => {
+									selectedImageIndex = (selectedImageIndex + 1) % selectedImageGallery.length;
+								}}
+								class="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-black/70"
+								aria-label="下一张"
+							>
+								›
+							</button>
+							<div
+								class="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-full"
+							>
+								{selectedImageIndex + 1} / {selectedImageGallery.length}
+							</div>
+						{/if}
+					</div>
+					{#if selectedImageGallery.length > 1}
+						<div class="flex gap-2 mt-3 px-4 overflow-x-auto">
+							{#each selectedImageGallery as galleryUrl, idx (galleryUrl)}
+								<button
+									type="button"
+									on:click={() => (selectedImageIndex = idx)}
+									class={`w-16 h-16 rounded overflow-hidden border ${idx === selectedImageIndex ? 'border-blue-500' : 'border-transparent'}`}
+									title={`第 ${idx + 1} 张`}
+								>
+									<img
+										src={galleryUrl}
+										alt={`预览 ${idx + 1}`}
+										class="w-full h-full object-cover"
+									/>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				{:else}
+					<div class="h-80 flex items-center justify-center text-gray-400 dark:text-gray-500">
+						暂无图片可显示
+					</div>
+				{/if}
 
 				<!-- 模态框底部操作栏 -->
 				<div
@@ -3331,18 +4351,30 @@
 
 					<div class="flex items-center gap-2">
 						<button
-							on:click={() => copyImageToClipboard(selectedImageForViewing.imageUrl)}
-							class="px-3 py-1.5 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded transition-colors"
+							on:click={() => copyImageToClipboard(selectedModalImageUrl)}
+							disabled={!selectedModalImageUrl}
+							class="px-3 py-1.5 text-sm bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							复制
 						</button>
 						<button
 							on:click={() =>
 								downloadImage(
-									selectedImageForViewing.imageUrl,
-									`${selectedImageForViewing.properties?.serviceType === 'dreamwork' ? 'dreamwork' : selectedImageForViewing.properties?.serviceType === 'flux' ? 'flux' : 'mj'}-${selectedImageForViewing.id}.png`
+									selectedModalImageUrl,
+									`${
+										selectedImageForViewing.properties?.serviceType === 'dreamwork'
+											? 'dreamwork'
+											: selectedImageForViewing.properties?.serviceType === 'jimeng4'
+												? 'jimeng4'
+												: selectedImageForViewing.properties?.serviceType === 'flux'
+													? 'flux'
+													: selectedImageForViewing.properties?.serviceType === 'banana'
+														? 'banana'
+														: 'mj'
+									}-${selectedImageForViewing.id}-${selectedImageIndex + 1}.png`
 								)}
-							class="px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors"
+							disabled={!selectedModalImageUrl}
+							class="px-3 py-1.5 text-sm bg-green-500 hover:bg-green-600 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 						>
 							下载
 						</button>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -86,10 +87,11 @@ class Jimeng4ApiClient:
     async def generate_images(self, payload: Jimeng4GenerateRequest) -> Dict[str, Any]:
         """Submit generation request and return JSON response."""
         url = f"{self.base_url}/v1/images/generations"
+        requested_n = payload.n or self.config.default_n
         request_body: Dict[str, Any] = {
             "model": payload.model or self.config.default_model,
             "prompt": payload.prompt,
-            "n": payload.n or self.config.default_n,
+            "n": requested_n,
             "response_format": payload.response_format or "url",
             "size": payload.size or self.config.default_size,
             "watermark": (
@@ -167,6 +169,7 @@ class Jimeng4ApiClient:
 
         data = response.json()
         logger.info("Jimeng4 response returned %s images", len(data.get("data") or []))
+        logger.debug("Jimeng4 raw response: %s", data)
         return data
 
 
@@ -218,24 +221,24 @@ def _merge_stream_events(events: List[Any]) -> Optional[Dict[str, Any]]:
         return None
 
     result: Dict[str, Any] = {}
-    final_payload: Optional[Dict[str, Any]] = None
-    data_list: List[Any] = []
+    merged_data: List[Any] = []
+    last_payload: Optional[Dict[str, Any]] = None
 
     for event in events:
         if not isinstance(event, dict):
             continue
 
+        data_value = event.get("data")
+        if isinstance(data_value, list):
+            merged_data.extend(data_value)
+        elif isinstance(data_value, dict):
+            merged_data.append(data_value)
+            last_payload = data_value
+
         for key in ("result", "output"):
             payload = event.get(key)
             if isinstance(payload, dict):
-                final_payload = payload
-
-        if "data" in event:
-            data_value = event["data"]
-            if isinstance(data_value, dict):
-                final_payload = data_value
-            elif isinstance(data_value, list):
-                data_list = data_value
+                last_payload = payload
 
         if "usage" in event and isinstance(event["usage"], dict):
             result["usage"] = event["usage"]
@@ -243,22 +246,32 @@ def _merge_stream_events(events: List[Any]) -> Optional[Dict[str, Any]]:
         if "created" in event and "created" not in result:
             result["created"] = event["created"]
 
-        # 有些事件直接携带完整响应
-        if not final_payload and all(key in event for key in ("data", "usage")):
-            final_payload = event
+    if last_payload:
+        # 将最后一次有效负载中的非 data 字段合并，避免覆盖 merged_data
+        for key, value in last_payload.items():
+            if key == "data":
+                continue
+            result.setdefault(key, value)
 
-    if final_payload is None:
-        last_event = events[-1]
-        if isinstance(last_event, dict):
-            final_payload = last_event
+    if merged_data:
+        result["data"] = merged_data
 
-    if final_payload:
-        result.update(final_payload)
+    if result:
+        result.setdefault("stream_events", events)
 
-    if data_list and "data" not in result:
-        result["data"] = data_list
+    return result if result else None
 
-    return result
+
+def _extract_urls_from_string(value: str) -> List[str]:
+    if not value:
+        return []
+    pattern = re.compile(r"https?://[^\s'\"<>;,|]+", re.IGNORECASE)
+    matches = pattern.findall(value)
+    if matches:
+        return matches
+    # fallback split by common delimiters
+    parts = re.split(r"[\s;,]+", value)
+    return [part for part in parts if part.startswith("http")]
 
 
 async def persist_generated_images(
@@ -266,9 +279,55 @@ async def persist_generated_images(
     api_response: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Download generated images and store them via GeneratedFileManager."""
-    images = api_response.get("data") or []
-    if not images:
-        logger.warning("Jimeng4 response lacks data field: %s", api_response)
+
+    def _collect_urls(item: Any) -> List[str]:
+        urls: List[str] = []
+        if isinstance(item, str):
+            urls.extend(_extract_urls_from_string(item))
+            return urls
+        if isinstance(item, list):
+            for sub in item:
+                urls.extend(_collect_urls(sub))
+            return urls
+        if isinstance(item, dict):
+            single = item.get("url") or item.get("image_url")
+            if isinstance(single, str) and single:
+                urls.extend(_extract_urls_from_string(single))
+            nested_keys = (
+                "urls",
+                "images",
+                "image_urls",
+                "image_list",
+                "data",
+                "results",
+            )
+            for key in nested_keys:
+                value = item.get(key)
+                if value:
+                    urls.extend(_collect_urls(value))
+        return urls
+
+    primary_data = api_response.get("data")
+    candidate_urls = _collect_urls(primary_data)
+    if not candidate_urls:
+        candidate_urls = _collect_urls(api_response)
+    raw_stream = api_response.get("raw") or api_response.get("raw_stream")
+    if raw_stream:
+        candidate_urls.extend(
+            _extract_urls_from_string(
+                raw_stream if isinstance(raw_stream, str) else json.dumps(raw_stream)
+            )
+        )
+
+    unique_urls: List[str] = []
+    for url in candidate_urls:
+        if url and url not in unique_urls:
+            unique_urls.append(url)
+
+    if not unique_urls:
+        logger.warning(
+            "Jimeng4 response contains no downloadable urls: %s", api_response
+        )
         return {"response_urls": [], "cloud_urls": []}
 
     file_manager = get_file_manager()
@@ -305,14 +364,19 @@ async def persist_generated_images(
             logger.exception("Downloading Jimeng4 image failed: %s", exc)
 
     await asyncio.gather(
-        *[
-            _download_and_store(idx, item.get("url"))
-            for idx, item in enumerate(images)
-            if item.get("url")
-        ]
+        *[_download_and_store(idx, url) for idx, url in enumerate(unique_urls) if url]
     )
 
-    logger.info("Jimeng4 stored %s/%s images", len(stored_urls), len(images))
+    logger.info("Jimeng4 stored %s/%s images", len(stored_urls), len(unique_urls))
+    expected = getattr(task, "n", None) or 0
+    if expected and len(unique_urls) < expected:
+        logger.warning(
+            "Jimeng4 expected %s images but only saw %s. Raw response keys: %s",
+            expected,
+            len(unique_urls),
+            list(api_response.keys()),
+        )
+        logger.debug("Jimeng4 shortfall response: %s", api_response)
 
     return {"response_urls": response_urls, "cloud_urls": stored_urls}
 

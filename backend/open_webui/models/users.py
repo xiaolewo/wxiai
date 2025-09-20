@@ -1,7 +1,10 @@
+import logging
 import time
 from typing import Optional
 
-from open_webui.internal.db import Base, JSONField, get_db
+from sqlalchemy import inspect, text
+
+from open_webui.internal.db import Base, JSONField, get_db, engine
 
 
 from open_webui.models.chats import Chats
@@ -11,6 +14,9 @@ from open_webui.models.groups import Groups
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text
 from sqlalchemy import or_, and_
+
+
+log = logging.getLogger(__name__)
 
 
 ####################
@@ -132,6 +138,8 @@ class UsersTable:
         role: str = "pending",
         oauth_sub: Optional[str] = None,
     ) -> Optional[UserModel]:
+        # Ensure schema stays aligned even if migrations lag behind
+        ensure_user_columns()
         with get_db() as db:
             user = UserModel(
                 **{
@@ -602,6 +610,7 @@ class UsersTable:
     def get_user_by_phone(self, phone: str) -> Optional[UserModel]:
         """根据手机号获取用户"""
         try:
+            ensure_user_columns()
             with get_db() as db:
                 user = db.query(User).filter_by(phone=phone).first()
                 if user:
@@ -613,6 +622,7 @@ class UsersTable:
     def update_user_phone_by_id(self, id: str, phone: str) -> Optional[UserModel]:
         """更新用户手机号"""
         try:
+            ensure_user_columns()
             with get_db() as db:
                 # 检查手机号是否已被其他用户使用
                 existing_user = (
@@ -636,6 +646,7 @@ class UsersTable:
     ) -> tuple[bool, Optional[str]]:
         """绑定手机号到用户"""
         try:
+            ensure_user_columns()
             with get_db() as db:
                 # 检查手机号是否已被使用
                 existing_user = db.query(User).filter_by(phone=phone).first()
@@ -659,6 +670,7 @@ class UsersTable:
     def unbind_phone_from_user(self, user_id: str) -> tuple[bool, Optional[str]]:
         """解绑用户手机号"""
         try:
+            ensure_user_columns()
             with get_db() as db:
                 user = db.query(User).filter_by(id=user_id).first()
                 if not user:
@@ -687,3 +699,41 @@ class UsersTable:
 
 
 Users = UsersTable()
+
+
+def ensure_user_columns() -> None:
+    """Ensure the user table has the phone column and related indexes."""
+
+    try:
+        inspector = inspect(engine)
+        if "user" not in inspector.get_table_names():
+            return
+        columns = {col["name"] for col in inspector.get_columns("user")}
+        indexes = {idx["name"] for idx in inspector.get_indexes("user")}
+        uniques = {uc["name"] for uc in inspector.get_unique_constraints("user")}
+
+        statements: list[str] = []
+
+        if "phone" not in columns:
+            statements.append("ALTER TABLE user ADD COLUMN phone VARCHAR(255)")
+
+        # Use a unique index to match migration behaviour and allow multiple NULL values
+        if "ix_user_phone" not in indexes:
+            statements.append(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_user_phone ON user (phone)"
+            )
+
+        # Add a named unique constraint when supported (skipped on SQLite to avoid ALTER limitations)
+        if engine.dialect.name != "sqlite" and "uq_user_phone" not in uniques:
+            statements.append(
+                "ALTER TABLE user ADD CONSTRAINT uq_user_phone UNIQUE (phone)"
+            )
+
+        if not statements:
+            return
+
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.execute(text(statement))
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[users] failed to ensure phone column: %s", exc)

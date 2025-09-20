@@ -89,6 +89,7 @@ from open_webui.routers import (
     flux,
     veo,
     hailuo,
+    banana,
 )
 
 from open_webui.routers.retrieval import (
@@ -102,7 +103,7 @@ from open_webui.internal.db import Session, engine
 
 from open_webui.models.functions import Functions
 from open_webui.models.models import Models
-from open_webui.models.users import Users
+from open_webui.models.users import Users, ensure_user_columns
 from open_webui.models.chats import Chats
 
 # 导入新功能模型以确保表结构被注册到 Base.metadata
@@ -1335,6 +1336,7 @@ app.include_router(
 )
 app.include_router(jimeng.router, prefix="/api/v1", tags=["jimeng"])
 app.include_router(jimeng4.router, prefix="/api/v1", tags=["jimeng4"])
+app.include_router(banana.router, prefix="/api/v1", tags=["banana"])
 app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
 app.include_router(hailuo.router, prefix="/api/v1", tags=["hailuo"])
@@ -1744,6 +1746,7 @@ async def get_app_config(request: Request):
         if data is not None and "id" in data:
             user = Users.get_user_by_id(data["id"])
 
+    ensure_user_columns()
     user_count = Users.get_num_users()
     onboarding = False
 

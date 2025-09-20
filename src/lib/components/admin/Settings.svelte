@@ -15,11 +15,13 @@
 	import Midjourney from './Settings/Midjourney.svelte';
 	import DreamWork from './Settings/DreamWork.svelte';
 	import Flux from './Settings/Flux.svelte';
+	import Banana from './Settings/Banana.svelte';
 	import Kling from './Settings/Kling.svelte';
 	import KlingLipSync from './Settings/KlingLipSync.svelte';
 	import JimengInpainting from './Settings/JimengInpainting.svelte';
 	import JimengOutpainting from './Settings/JimengOutpainting.svelte';
 	import Jimeng from './Settings/Jimeng.svelte';
+	import Jimeng4 from './Settings/Jimeng4.svelte';
 	import Veo from './Settings/Veo.svelte';
 	import Hailuo from './Settings/Hailuo.svelte';
 	import Interface from './Settings/Interface.svelte';
@@ -60,7 +62,9 @@
 			'images',
 			'midjourney',
 			'dreamwork',
+			'jimeng4',
 			'flux',
+			'banana',
 			'kling',
 			'kling-lip-sync',
 			'jimeng-inpainting',
@@ -509,6 +513,31 @@
 		</button>
 
 		<button
+			id="jimeng4"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'jimeng4'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/jimeng4');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12 3a9 9 0 1 0 9 9 9.01 9.01 0 0 0-9-9Zm0 16a7 7 0 1 1 7-7 7.008 7.008 0 0 1-7 7Zm0-12a5 5 0 1 0 5 5 5.006 5.006 0 0 0-5-5Zm1 5a1 1 0 0 1-.293.707l-2 2a1 1 0 0 1-1.414-1.414L10.586 12 9.293 10.707a1 1 0 1 1 1.414-1.414l2 2A1 1 0 0 1 13 12Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">即梦4 (Seedream v4)</div>
+		</button>
+
+		<button
 			id="flux"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'flux'
@@ -532,6 +561,22 @@
 				</svg>
 			</div>
 			<div class=" self-center">Flux AI</div>
+		</button>
+
+		<button
+			id="banana"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'banana'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/banana');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<span class="text-lg">🍌</span>
+			</div>
+			<div class=" self-center">Banana</div>
 		</button>
 
 		<button
@@ -907,8 +952,20 @@
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}
 			/>
+		{:else if selectedTab === 'jimeng4'}
+			<Jimeng4
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
 		{:else if selectedTab === 'flux'}
 			<Flux
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'banana'}
+			<Banana
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

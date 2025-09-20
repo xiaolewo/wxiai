@@ -12,8 +12,6 @@
 
 部署二开版本只需要替换镜像和版本，其他的部署与官方版本没有差别，版本号请在 [Release](https://github.com/U8F69/open-webui/releases/latest) 中查看
 
-切换到本仓库镜像前请阅读此篇 [Wiki](https://github.com/U8F69/open-webui/wiki/%E4%BB%8E%E5%AE%98%E6%96%B9%E9%95%9C%E5%83%8F%E5%88%87%E6%8D%A2%E5%88%B0%E6%9C%AC%E4%BB%93%E5%BA%93%E9%95%9C%E5%83%8F)，如有疑问请提 ISSUE 获取支持
-
 ```
 ghcr.io/u8f69/open-webui:<版本号>
 ```
@@ -45,6 +43,24 @@ ghcr.io/u8f69/open-webui:<版本号>
 ### 支持注册邮箱验证
 
 ![email](./docs/sign_verify_user.png)
+
+## 数据库支持
+
+本项目支持多种数据库后端：
+
+### SQLite (默认)
+
+适用于开发和小型部署
+
+### MySQL (推荐用于生产环境)
+
+支持高性能、高并发的生产环境部署
+
+配置方法请参考 [MYSQL_CONFIGURATION.md](./MYSQL_CONFIGURATION.md)
+
+### PostgreSQL
+
+支持企业级部署
 
 ## 拓展配置
 

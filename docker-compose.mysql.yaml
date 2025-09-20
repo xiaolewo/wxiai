@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # MySQL数据库服务
+  mysql:
+    image: mysql:8.0
+    container_name: wxiai-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: wxiai_db
+      MYSQL_USER: wxiai_user
+      MYSQL_PASSWORD: wxiai_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Ollama服务
+  ollama:
+    volumes:
+      - ollama:/root/.ollama
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    restart: unless-stopped
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+
+  # Open WebUI服务
+  open-webui:
+    build:
+      context: .
+      args:
+        OLLAMA_BASE_URL: '/ollama'
+      dockerfile: Dockerfile
+    image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
+    container_name: open-webui
+    volumes:
+      - open-webui:/app/backend/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - ${OPEN_WEBUI_PORT-3000}:8080
+    environment:
+      - 'OLLAMA_BASE_URL=http://ollama:11434'
+      - 'WEBUI_SECRET_KEY='
+      - 'DATABASE_TYPE=mysql'
+      - 'DATABASE_USER=wxiai_user'
+      - 'DATABASE_PASSWORD=wxiai_password'
+      - 'DATABASE_HOST=mysql'
+      - 'DATABASE_PORT=3306'
+      - 'DATABASE_NAME=wxiai_db'
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    command: ["bash", "start.sh"]
+
+volumes:
+  mysql_data:
+  ollama: {}
+  open-webui: {}

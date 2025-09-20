@@ -171,12 +171,191 @@ def _ensure_jimeng_fields():
         # 不抛出异常，让应用正常启动
 
 
+def _ensure_core_tables_and_columns(conn):
+    """Ensure foundational tables and columns exist for legacy databases."""
+    try:
+        import sqlalchemy as sa
+        from sqlalchemy import text
+
+        inspector = sa.inspect(conn)
+
+        if inspector.has_table("chat"):
+            chat_columns = {col["name"] for col in inspector.get_columns("chat")}
+
+            if "folder_id" not in chat_columns:
+                log.info("➕ Adding missing folder_id column to chat table")
+                conn.execute(text("ALTER TABLE chat ADD COLUMN folder_id VARCHAR(255)"))
+
+            if "pinned" not in chat_columns:
+                log.info("➕ Adding missing pinned column to chat table")
+                conn.execute(
+                    text("ALTER TABLE chat ADD COLUMN pinned BOOLEAN DEFAULT 0")
+                )
+
+            if "meta" not in chat_columns:
+                log.info("➕ Adding missing meta column to chat table")
+                conn.execute(text("ALTER TABLE chat ADD COLUMN meta JSON"))
+
+        if inspector.has_table("model"):
+            model_columns = {col["name"] for col in inspector.get_columns("model")}
+            if "price" not in model_columns:
+                log.info("➕ Adding missing price column to model table")
+                conn.execute(text("ALTER TABLE model ADD COLUMN price JSON"))
+
+        if not inspector.has_table("channel"):
+            try:
+                from open_webui.models.channels import Channel
+                from open_webui.internal.db import engine
+
+                log.info("➕ Creating missing channel table")
+                Channel.__table__.create(bind=engine, checkfirst=True)
+            except Exception as channel_error:
+                log.warning(
+                    f"Failed to create channel table automatically: {channel_error}"
+                )
+
+        conn.commit()
+
+    except Exception as core_error:
+        log.warning(f"Failed to ensure core tables/columns: {core_error}")
+
+
+def _fix_duplicate_indexes(conn, inspector):
+    """修复重复索引问题和缺失列问题"""
+    try:
+        from sqlalchemy import text
+
+        # 获取所有表名
+        tables = inspector.get_table_names()
+        log.info(f"Found {len(tables)} tables in database")
+
+        # 检查并修复dreamwork相关表的索引
+        # 只处理需要user_id索引的表
+        dreamwork_user_tables = ["dreamwork_tasks", "dreamwork_credits"]
+        dreamwork_tables = [table for table in tables if table in dreamwork_user_tables]
+
+        for table in dreamwork_tables:
+            try:
+                # 先检查表是否有user_id列
+                columns = inspector.get_columns(table)
+                column_names = [col["name"] for col in columns]
+
+                if "user_id" not in column_names:
+                    log.info(
+                        f"Table {table} does not have user_id column, skipping index creation"
+                    )
+                    continue
+
+                indexes = inspector.get_indexes(table)
+                index_names = [idx.get("name") for idx in indexes if idx.get("name")]
+
+                # 检查是否存在重复的idx_dreamwork_user_created索引
+                if "idx_dreamwork_user_created" in index_names:
+                    log.info(
+                        f"Found existing idx_dreamwork_user_created in table {table}"
+                    )
+
+                    # 检查索引的列是否正确
+                    for idx in indexes:
+                        if idx.get("name") == "idx_dreamwork_user_created":
+                            idx_columns = idx.get("column_names", [])
+                            if set(idx_columns) != {"user_id", "created_at"}:
+                                # 索引列不正确，删除并重建
+                                log.info(
+                                    f"Dropping incorrect index idx_dreamwork_user_created from {table}"
+                                )
+                                conn.execute(
+                                    text(
+                                        f"DROP INDEX IF EXISTS idx_dreamwork_user_created"
+                                    )
+                                )
+                                conn.commit()
+
+                                # 重新创建正确的索引
+                                log.info(
+                                    f"Creating correct index idx_dreamwork_user_created on {table}"
+                                )
+                                conn.execute(
+                                    text(
+                                        f"CREATE INDEX IF NOT EXISTS idx_dreamwork_user_created ON {table} (user_id, created_at)"
+                                    )
+                                )
+                                conn.commit()
+                            break
+                elif "created_at" in column_names:
+                    # 索引不存在且表有必要的列，创建它
+                    log.info(
+                        f"Creating missing index idx_dreamwork_user_created on {table}"
+                    )
+                    conn.execute(
+                        text(
+                            f"CREATE INDEX IF NOT EXISTS idx_dreamwork_user_created ON {table} (user_id, created_at)"
+                        )
+                    )
+                    conn.commit()
+                else:
+                    log.info(
+                        f"Table {table} does not have created_at column, skipping index creation"
+                    )
+
+            except Exception as table_error:
+                log.warning(f"Error processing table {table}: {table_error}")
+                continue
+
+        # 检查并修复tag表的meta列缺失问题
+        if "tag" in tables:
+            try:
+                columns = inspector.get_columns("tag")
+                column_names = [col["name"] for col in columns]
+
+                if "meta" not in column_names:
+                    log.info("🏷️  Adding missing 'meta' column to tag table")
+                    conn.execute(text("ALTER TABLE tag ADD COLUMN meta JSON"))
+                    conn.commit()
+                    log.info("✅ Successfully added 'meta' column to tag table")
+                else:
+                    log.info("✅ Tag table 'meta' column already exists")
+
+            except Exception as tag_error:
+                log.warning(f"Error processing tag table: {tag_error}")
+
+        log.info("Database schema fix completed")
+
+    except Exception as e:
+        log.warning(f"Failed to fix database schema: {e}")
+
+
 # Function to run the alembic migrations
 def run_migrations():
     log.info("Running migrations")
+
+    # 首先尝试创建表，忽略索引错误
+    try:
+        from open_webui.internal.db import engine
+        from sqlalchemy import text, inspect
+
+        # 检查数据库连接
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            log.info("Database connection established")
+
+            # 检查并处理重复索引问题
+            _fix_duplicate_indexes(conn, inspector)
+
+    except Exception as db_error:
+        log.warning(f"Database index fix failed: {db_error}")
+
     try:
         # Import models here to avoid circular imports
-        from open_webui.models import auths, kling, jimeng
+        from open_webui.models import (
+            auths,
+            kling,
+            jimeng,
+            hailuo,
+            channels,
+            chats,
+            models,
+        )
 
         # 导入所有即梦模型以确保表被正确注册
         try:
@@ -247,6 +426,17 @@ def run_migrations():
             log.warning(f"Failed to import jimeng_inpainting models: {e}")
 
         try:
+            from open_webui.models.dreamwork import (
+                DreamWorkConfig,
+                DreamWorkTask,
+                DreamWorkCredit,
+            )
+
+            log.info("DreamWork models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import dreamwork models: {e}")
+
+        try:
             from open_webui.models.jimeng_outpainting import (
                 JimengOutpaintingConfig,
                 JimengOutpaintingTask,
@@ -272,15 +462,77 @@ def run_migrations():
         except ImportError as e:
             log.warning(f"Failed to import kling_lip_sync models: {e}")
 
-        # 使用标准SQLAlchemy方式创建所有表
-        Base.metadata.create_all(bind=engine)
-        log.info("All tables ensured using Base.metadata.create_all()")
+        try:
+            from open_webui.models.channels import Channel
+
+            log.info("Channel model imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import channel models: {e}")
+
+        try:
+            from open_webui.models.chats import Chat
+
+            log.info("Chat model imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import chat models: {e}")
+
+        try:
+            from open_webui.models.hailuo import HailuoConfig, HailuoTask
+
+            log.info("Hailuo models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import hailuo models: {e}")
+
+        try:
+            from open_webui.models.cloud_storage import (
+                CloudStorageConfig,
+                GeneratedFile,
+            )
+
+            log.info("Cloud storage models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import cloud storage models: {e}")
+
+        # 使用标准SQLAlchemy方式创建所有表，但处理索引冲突
+        try:
+            Base.metadata.create_all(bind=engine, checkfirst=True)
+            log.info("All tables ensured using Base.metadata.create_all()")
+        except Exception as create_error:
+            # 如果create_all失败，可能是由于索引冲突，尝试单独创建表
+            if "already exists" in str(create_error):
+                log.warning(
+                    f"Table creation had conflicts (likely indexes): {create_error}"
+                )
+                log.info("Attempting to create tables individually...")
+
+                # 单独创建每个表，忽略索引错误
+                from sqlalchemy import text
+
+                with engine.connect() as conn:
+                    for table in Base.metadata.tables.values():
+                        try:
+                            table.create(bind=engine, checkfirst=True)
+                            log.info(
+                                f"Successfully created/verified table: {table.name}"
+                            )
+                        except Exception as table_error:
+                            if "already exists" in str(table_error):
+                                log.info(f"Table {table.name} already exists, skipping")
+                            else:
+                                log.warning(
+                                    f"Error creating table {table.name}: {table_error}"
+                                )
+            else:
+                log.warning(f"Unexpected error in create_all: {create_error}")
+                raise
 
         # 确保默认配置存在（就像迁移文件一样）
         try:
             from sqlalchemy import text
 
             with engine.connect() as conn:
+                _ensure_core_tables_and_columns(conn)
+
                 # 检查并插入即梦涂抹消除默认配置
                 result = conn.execute(
                     text("SELECT COUNT(*) FROM jimeng_inpainting_config")
@@ -320,6 +572,25 @@ def run_migrations():
                         f"Failed to insert jimeng_outpainting_config: {outpainting_config_error}"
                     )
 
+                # DreamWork 默认配置
+                try:
+                    result = conn.execute(text("SELECT COUNT(*) FROM dreamwork_config"))
+                    if result.fetchone()[0] == 0:
+                        conn.execute(
+                            text(
+                                """
+                            INSERT INTO dreamwork_config 
+                            (enabled, base_url, api_key, text_to_image_model, image_to_image_model, default_size, default_guidance_scale, watermark_enabled, credits_per_generation, max_concurrent_tasks, task_timeout, created_at, updated_at) 
+                            VALUES (0, '', '', 'doubao-seedream-3-0-t2i-250415', 'doubao-seededit-3-0-i2i-250628', '1024x1024', 2.5, 1, 10, 5, 300000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """
+                            )
+                        )
+                        log.info("Inserted default configuration for DreamWork")
+                except Exception as dreamwork_config_error:
+                    log.warning(
+                        f"Failed to insert dreamwork_config defaults: {dreamwork_config_error}"
+                    )
+
                 # 检查并插入可灵对口型默认配置（如果需要）
                 result = conn.execute(
                     text("SELECT COUNT(*) FROM kling_lip_sync_config")
@@ -335,6 +606,25 @@ def run_migrations():
                         )
                     )
                     log.info("Inserted default configuration for Kling lip sync")
+
+                # 海螺视频默认配置
+                try:
+                    result = conn.execute(text("SELECT COUNT(*) FROM hailuo_config"))
+                    if result.fetchone()[0] == 0:
+                        conn.execute(
+                            text(
+                                """
+                            INSERT INTO hailuo_config 
+                            (id, enabled, base_url, api_key, default_model, default_duration, default_resolution, prompt_optimizer, model_credits_config, max_concurrent_tasks, task_timeout_ms, query_interval_ms, created_at, updated_at)
+                            VALUES (1, 0, 'https://api.minimaxi.com', '', 'MiniMax-Hailuo-02', 6, '768P', 1, NULL, 3, 900000, 10000, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                        """
+                            )
+                        )
+                        log.info("Inserted default configuration for Hailuo")
+                except Exception as hailuo_config_error:
+                    log.warning(
+                        f"Failed to insert hailuo_config defaults: {hailuo_config_error}"
+                    )
 
                 conn.commit()
 

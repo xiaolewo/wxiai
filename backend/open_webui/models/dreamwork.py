@@ -196,11 +196,11 @@ class DreamWorkTask(Base):
         comment="更新时间",
     )
 
-    # 创建索引
-    __table_args__ = (
-        Index("idx_dreamwork_user_created", "user_id", "created_at"),
-        Index("idx_dreamwork_status_updated", "status", "updated_at"),
-    )
+    # 索引将由迁移脚本创建，这里注释掉以避免冲突
+    # __table_args__ = (
+    #     Index("idx_dreamwork_user_created", "user_id", "created_at"),
+    #     Index("idx_dreamwork_status_updated", "status", "updated_at"),
+    # )
 
     @classmethod
     def create_task(
@@ -390,8 +390,8 @@ class DreamWorkCredit(Base):
     task_id = Column(String(50))  # 关联任务ID（如果有）
     created_at = Column(DateTime, default=func.now())
 
-    # 创建索引
-    __table_args__ = (Index("idx_dreamwork_user_created", "user_id", "created_at"),)
+    # 索引将由迁移脚本创建，这里注释掉以避免冲突
+    # __table_args__ = (Index("idx_dreamwork_user_created", "user_id", "created_at"),)
 
     @classmethod
     def add_credit_record(
