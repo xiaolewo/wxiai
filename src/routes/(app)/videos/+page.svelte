@@ -6,6 +6,9 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import MediaAssetSelector from '$lib/components/media-library/MediaAssetSelector.svelte';
+	import { fetchAssetAsBase64 } from '$lib/utils/media-assets';
+	import { type MediaAsset } from '$lib/apis/media-library';
 
 	// Import Kling API functions
 	import {
@@ -61,6 +64,19 @@
 		type HailuoGenerateRequest
 	} from '$lib/apis/hailuo';
 
+	import {
+		type SeedanceTask,
+		type SeedanceConfig,
+		type SeedanceGenerateRequest,
+		submitSeedanceTextToVideoTask,
+		submitSeedanceImageToVideoTask,
+		getSeedanceTaskStatus,
+		getSeedanceUserTaskHistory,
+		getSeedanceUserCredits,
+		getSeedanceUserConfig,
+		deleteSeedanceTask
+	} from '$lib/apis/seedance';
+
 	const i18n = getContext('i18n');
 
 	let loaded = false;
@@ -75,9 +91,12 @@
 	let jimengConfig: JimengConfig | null = null;
 	let veoConfig: VeoUserConfig | null = null;
 	let hailuoConfig: any | null = null;
+	let seedanceConfig: SeedanceConfig | null = null;
 
 	// Service selection
-	let selectedService: 'kling' | 'jimeng' | 'veo' | 'hailuo' = 'kling';
+	let selectedService: 'kling' | 'jimeng' | 'veo' | 'hailuo' | 'seedance' = 'kling';
+	const SEEDANCE_DEFAULT_MODEL = 'doubao-seedance-1-0-pro-250528';
+	const SEEDANCE_LITE_MODEL = 'doubao-seedance-1-0-lite-i2v-250428';
 	let lastServiceSwitch = '';
 	let serviceSwitchTimeout: NodeJS.Timeout | null = null;
 
@@ -104,6 +123,8 @@
 				await loadVeoConfig();
 			} else if (selectedService === 'hailuo' && !hailuoConfig) {
 				await loadHailuoConfig();
+			} else if (selectedService === 'seedance' && !seedanceConfig) {
+				await loadSeedanceConfig();
 			}
 
 			// 立即刷新一次积分
@@ -146,6 +167,19 @@
 				if (hailuoConfig?.default_model) {
 					selectedModel = hailuoConfig.default_model;
 				}
+			} else if (selectedService === 'seedance') {
+				seedanceModelBeforeFirstLast = null;
+				if (seedanceConfig) {
+					selectedModel = seedanceConfig.defaultModel || SEEDANCE_DEFAULT_MODEL;
+					selectedDuration = seedanceConfig.defaultDuration || '5';
+					seedanceResolution =
+						(seedanceConfig.defaultResolution as typeof seedanceResolution) || '720p';
+					seedanceRatio = seedanceConfig.defaultRatio || '16:9';
+					selectedAspectRatio = seedanceRatio;
+					watermark = seedanceConfig.defaultWatermark ?? false;
+					seedanceCameraFixed = seedanceConfig.defaultCameraFixed ?? false;
+					seedanceReturnLastFrame = seedanceConfig.defaultReturnLastFrame ?? false;
+				}
 			}
 		}, 100); // 100ms防抖
 	}
@@ -162,6 +196,12 @@
 	let enhancePrompt = true; // Veo提示词优化
 	let hailuoPromptOptimizer = true; // 海螺提示词优化
 	let selectedResolution: '768P' | '1080P' = '768P'; // 海螺分辨率
+	let seedanceResolution: '480p' | '720p' | '1080p' = '720p';
+	let seedanceRatio = '16:9';
+	let seedanceCameraFixed = false;
+	let seedanceReturnLastFrame = false;
+	let seedanceSeed = '';
+	let seedanceModelBeforeFirstLast: string | null = null;
 
 	// 图生视频参数
 	let inputImage: string | null = null; // base64数据
@@ -177,7 +217,95 @@
 	// 图生视频高级功能
 	let staticMask: string | null = null; // 静态笔刷
 	let dynamicMasks: Array<{ mask: string; trajectories: Array<{ x: number; y: number }> }> = []; // 动态笔刷
+
+	type MediaSelectorContext =
+		| 'video-input'
+		| 'video-tail'
+		| 'video-static-mask'
+		| 'veo-image-1'
+		| 'veo-image-2'
+		| 'veo-image-3';
+
+	let mediaAssetSelectorOpen = false;
+	let mediaAssetSelectorContext: MediaSelectorContext | null = null;
+	let mediaAssetSelectorMediaType: 'image' | 'video' | 'all' = 'image';
+	let mediaAssetSelectorMultiple = false;
 	let selectedImageVideoMode: 'basic' | 'first-last' | 'brush' | 'camera' = 'basic'; // 图生视频模式
+
+	function setImageVideoMode(
+		mode: 'basic' | 'first-last' | 'brush' | 'camera',
+		opts: { skipSeedanceSync?: boolean } = {}
+	) {
+		let targetMode = mode;
+
+		if (
+			!opts.skipSeedanceSync &&
+			selectedService === 'seedance' &&
+			selectedGenerationType === 'image-to-video' &&
+			mode === 'camera'
+		) {
+			targetMode = 'basic';
+		}
+
+		if (selectedImageVideoMode === targetMode) {
+			return;
+		}
+
+		const previousMode = selectedImageVideoMode;
+		selectedImageVideoMode = targetMode;
+
+		if (opts.skipSeedanceSync) {
+			return;
+		}
+
+		if (selectedService === 'seedance' && selectedGenerationType === 'image-to-video') {
+			const liteAvailable = currentModelOptions?.some(
+				(option) => option.value === SEEDANCE_LITE_MODEL
+			);
+
+			if (targetMode === 'first-last') {
+				if (liteAvailable && selectedModel !== SEEDANCE_LITE_MODEL) {
+					if (selectedModel !== SEEDANCE_LITE_MODEL) {
+						seedanceModelBeforeFirstLast = selectedModel;
+					}
+					selectedModel = SEEDANCE_LITE_MODEL;
+				}
+			} else if (previousMode === 'first-last' && selectedModel === SEEDANCE_LITE_MODEL) {
+				const fallbackCandidates = [
+					seedanceModelBeforeFirstLast,
+					seedanceConfig?.defaultModel ?? null,
+					SEEDANCE_DEFAULT_MODEL
+				].filter((model): model is string => Boolean(model));
+
+				const fallback = fallbackCandidates.find(
+					(model) =>
+						model !== SEEDANCE_LITE_MODEL &&
+						currentModelOptions?.some((option) => option.value === model)
+				);
+
+				if (fallback) {
+					selectedModel = fallback;
+				}
+				seedanceModelBeforeFirstLast = null;
+			}
+		}
+	}
+
+	function setGenerationType(type: 'text-to-video' | 'image-to-video') {
+		if (selectedGenerationType === type) {
+			return;
+		}
+
+		selectedGenerationType = type;
+
+		if (selectedService === 'seedance') {
+			if (type !== 'image-to-video') {
+				setImageVideoMode('basic');
+			} else if (selectedImageVideoMode === 'camera') {
+				setImageVideoMode('basic');
+			}
+		}
+	}
 
 	// 摄像机控制参数
 	let cameraControlType:
@@ -257,6 +385,27 @@
 		}
 	];
 
+	const seedanceModelOptions = [
+		{
+			value: 'doubao-seedance-1-0-pro-250528',
+			label: 'Seedance 1.0 Pro',
+			description: '最新Pro模型，支持文生/图生',
+			type: 'both'
+		},
+		{
+			value: 'doubao-seedance-1-0-lite-t2v-250428',
+			label: 'Seedance 1.0 Lite 文生',
+			description: '轻量级文生视频模型',
+			type: 'text'
+		},
+		{
+			value: 'doubao-seedance-1-0-lite-i2v-250428',
+			label: 'Seedance 1.0 Lite 图生',
+			description: '轻量级图生/首尾帧模型',
+			type: 'image'
+		}
+	];
+
 	// Hailuo 模型选项
 	const hailuoModelOptions = [
 		{ value: 'MiniMax-Hailuo-02', label: 'Hailuo 02', type: 'image' },
@@ -280,6 +429,14 @@
 				: imageToVideoModelOptions;
 		} else if (selectedService === 'hailuo') {
 			return hailuoModelOptions; // 海螺仅图生为主，仍允许选择
+		} else if (selectedService === 'seedance') {
+			return seedanceModelOptions.filter((option) => {
+				if (option.type === 'both') return true;
+				if (selectedGenerationType === 'text-to-video') {
+					return option.type === 'text';
+				}
+				return option.type === 'image';
+			});
 		} else {
 			// Jimeng 暂时使用固定选项
 			return [{ value: 'jimeng-default', label: '即梦默认' }];
@@ -313,6 +470,13 @@
 			} else if (selectedService === 'jimeng' && availableValues.includes('jimeng-default')) {
 				newModel = 'jimeng-default';
 				console.log(`🌟 【模型验证】使用即梦默认模型: ${newModel}`);
+			} else if (
+				selectedService === 'seedance' &&
+				seedanceConfig?.defaultModel &&
+				availableValues.includes(seedanceConfig.defaultModel)
+			) {
+				newModel = seedanceConfig.defaultModel;
+				console.log(`🎬 【Seedance模型验证】使用默认模型: ${newModel}`);
 			} else {
 				// 如果没有匹配的默认模型，使用第一个可用模型
 				newModel = availableValues[0];
@@ -354,6 +518,10 @@
 		}
 	}
 
+	$: if (selectedService === 'seedance' && seedanceRatio !== selectedAspectRatio) {
+		seedanceRatio = selectedAspectRatio;
+	}
+
 	// 图生视频模式选项 - 可灵服务才显示首尾帧模式
 	$: imageVideoModeOptions = (() => {
 		const baseOptions = [
@@ -362,8 +530,12 @@
 			{ value: 'camera', label: '摄像机控制', desc: '使用摄像机运镜控制' }
 		];
 
-		// 首尾帧模式仅在可灵服务下可用
-		if (selectedService === 'kling' || selectedService === 'hailuo') {
+		// 首尾帧模式在可灵 / 海螺 / Seedance 下可用
+		if (
+			selectedService === 'kling' ||
+			selectedService === 'hailuo' ||
+			selectedService === 'seedance'
+		) {
 			// 在基础模式后插入首尾帧模式
 			baseOptions.splice(1, 0, {
 				value: 'first-last',
@@ -419,6 +591,18 @@
 			];
 		} else if (selectedService === 'veo' || selectedService === 'hailuo') {
 			return []; // Veo不支持自定义画面比例，由模型决定
+		} else if (selectedService === 'seedance') {
+			return [
+				{ value: '21:9', label: '21:9 (超宽屏)' },
+				{ value: '16:9', label: '16:9 (横向)' },
+				{ value: '4:3', label: '4:3 (传统)' },
+				{ value: '1:1', label: '1:1 (正方形)' },
+				{ value: '3:4', label: '3:4 (竖向)' },
+				{ value: '9:16', label: '9:16 (竖屏)' },
+				{ value: '9:21', label: '9:21 (超长竖屏)' },
+				{ value: 'keep_ratio', label: '保持与首帧一致' },
+				{ value: 'adaptive', label: '自适应比例' }
+			];
 		} else {
 			// Jimeng
 			return [
@@ -577,6 +761,30 @@
 		}
 	};
 
+	const loadSeedanceConfig = async () => {
+		if (!$user?.token) return;
+
+		try {
+			const cfg = await getSeedanceUserConfig($user.token);
+			if (cfg) {
+				seedanceConfig = cfg;
+				if (selectedService === 'seedance') {
+					selectedModel = cfg.defaultModel || SEEDANCE_DEFAULT_MODEL;
+					selectedDuration = cfg.defaultDuration || '5';
+					seedanceResolution = (cfg.defaultResolution as typeof seedanceResolution) || '720p';
+					seedanceRatio = cfg.defaultRatio || '16:9';
+					selectedAspectRatio = seedanceRatio;
+					watermark = cfg.defaultWatermark ?? false;
+					seedanceCameraFixed = cfg.defaultCameraFixed ?? false;
+					seedanceReturnLastFrame = cfg.defaultReturnLastFrame ?? false;
+				}
+				console.log('🎬 Seedance 配置已加载:', cfg);
+			}
+		} catch (error) {
+			console.error('加载Seedance配置失败:', error);
+		}
+	};
+
 	const loadUserData = async () => {
 		console.log('🎬 【数据加载调试】loadUserData开始');
 
@@ -592,7 +800,8 @@
 				loadKlingConfig(),
 				loadJimengConfig(),
 				loadVeoConfig(),
-				loadHailuoConfig()
+				loadHailuoConfig(),
+				loadSeedanceConfig()
 			]);
 
 			// 配置加载完成后，根据当前选择的服务设置正确的默认模型
@@ -618,6 +827,17 @@
 				console.log(
 					`🐚 【初始化】为海螺服务设置默认: ${selectedModel}, ${selectedResolution}, ${selectedDuration}s`
 				);
+			} else if (selectedService === 'seedance') {
+				selectedModel = seedanceConfig?.defaultModel || SEEDANCE_DEFAULT_MODEL;
+				selectedDuration = seedanceConfig?.defaultDuration || '5';
+				seedanceResolution =
+					(seedanceConfig?.defaultResolution as typeof seedanceResolution) || '720p';
+				seedanceRatio = seedanceConfig?.defaultRatio || '16:9';
+				selectedAspectRatio = seedanceRatio;
+				watermark = seedanceConfig?.defaultWatermark ?? false;
+				seedanceCameraFixed = seedanceConfig?.defaultCameraFixed ?? false;
+				seedanceReturnLastFrame = seedanceConfig?.defaultReturnLastFrame ?? false;
+				console.log('🎬 【初始化】为Seedance服务设置默认参数');
 			}
 
 			// 检查当前选择的服务是否可用
@@ -633,6 +853,9 @@
 			} else if (selectedService === 'veo') {
 				currentConfig = veoConfig;
 				serviceName = 'Veo';
+			} else if (selectedService === 'seedance') {
+				currentConfig = seedanceConfig;
+				serviceName = 'Seedance';
 			}
 
 			if (!currentConfig?.enabled) {
@@ -641,7 +864,10 @@
 				// 尝试切换到可用的服务（优先海螺）
 				if (
 					selectedService === 'kling' &&
-					(hailuoConfig?.enabled || jimengConfig?.enabled || veoConfig?.enabled)
+					(hailuoConfig?.enabled ||
+						jimengConfig?.enabled ||
+						veoConfig?.enabled ||
+						seedanceConfig?.enabled)
 				) {
 					if (hailuoConfig?.enabled) {
 						selectedService = 'hailuo';
@@ -655,10 +881,17 @@
 						selectedService = 'veo';
 						selectedModel = veoConfig.default_model || 'veo3';
 						toast.info('已自动切换到Veo视频服务');
+					} else if (seedanceConfig?.enabled) {
+						selectedService = 'seedance';
+						selectedModel = seedanceConfig.defaultModel || SEEDANCE_DEFAULT_MODEL;
+						toast.info('已自动切换到Seedance视频服务');
 					}
 				} else if (
 					selectedService === 'jimeng' &&
-					(hailuoConfig?.enabled || klingConfig?.enabled || veoConfig?.enabled)
+					(hailuoConfig?.enabled ||
+						klingConfig?.enabled ||
+						veoConfig?.enabled ||
+						seedanceConfig?.enabled)
 				) {
 					if (hailuoConfig?.enabled) {
 						selectedService = 'hailuo';
@@ -672,10 +905,17 @@
 						selectedService = 'veo';
 						selectedModel = veoConfig.default_model || 'veo3';
 						toast.info('已自动切换到Veo视频服务');
+					} else if (seedanceConfig?.enabled) {
+						selectedService = 'seedance';
+						selectedModel = seedanceConfig.defaultModel || SEEDANCE_DEFAULT_MODEL;
+						toast.info('已自动切换到Seedance视频服务');
 					}
 				} else if (
 					selectedService === 'veo' &&
-					(hailuoConfig?.enabled || klingConfig?.enabled || jimengConfig?.enabled)
+					(hailuoConfig?.enabled ||
+						klingConfig?.enabled ||
+						jimengConfig?.enabled ||
+						seedanceConfig?.enabled)
 				) {
 					if (hailuoConfig?.enabled) {
 						selectedService = 'hailuo';
@@ -689,10 +929,32 @@
 						selectedService = 'jimeng';
 						selectedModel = 'jimeng-default';
 						toast.info('已自动切换到即梦视频服务');
+					} else if (seedanceConfig?.enabled) {
+						selectedService = 'seedance';
+						selectedModel = seedanceConfig.defaultModel || SEEDANCE_DEFAULT_MODEL;
+						toast.info('已自动切换到Seedance视频服务');
 					}
 				} else if (selectedService === 'hailuo' && !hailuoConfig?.enabled) {
 					// 当前是海螺但不可用，降级到可用服务
 					if (klingConfig?.enabled) {
+						selectedService = 'kling';
+						selectedModel = 'kling-v1';
+						toast.info('已自动切换到可灵视频服务');
+					} else if (jimengConfig?.enabled) {
+						selectedService = 'jimeng';
+						selectedModel = 'jimeng-default';
+						toast.info('已自动切换到即梦视频服务');
+					} else if (veoConfig?.enabled) {
+						selectedService = 'veo';
+						selectedModel = veoConfig.default_model || 'veo3';
+						toast.info('已自动切换到Veo视频服务');
+					}
+				} else if (selectedService === 'seedance' && !seedanceConfig?.enabled) {
+					if (hailuoConfig?.enabled) {
+						selectedService = 'hailuo';
+						selectedModel = hailuoConfig.default_model || 'MiniMax-Hailuo-02';
+						toast.info('已自动切换到海螺视频服务');
+					} else if (klingConfig?.enabled) {
 						selectedService = 'kling';
 						selectedModel = 'kling-v1';
 						toast.info('已自动切换到可灵视频服务');
@@ -724,6 +986,9 @@
 			} else if (selectedService === 'hailuo') {
 				getCreditsFunction = getHailuoUserCredits;
 				serviceDisplayName = '海螺';
+			} else if (selectedService === 'seedance') {
+				getCreditsFunction = getSeedanceUserCredits;
+				serviceDisplayName = 'Seedance';
 			}
 
 			const credits = await getCreditsFunction($user.token);
@@ -735,27 +1000,32 @@
 			}
 
 			// 加载用户历史记录 - 混合显示三种服务的记录
-			const [klingHistory, jimengHistory, veoHistory, hailuoHistory] = await Promise.all([
-				klingConfig?.enabled
-					? getKlingUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
-					: { data: [] },
-				jimengConfig?.enabled
-					? getJimengUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
-					: { data: [] },
-				veoConfig?.enabled
-					? getVeoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
-					: { data: [] },
-				hailuoConfig?.enabled
-					? getHailuoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
-					: { data: [] }
-			]);
+			const [klingHistory, jimengHistory, veoHistory, hailuoHistory, seedanceHistory] =
+				await Promise.all([
+					klingConfig?.enabled
+						? getKlingUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+						: { data: [] },
+					jimengConfig?.enabled
+						? getJimengUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+						: { data: [] },
+					veoConfig?.enabled
+						? getVeoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+						: { data: [] },
+					hailuoConfig?.enabled
+						? getHailuoUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+						: { data: [] },
+					seedanceConfig?.enabled
+						? getSeedanceUserTaskHistory($user.token, 1, 10).catch(() => ({ data: [] }))
+						: { data: [] }
+				]);
 
 			// 合并和排序历史记录（后端已经包含serviceType字段）
 			const allTasks = [
 				...(klingHistory.data || []),
 				...(jimengHistory.data || []),
 				...(veoHistory.data || []),
-				...(hailuoHistory.data || [])
+				...(hailuoHistory.data || []),
+				...(seedanceHistory.data || [])
 			].sort((a, b) => {
 				const timeA = new Date(a.submitTime || a.createdAt || '').getTime();
 				const timeB = new Date(b.submitTime || b.createdAt || '').getTime();
@@ -806,6 +1076,9 @@
 		} else if (selectedService === 'hailuo') {
 			serviceDisplayName = '海螺';
 			getCreditsFunction = getHailuoUserCredits;
+		} else if (selectedService === 'seedance') {
+			serviceDisplayName = 'Seedance';
+			getCreditsFunction = getSeedanceUserCredits;
 		}
 
 		console.log(`💰 【积分刷新】开始获取${serviceDisplayName}积分...`);
@@ -838,15 +1111,26 @@
 			serviceName = '即梦';
 		} else if (selectedService === 'veo') {
 			currentConfig = veoConfig;
+		} else if (selectedService === 'seedance') {
+			currentConfig = seedanceConfig;
 			serviceName = 'Veo';
 		} else if (selectedService === 'hailuo') {
 			currentConfig = hailuoConfig;
 			serviceName = '海螺';
+		} else if (selectedService === 'seedance') {
+			currentConfig = seedanceConfig;
+			serviceName = 'Seedance';
 		}
 
 		// 生成前重新获取最新配置，确保积分设置是最新的
 		console.log(`🎬 【${serviceName}】生成前刷新配置和积分...`);
-		await Promise.all([loadKlingConfig(), loadJimengConfig(), loadVeoConfig(), loadHailuoConfig()]);
+		await Promise.all([
+			loadKlingConfig(),
+			loadJimengConfig(),
+			loadVeoConfig(),
+			loadHailuoConfig(),
+			loadSeedanceConfig()
+		]);
 
 		// 重新获取积分余额以确保是最新的
 		let getCreditsFunction;
@@ -858,6 +1142,8 @@
 			getCreditsFunction = getVeoUserCredits;
 		} else if (selectedService === 'hailuo') {
 			getCreditsFunction = getHailuoUserCredits;
+		} else if (selectedService === 'seedance') {
+			getCreditsFunction = getSeedanceUserCredits;
 		}
 
 		const latestCredits = await getCreditsFunction($user.token);
@@ -905,18 +1191,19 @@
 					return;
 				}
 
-				// 可灵特有的高级功能验证
-				if (selectedService === 'kling') {
-					// 首尾帧模式验证
+				// 可灵 / Seedance 的高级功能验证
+				if (selectedService === 'kling' || selectedService === 'seedance') {
 					if (selectedImageVideoMode === 'first-last' && !imageTail) {
 						toast.error('首尾帧模式需要同时上传首帧和尾帧图片');
 						return;
 					}
 
-					// 笔刷模式验证
-					if (selectedImageVideoMode === 'brush' && !staticMask && dynamicMasks.length === 0) {
-						toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
-						return;
+					if (selectedService === 'kling') {
+						// 笔刷模式验证
+						if (selectedImageVideoMode === 'brush' && !staticMask && dynamicMasks.length === 0) {
+							toast.error('笔刷模式需要上传静态笔刷或配置动态笔刷');
+							return;
+						}
 					}
 				}
 			}
@@ -929,7 +1216,8 @@
 				| KlingGenerateRequest
 				| JimengGenerateRequest
 				| VeoGenerateRequest
-				| HailuoGenerateRequest;
+				| HailuoGenerateRequest
+				| SeedanceGenerateRequest;
 
 			if (selectedService === 'kling') {
 				request = {
@@ -966,6 +1254,26 @@
 					resolution: selectedResolution || '768P',
 					prompt_optimizer: hailuoPromptOptimizer
 				} as unknown as HailuoGenerateRequest;
+			} else if (selectedService === 'seedance') {
+				const seedanceMode =
+					selectedGenerationType === 'text-to-video'
+						? 'text_to_video'
+						: selectedImageVideoMode === 'first-last'
+							? 'image_to_video_first_last'
+							: 'image_to_video';
+
+				request = {
+					prompt: prompt.trim(),
+					model: selectedModel,
+					mode: seedanceMode,
+					duration: selectedDuration,
+					resolution: seedanceResolution,
+					ratio: seedanceRatio,
+					watermark,
+					seed: seedanceSeed ? Number(seedanceSeed) : undefined,
+					camera_fixed: seedanceCameraFixed,
+					return_last_frame: seedanceReturnLastFrame
+				} as SeedanceGenerateRequest;
 			}
 
 			// 如果是图生视频，添加图片和相关参数
@@ -985,6 +1293,15 @@
 					if (selectedImageVideoMode === 'first-last' && imageTail) {
 						(request as any).last_frame_image = imageTail;
 					}
+				} else if (selectedService === 'seedance') {
+					const imagesToSend: string[] = [];
+					if (inputImage) {
+						imagesToSend.push(inputImage);
+					}
+					if (selectedImageVideoMode === 'first-last' && imageTail) {
+						imagesToSend.push(imageTail);
+					}
+					(request as SeedanceGenerateRequest).images = imagesToSend;
 				} else {
 					// 可灵和即梦使用原有的inputImage
 					if (inputImage) {
@@ -1132,6 +1449,11 @@
 						: await submitVeoTextToVideoTask($user.token, request as VeoGenerateRequest);
 			} else if (selectedService === 'hailuo') {
 				result = await hailuoGenerate($user.token, request as any);
+			} else if (selectedService === 'seedance') {
+				result =
+					selectedGenerationType === 'image-to-video'
+						? await submitSeedanceImageToVideoTask($user.token, request as SeedanceGenerateRequest)
+						: await submitSeedanceTextToVideoTask($user.token, request as SeedanceGenerateRequest);
 			}
 
 			if (result && result.success) {
@@ -1144,7 +1466,9 @@
 								? getJimengUserCredits
 								: selectedService === 'veo'
 									? getVeoUserCredits
-									: getHailuoUserCredits;
+									: selectedService === 'hailuo'
+										? getHailuoUserCredits
+										: getSeedanceUserCredits;
 					const credits = await getCreditsFunction($user.token);
 					if (credits) {
 						userCredits = credits.balance || 0;
@@ -1154,11 +1478,20 @@
 					console.warn(`🎬 【${serviceName}】更新积分余额失败:`, error);
 				}
 
-				// 创建任务记录 - 兼容两种服务
+				// 创建任务记录 - 兼容多服务
+				const derivedAction =
+					selectedService === 'seedance' &&
+					selectedGenerationType === 'image-to-video' &&
+					selectedImageVideoMode === 'first-last'
+						? 'IMAGE_TO_VIDEO_FIRST_LAST'
+						: selectedGenerationType === 'image-to-video'
+							? 'IMAGE_TO_VIDEO'
+							: 'TEXT_TO_VIDEO';
+
 				const baseTask = {
 					id: result.task_id,
 					userId: $user.id,
-					action: selectedGenerationType === 'image-to-video' ? 'IMAGE_TO_VIDEO' : 'TEXT_TO_VIDEO',
+					action: derivedAction,
 					status: 'submitted',
 					prompt: prompt.trim(),
 					duration: selectedDuration,
@@ -1180,6 +1513,19 @@
 						mode: selectedMode,
 						modelName: selectedModel
 					} as KlingTask & { serviceType: 'kling' };
+				} else if (selectedService === 'seedance') {
+					const seedanceRequest = request as SeedanceGenerateRequest;
+					currentTask = {
+						...baseTask,
+						model: selectedModel,
+						resolution: seedanceResolution,
+						ratio: seedanceRatio,
+						watermark,
+						seed: seedanceRequest.seed,
+						camera_fixed: seedanceRequest.camera_fixed,
+						return_last_frame: seedanceRequest.return_last_frame,
+						imageUrls: seedanceRequest.images
+					} as SeedanceTask & { serviceType: 'seedance' };
 				} else {
 					currentTask = {
 						...baseTask
@@ -1278,13 +1624,57 @@
 			} catch (e) {}
 			console.log(`💰 【海螺积分计算】模型 ${selectedModel} / ${res}/${dur}s = ${credits}积分`);
 			return credits;
+		} else if (selectedService === 'seedance') {
+			const cfg = currentConfig as SeedanceConfig;
+			if (!cfg) return 50;
+			const modeKey =
+				selectedGenerationType === 'text-to-video'
+					? 'text_to_video'
+					: selectedImageVideoMode === 'first-last'
+						? 'image_to_video_first_last'
+						: 'image_to_video';
+			const durationKey = selectedDuration || '5';
+			const modelConfig = (cfg.modelCreditsConfig ?? {})[selectedModel] as
+				| Record<string, any>
+				| undefined;
+			let credits: number | undefined;
+
+			if (modelConfig) {
+				const modeEntry = modelConfig[modeKey];
+				if (typeof modeEntry === 'number') {
+					credits = Number(modeEntry);
+				} else if (modeEntry && typeof modeEntry === 'object') {
+					const durationEntry = modeEntry[durationKey];
+					if (typeof durationEntry === 'number') {
+						credits = Number(durationEntry);
+					}
+				}
+				if (credits === undefined && typeof modelConfig[durationKey] === 'number') {
+					credits = Number(modelConfig[durationKey]);
+				}
+			}
+
+			if (credits === undefined) {
+				credits =
+					durationKey === '10'
+						? Number(cfg.creditsPer10s ?? cfg.creditsPer5s ?? 40)
+						: Number(cfg.creditsPer5s ?? 40);
+			}
+
+			console.log(
+				`💰 【Seedance积分计算】模型 ${selectedModel} 模式 ${modeKey} 时长 ${durationKey}s = ${credits}积分`
+			);
+			return credits;
 		}
 
 		return 50; // 默认值
 	})();
 
 	// 轮询任务状态
-	const pollTaskStatus = async (taskId: string, service: 'kling' | 'jimeng' | 'veo' | 'hailuo') => {
+	const pollTaskStatus = async (
+		taskId: string,
+		service: 'kling' | 'jimeng' | 'veo' | 'hailuo' | 'seedance'
+	) => {
 		let serviceName;
 		if (service === 'kling') {
 			serviceName = '可灵';
@@ -1294,6 +1684,8 @@
 			serviceName = 'Veo';
 		} else if (service === 'hailuo') {
 			serviceName = '海螺';
+		} else if (service === 'seedance') {
+			serviceName = 'Seedance';
 		}
 
 		console.log(`🎬 【${serviceName}轮询】开始轮询任务:`, taskId);
@@ -1325,6 +1717,8 @@
 					getTaskStatusFunction = getVeoTaskStatus;
 				} else if (service === 'hailuo') {
 					getTaskStatusFunction = getHailuoTaskStatus as any;
+				} else if (service === 'seedance') {
+					getTaskStatusFunction = getSeedanceTaskStatus as any;
 				}
 
 				const task = await getTaskStatusFunction($user.token, taskId);
@@ -1366,7 +1760,9 @@
 										? getJimengUserCredits
 										: service === 'veo'
 											? getVeoUserCredits
-											: getHailuoUserCredits;
+											: service === 'hailuo'
+												? getHailuoUserCredits
+												: getSeedanceUserCredits;
 							const credits = await getCreditsFunction($user.token);
 							if (credits) {
 								const oldBalance = userCredits;
@@ -1416,6 +1812,65 @@
 	};
 
 	// 图片上传处理
+	function openMediaAssetSelector(
+		context: MediaSelectorContext,
+		mediaType: 'image' | 'video' | 'all' = 'image',
+		multiple = false
+	) {
+		if (!$user?.token) {
+			toast.error('请先登录后再选择媒体资源');
+			return;
+		}
+		mediaAssetSelectorContext = context;
+		mediaAssetSelectorMediaType = mediaType;
+		mediaAssetSelectorMultiple = multiple;
+		mediaAssetSelectorOpen = true;
+	}
+
+	const handleMediaAssetSelection = async (assets: MediaAsset[]) => {
+		mediaAssetSelectorOpen = false;
+		if (!assets?.length || !mediaAssetSelectorContext) {
+			mediaAssetSelectorContext = null;
+			return;
+		}
+
+		const asset = assets[0];
+		try {
+			const base64 = await fetchAssetAsBase64(asset);
+			switch (mediaAssetSelectorContext) {
+				case 'video-input':
+					inputImage = base64;
+					toast.success('已设置输入图片');
+					break;
+				case 'video-tail':
+					imageTail = base64;
+					toast.success('已设置尾帧图片');
+					break;
+				case 'video-static-mask':
+					staticMask = base64;
+					toast.success('已设置静态笔刷遮罩');
+					break;
+				case 'veo-image-1':
+					veoImage1 = base64;
+					toast.success('已选择第1张图片');
+					break;
+				case 'veo-image-2':
+					veoImage2 = base64;
+					toast.success('已选择第2张图片');
+					break;
+				case 'veo-image-3':
+					veoImage3 = base64;
+					toast.success('已选择第3张图片');
+					break;
+			}
+		} catch (error) {
+			console.error('处理媒体库资源失败:', error);
+			toast.error(error instanceof Error ? error.message : '处理媒体库资源时发生错误');
+		} finally {
+			mediaAssetSelectorContext = null;
+		}
+	};
+
 	const handleImageUpload = async (
 		event: Event,
 		type: 'input' | 'tail' | 'static_mask' | 'veo1' | 'veo2' | 'veo3'
@@ -1539,7 +1994,10 @@
 	};
 
 	// 格式化进度显示
-	const formatProgress = (progress: string | undefined, task?: KlingTask | JimengTask): string => {
+	const formatProgress = (
+		progress: string | undefined,
+		task?: KlingTask | JimengTask | SeedanceTask
+	): string => {
 		// 如果任务已完成且有视频，显示100%
 		if (task && task.videoUrl && (task.status === 'succeed' || task.videoUrl)) {
 			return '100%';
@@ -1568,11 +2026,11 @@
 	};
 
 	// 视频查看模态框
-	let selectedVideoForViewing: KlingTask | JimengTask | null = null;
+	let selectedVideoForViewing: KlingTask | JimengTask | SeedanceTask | null = null;
 	let isVideoModalOpen = false;
 
 	// 打开视频查看模态框
-	const openVideoModal = (task: KlingTask | JimengTask) => {
+	const openVideoModal = (task: KlingTask | JimengTask | SeedanceTask) => {
 		selectedVideoForViewing = task;
 		isVideoModalOpen = true;
 	};
@@ -1604,7 +2062,9 @@
 	};
 
 	// 使用相同参数重新生成
-	const regenerateWithSameParams = async (task: KlingTask | JimengTask | VeoTask) => {
+	const regenerateWithSameParams = async (
+		task: KlingTask | JimengTask | VeoTask | SeedanceTask
+	) => {
 		if (!task.prompt) {
 			toast.error('无法获取原始提示词');
 			return;
@@ -1637,11 +2097,39 @@
 			enhancePrompt = task.enhance_prompt !== undefined ? task.enhance_prompt : true;
 		}
 
-		if (task.action === 'IMAGE_TO_VIDEO') {
-			selectedGenerationType = 'image-to-video';
-			inputImage = task.inputImage || null;
+		if (taskServiceType === 'seedance') {
+			selectedModel = task.model || seedanceConfig?.defaultModel || SEEDANCE_DEFAULT_MODEL;
+			seedanceResolution = (task.resolution as typeof seedanceResolution) || seedanceResolution;
+			seedanceRatio = task.ratio || seedanceRatio;
+			selectedAspectRatio = seedanceRatio;
+			watermark = task.watermark ?? seedanceConfig?.defaultWatermark ?? false;
+			seedanceCameraFixed = task.camera_fixed ?? seedanceCameraFixed;
+			seedanceReturnLastFrame = task.return_last_frame ?? seedanceReturnLastFrame;
+			seedanceSeed = task.seed !== undefined ? String(task.seed) : '';
+			if (Array.isArray(task.imageUrls) && task.imageUrls.length > 0) {
+				const [firstImage, tailImage] = task.imageUrls;
+				if (!task.inputImage) {
+					inputImage = firstImage || null;
+				}
+				if (tailImage) {
+					imageTail = tailImage;
+				}
+			}
+		}
+
+		if (task.action === 'IMAGE_TO_VIDEO' || task.action === 'IMAGE_TO_VIDEO_FIRST_LAST') {
+			setGenerationType('image-to-video');
+			const historyImage = Array.isArray(task.imageUrls) ? task.imageUrls[0] : null;
+			inputImage = task.inputImage || historyImage || null;
+			if (task.action === 'IMAGE_TO_VIDEO_FIRST_LAST') {
+				setImageVideoMode('first-last');
+				const tailImage = Array.isArray(task.imageUrls) ? task.imageUrls[1] : null;
+				if (tailImage) {
+					imageTail = tailImage;
+				}
+			}
 		} else {
-			selectedGenerationType = 'text-to-video';
+			setGenerationType('text-to-video');
 		}
 
 		// 开始生成
@@ -1694,7 +2182,7 @@
 						<h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
 							🎬 视频生成服务
 						</h3>
-						<div class="grid grid-cols-4 gap-1 mb-3">
+						<div class="grid grid-cols-5 gap-1 mb-3">
 							<button
 								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
 								'kling'
@@ -1729,6 +2217,15 @@
 								on:click={() => (selectedService = 'hailuo')}
 							>
 								🐚 海螺
+							</button>
+							<button
+								class="px-2 py-2 text-xs rounded border transition-colors {selectedService ===
+								'seedance'
+									? 'bg-amber-500 text-white border-amber-500'
+									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+								on:click={() => (selectedService = 'seedance')}
+							>
+								🎞️ Seedance
 							</button>
 						</div>
 
@@ -1769,6 +2266,18 @@
 									<div class="text-xl">🎯</div>
 								</div>
 							</div>
+						{:else if selectedService === 'seedance'}
+							<div class="rounded-lg p-3 bg-gradient-to-r from-amber-500 to-orange-600 text-white">
+								<div class="flex items-center justify-between">
+									<div>
+										<div class="font-medium">Seedance 新即梦</div>
+										<div class="text-xs opacity-75">
+											{seedanceConfig?.enabled ? '已启用' : '未配置'}
+										</div>
+									</div>
+									<div class="text-xl">🎞️</div>
+								</div>
+							</div>
 						{:else}
 							<div class="rounded-lg p-3 bg-gradient-to-r from-rose-500 to-pink-600 text-white">
 								<div class="flex items-center justify-between">
@@ -1793,7 +2302,9 @@
 									? '即梦'
 									: selectedService === 'veo'
 										? 'Veo'
-										: '海螺'}视频生成
+										: selectedService === 'seedance'
+											? 'Seedance'
+											: '海螺'}视频生成
 						</div>
 						<div>消耗积分: {requiredCredits}积分/次</div>
 						<div class="flex justify-between items-center">
@@ -1823,7 +2334,7 @@
 								'text-to-video'
 									? 'bg-blue-500 text-white border-blue-500'
 									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-								on:click={() => (selectedGenerationType = 'text-to-video')}
+								on:click={() => setGenerationType('text-to-video')}
 							>
 								文生视频
 							</button>
@@ -1832,7 +2343,7 @@
 								'image-to-video'
 									? 'bg-blue-500 text-white border-blue-500'
 									: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
-								on:click={() => (selectedGenerationType = 'image-to-video')}
+								on:click={() => setGenerationType('image-to-video')}
 							>
 								图生视频
 							</button>
@@ -1862,12 +2373,16 @@
 											? jimengConfig?.enabled
 											: selectedService === 'veo'
 												? veoConfig?.enabled
-												: hailuoConfig?.enabled)}
+												: selectedService === 'seedance'
+													? seedanceConfig?.enabled
+													: hailuoConfig?.enabled)}
 								class="px-4 py-1 {selectedService === 'kling'
 									? 'bg-purple-500 hover:bg-purple-600'
 									: selectedService === 'jimeng'
 										? 'bg-green-500 hover:bg-green-600'
-										: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
+										: selectedService === 'seedance'
+											? 'bg-amber-500 hover:bg-amber-600'
+											: 'bg-blue-500 hover:bg-blue-600'} disabled:bg-gray-400 disabled:cursor-not-allowed text-white text-xs font-medium rounded transition-colors flex items-center gap-1"
 							>
 								{#if isGenerating}
 									<Spinner className="size-3" />
@@ -1895,7 +2410,7 @@
 												? 'bg-blue-500 text-white border-blue-500'
 												: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
 											on:click={() => {
-												selectedImageVideoMode = option.value;
+												setImageVideoMode(option.value);
 												// 若选择可灵 + 首尾帧模式，则设置推荐模型与专家模式，避免用户漏选
 												if (selectedService === 'kling' && option.value === 'first-last') {
 													if (selectedModel !== 'kling-v1-6') selectedModel = 'kling-v1-6';
@@ -1907,6 +2422,35 @@
 											{option.label}
 										</button>
 									{/each}
+								</div>
+							</div>
+						{:else if selectedService === 'seedance'}
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
+									图片使用方式
+								</label>
+								<div class="grid grid-cols-2 gap-2">
+									<button
+										class="px-3 py-2 text-sm rounded border transition-colors {selectedImageVideoMode ===
+										'basic'
+											? 'bg-amber-500 text-white border-amber-500'
+											: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+										on:click={() => setImageVideoMode('basic')}
+									>
+										首帧模式
+									</button>
+									<button
+										class="px-3 py-2 text-sm rounded border transition-colors {selectedImageVideoMode ===
+										'first-last'
+											? 'bg-amber-500 text-white border-amber-500'
+											: 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}"
+										on:click={() => setImageVideoMode('first-last')}
+									>
+										首尾帧模式
+									</button>
+								</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									首尾帧模式会在请求中传递两张图片，适用于 lite I2V 模型
 								</div>
 							</div>
 						{/if}
@@ -1947,7 +2491,7 @@
 												</button>
 											</div>
 										{:else}
-											<div class="text-center">
+											<div class="text-center space-y-2">
 												<input
 													type="file"
 													id="veo-image-1"
@@ -1955,13 +2499,22 @@
 													class="hidden"
 													on:change={(e) => handleImageUpload(e, 'veo1')}
 												/>
-												<button
-													type="button"
-													on:click={() => document.getElementById('veo-image-1')?.click()}
-													class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
-												>
-													选择第1张图片
-												</button>
+												<div class="flex flex-wrap items-center justify-center gap-2">
+													<button
+														type="button"
+														on:click={() => openMediaAssetSelector('veo-image-1', 'image')}
+														class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+													>
+														从媒体库选择
+													</button>
+													<button
+														type="button"
+														on:click={() => document.getElementById('veo-image-1')?.click()}
+														class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+													>
+														上传本地图片
+													</button>
+												</div>
 												<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
 											</div>
 										{/if}
@@ -1993,7 +2546,7 @@
 													</button>
 												</div>
 											{:else}
-												<div class="text-center">
+												<div class="text-center space-y-2">
 													<input
 														type="file"
 														id="veo-image-2"
@@ -2001,13 +2554,22 @@
 														class="hidden"
 														on:change={(e) => handleImageUpload(e, 'veo2')}
 													/>
-													<button
-														type="button"
-														on:click={() => document.getElementById('veo-image-2')?.click()}
-														class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
-													>
-														选择第2张图片
-													</button>
+													<div class="flex flex-wrap items-center justify-center gap-2">
+														<button
+															type="button"
+															on:click={() => openMediaAssetSelector('veo-image-2', 'image')}
+															class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+														>
+															从媒体库选择
+														</button>
+														<button
+															type="button"
+															on:click={() => document.getElementById('veo-image-2')?.click()}
+															class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+														>
+															上传本地图片
+														</button>
+													</div>
 													<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
 												</div>
 											{/if}
@@ -2038,7 +2600,7 @@
 													</button>
 												</div>
 											{:else}
-												<div class="text-center">
+												<div class="text-center space-y-2">
 													<input
 														type="file"
 														id="veo-image-3"
@@ -2046,13 +2608,22 @@
 														class="hidden"
 														on:change={(e) => handleImageUpload(e, 'veo3')}
 													/>
-													<button
-														type="button"
-														on:click={() => document.getElementById('veo-image-3')?.click()}
-														class="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors"
-													>
-														选择第3张图片
-													</button>
+													<div class="flex flex-wrap items-center justify-center gap-2">
+														<button
+															type="button"
+															on:click={() => openMediaAssetSelector('veo-image-3', 'image')}
+															class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+														>
+															从媒体库选择
+														</button>
+														<button
+															type="button"
+															on:click={() => document.getElementById('veo-image-3')?.click()}
+															class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+														>
+															上传本地图片
+														</button>
+													</div>
 													<p class="text-xs text-gray-500 mt-1">支持 JPG、PNG 格式</p>
 												</div>
 											{/if}
@@ -2064,7 +2635,8 @@
 							<!-- 可灵和即梦的输入图片 -->
 							<div>
 								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">
-									{selectedService === 'kling' && selectedImageVideoMode === 'first-last'
+									{(selectedService === 'kling' || selectedService === 'seedance') &&
+									selectedImageVideoMode === 'first-last'
 										? '首帧图片'
 										: '输入图片'}
 								</label>
@@ -2087,7 +2659,7 @@
 											</button>
 										</div>
 									{:else}
-										<div class="text-center">
+										<div class="text-center space-y-2">
 											<input
 												type="file"
 												id="input-image"
@@ -2095,14 +2667,23 @@
 												class="hidden"
 												on:change={(e) => handleImageUpload(e, 'input')}
 											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('input-image')?.click()}
-												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
-											>
-												选择图片
-											</button>
-											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+											<div class="flex flex-wrap items-center justify-center gap-2">
+												<button
+													type="button"
+													on:click={() => openMediaAssetSelector('video-input', 'image')}
+													class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+												>
+													从媒体库选择
+												</button>
+												<button
+													type="button"
+													on:click={() => document.getElementById('input-image')?.click()}
+													class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+												>
+													上传本地图片
+												</button>
+											</div>
+											<div class="text-xs text-gray-500 mt-1">支持 JPG、PNG、WebP，最大 10MB</div>
 										</div>
 									{/if}
 								</div>
@@ -2110,7 +2691,7 @@
 						{/if}
 
 						<!-- 可灵特有的尾帧图片 (首尾帧模式) -->
-						{#if (selectedService === 'kling' || selectedService === 'hailuo') && selectedImageVideoMode === 'first-last'}
+						{#if (selectedService === 'kling' || selectedService === 'hailuo' || selectedService === 'seedance') && selectedImageVideoMode === 'first-last'}
 							<div>
 								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block"
 									>尾帧图片</label
@@ -2134,7 +2715,7 @@
 											</button>
 										</div>
 									{:else}
-										<div class="text-center">
+										<div class="text-center space-y-2">
 											<input
 												type="file"
 												id="tail-image"
@@ -2142,14 +2723,23 @@
 												class="hidden"
 												on:change={(e) => handleImageUpload(e, 'tail')}
 											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('tail-image')?.click()}
-												class="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition-colors"
-											>
-												选择尾帧图片
-											</button>
-											<div class="text-xs text-gray-500 mt-2">支持 JPG、PNG、WebP，最大 10MB</div>
+											<div class="flex flex-wrap items-center justify-center gap-2">
+												<button
+													type="button"
+													on:click={() => openMediaAssetSelector('video-tail', 'image')}
+													class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+												>
+													从媒体库选择
+												</button>
+												<button
+													type="button"
+													on:click={() => document.getElementById('tail-image')?.click()}
+													class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+												>
+													上传本地图片
+												</button>
+											</div>
+											<div class="text-xs text-gray-500 mt-1">支持 JPG、PNG、WebP，最大 10MB</div>
 										</div>
 									{/if}
 								</div>
@@ -2181,7 +2771,7 @@
 											</button>
 										</div>
 									{:else}
-										<div class="text-center">
+										<div class="text-center space-y-2">
 											<input
 												type="file"
 												id="static-mask"
@@ -2189,14 +2779,23 @@
 												class="hidden"
 												on:change={(e) => handleImageUpload(e, 'static_mask')}
 											/>
-											<button
-												type="button"
-												on:click={() => document.getElementById('static-mask')?.click()}
-												class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded transition-colors"
-											>
-												选择笔刷遮罩
-											</button>
-											<div class="text-xs text-gray-500 mt-2">可选：静态笔刷涂抹区域</div>
+											<div class="flex flex-wrap items-center justify-center gap-2">
+												<button
+													type="button"
+													on:click={() => openMediaAssetSelector('video-static-mask', 'image')}
+													class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+												>
+													从媒体库选择
+												</button>
+												<button
+													type="button"
+													on:click={() => document.getElementById('static-mask')?.click()}
+													class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+												>
+													上传本地图片
+												</button>
+											</div>
+											<div class="text-xs text-gray-500 mt-1">可选：静态笔刷涂抹区域</div>
 										</div>
 									{/if}
 								</div>
@@ -2513,7 +3112,7 @@
 						</div>
 
 						<!-- 模型版本选择 -->
-						{#if selectedService === 'kling' || selectedService === 'veo' || selectedService === 'hailuo'}
+						{#if selectedService === 'kling' || selectedService === 'veo' || selectedService === 'hailuo' || selectedService === 'seedance'}
 							<div>
 								<div class="mb-1 text-xs text-gray-500">模型版本</div>
 								<select
@@ -2560,7 +3159,7 @@
 								</div>
 							{/if}
 
-							{#if selectedService !== 'veo' && selectedService !== 'hailuo'}
+							{#if selectedService !== 'veo' && selectedService !== 'hailuo' && selectedService !== 'seedance'}
 								<div>
 									<div class="mb-1 text-xs text-gray-500">画面比例</div>
 									<select
@@ -2643,6 +3242,82 @@
 							</div>
 							<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
 								启用后，生成的视频将包含服务提供商的水印
+							</div>
+						</div>
+					{/if}
+
+					{#if selectedService === 'seedance'}
+						<div class="space-y-3">
+							<div>
+								<div class="mb-1 text-xs text-gray-500">输出分辨率</div>
+								<select
+									bind:value={seedanceResolution}
+									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+								>
+									<option value="480p">480p</option>
+									<option value="720p">720p</option>
+									<option value="1080p">1080p</option>
+								</select>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									分辨率越高耗时及积分越高
+								</div>
+							</div>
+
+							<div class="space-y-2">
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 block"
+									>高级选项</label
+								>
+								<div class="space-y-2">
+									<label
+										class="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300"
+									>
+										<span>生成视频添加水印</span>
+										<input
+											type="checkbox"
+											class="w-4 h-4 text-amber-500 bg-gray-100 border-gray-300 rounded focus:ring-amber-500 dark:bg-gray-700 dark:border-gray-600"
+											bind:checked={watermark}
+										/>
+									</label>
+
+									<label
+										class="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300"
+									>
+										<span>固定摄像头 (camera_fixed)</span>
+										<input
+											type="checkbox"
+											class="w-4 h-4 text-amber-500 bg-gray-100 border-gray-300 rounded focus:ring-amber-500 dark:bg-gray-700 dark:border-gray-600"
+											bind:checked={seedanceCameraFixed}
+										/>
+									</label>
+
+									<label
+										class="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300"
+									>
+										<span>返回尾帧图片</span>
+										<input
+											type="checkbox"
+											class="w-4 h-4 text-amber-500 bg-gray-100 border-gray-300 rounded focus:ring-amber-500 dark:bg-gray-700 dark:border-gray-600"
+											bind:checked={seedanceReturnLastFrame}
+										/>
+									</label>
+								</div>
+							</div>
+
+							<div>
+								<label class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">
+									随机种子 (0 - 2147483647)
+								</label>
+								<input
+									type="number"
+									min="0"
+									max="2147483647"
+									placeholder="留空使用随机种子"
+									bind:value={seedanceSeed}
+									class="w-full rounded-lg py-2 px-3 text-sm border border-gray-300 dark:border-gray-600 dark:bg-gray-800"
+								/>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									使用相同种子可复现相似风格内容
+								</div>
 							</div>
 						</div>
 					{/if}
@@ -3206,6 +3881,12 @@
 											>
 												海螺 AI
 											</span>
+										{:else if task.serviceType === 'seedance'}
+											<span
+												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-amber-500 to-orange-500"
+											>
+												Seedance
+											</span>
 										{:else}
 											<span
 												class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -3242,7 +3923,9 @@
 																			? 'veo'
 																			: task?.serviceType === 'hailuo'
 																				? 'hailuo'
-																				: 'kling';
+																				: task?.serviceType === 'seedance'
+																					? 'seedance'
+																					: 'kling';
 																downloadVideo(task.videoUrl, `${serviceName}-${task.id}.mp4`);
 															}}
 															class="px-2 py-1 bg-green-500 bg-opacity-90 text-white text-xs rounded hover:bg-opacity-100 transition-all font-medium"
@@ -3329,7 +4012,10 @@
 														? 'Veo'
 														: task.serviceType === 'hailuo'
 															? '海螺'
-															: '可灵'} ({task.action === 'IMAGE_TO_VIDEO'
+															: task.serviceType === 'seedance'
+																? 'Seedance'
+																: '可灵'} ({task.action === 'IMAGE_TO_VIDEO' ||
+												task.action === 'IMAGE_TO_VIDEO_FIRST_LAST'
 													? '图生视频'
 													: '文生视频'})
 											</span>
@@ -3347,6 +4033,10 @@
 													{task.duration}秒 • {task.aspectRatio}
 												{:else if task.serviceType === 'veo'}
 													{task.model || 'veo3'}
+												{:else if task.serviceType === 'seedance'}
+													{task.model || 'Seedance'} • {task.duration ?? '5'}秒 • {task.ratio ||
+														task.aspectRatio ||
+														'16:9'}
 												{:else}
 													{task.mode || 'std'} • {task.duration}秒 • {task.aspectRatio}
 												{/if}
@@ -3426,6 +4116,12 @@
 							>
 								海螺 AI
 							</span>
+						{:else if selectedVideoForViewing?.serviceType === 'seedance'}
+							<span
+								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-amber-500 to-orange-500"
+							>
+								Seedance 视频
+							</span>
 						{:else}
 							<span
 								class="px-2 py-1 text-xs font-medium text-white rounded bg-gradient-to-r from-purple-500 to-pink-500"
@@ -3480,6 +4176,11 @@
 								{selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{:else if selectedVideoForViewing?.serviceType === 'veo'}
 								{selectedVideoForViewing?.model || 'veo3'}
+							{:else if selectedVideoForViewing?.serviceType === 'seedance'}
+								{selectedVideoForViewing?.model || 'Seedance'} • {selectedVideoForViewing?.duration ??
+									'5'}秒 • {selectedVideoForViewing?.ratio ||
+									selectedVideoForViewing?.aspectRatio ||
+									'16:9'}
 							{:else}
 								{selectedVideoForViewing?.mode || 'std'} • {selectedVideoForViewing.duration}秒 • {selectedVideoForViewing.aspectRatio}
 							{/if}
@@ -3496,7 +4197,9 @@
 											? 'veo'
 											: selectedVideoForViewing?.serviceType === 'hailuo'
 												? 'hailuo'
-												: 'kling';
+												: selectedVideoForViewing?.serviceType === 'seedance'
+													? 'seedance'
+													: 'kling';
 								downloadVideo(
 									selectedVideoForViewing.videoUrl,
 									`${serviceName}-${selectedVideoForViewing.id}.mp4`
@@ -3531,6 +4234,18 @@
 		</div>
 	{/if}
 {/if}
+
+<MediaAssetSelector
+	token={$user?.token ?? ''}
+	open={mediaAssetSelectorOpen}
+	mediaType={mediaAssetSelectorMediaType}
+	multiple={mediaAssetSelectorMultiple}
+	on:close={() => {
+		mediaAssetSelectorOpen = false;
+		mediaAssetSelectorContext = null;
+	}}
+	on:confirm={({ detail }) => handleMediaAssetSelection(detail)}
+/>
 
 <style>
 	/* 隐藏滚动条 */

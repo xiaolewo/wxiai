@@ -2,8 +2,11 @@
 海螺（MiniMax Hailuo）视频生成 API 路由
 """
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import logging
 from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
 from open_webui.utils.auth import get_verified_user, get_admin_user
 from open_webui.models.hailuo import (
@@ -13,13 +16,14 @@ from open_webui.models.hailuo import (
     HailuoGenerateRequest,
 )
 from open_webui.utils.hailuo import (
-    process_hailuo_generation,
-    monitor_hailuo_task,
     HailuoApiClient,
+    monitor_hailuo_task,
+    process_hailuo_generation,
 )
 
 
 router = APIRouter(prefix="/hailuo", tags=["hailuo"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/config")
@@ -130,8 +134,14 @@ async def generate_hailuo_video(
         task = await process_hailuo_generation(user.id, request)
         background_tasks.add_task(monitor_hailuo_task, task.id, cfg)
         return {"success": True, "task_id": task.id}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Hailuo task submission failed: %s", e)
+        return JSONResponse(
+            status_code=200,
+            content={"success": False, "error": str(e) or "海螺任务提交失败"},
+        )
 
 
 @router.get("/task/{task_id}")

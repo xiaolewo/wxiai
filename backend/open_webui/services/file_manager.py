@@ -14,6 +14,8 @@ from open_webui.models.cloud_storage import (
     MigrateUrlRequest,
 )
 from open_webui.utils.cloud_storage.tencent_cos import TencentCOSService
+from open_webui.services.media_library import media_library_service
+from open_webui.models.media_library import VISIBILITY_USER, VISIBILITY_GROUP
 
 
 logger = logging.getLogger(__name__)
@@ -69,6 +71,17 @@ class GeneratedFileManager:
         source_type: str = "",  # 'midjourney', 'kling', 'jimeng', 'dreamwork'
         source_task_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        visibility_scope: Optional[str] = None,
+        owner_id: Optional[str] = None,
+        created_by_user_id: Optional[str] = None,
+        folder_id: Optional[str] = None,
+        tags: Optional[Dict[str, Any]] = None,
+        thumbnail_url: Optional[str] = None,
+        checksum: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration: Optional[float] = None,
+        created_by_task_id: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[GeneratedFile]]:
         """保存生成的内容到云存储
 
@@ -146,6 +159,62 @@ class GeneratedFileManager:
                     # 重新获取更新后的记录
                     updated_record = self.file_table.get_file_by_id(file_record.id)
                     logger.info(f"文件上传成功: {upload_result.get('cloud_url')}")
+                    try:
+                        metadata_owner = None
+                        metadata_visibility = None
+                        if isinstance(metadata, dict):
+                            metadata_owner = metadata.get("owner_id") or metadata.get(
+                                "group_id"
+                            )
+                            metadata_visibility = metadata.get("visibility_scope")
+
+                        asset_owner_id = owner_id or metadata_owner or user_id
+                        asset_visibility = (
+                            visibility_scope
+                            or metadata_visibility
+                            or (
+                                VISIBILITY_GROUP
+                                if metadata_owner and metadata_owner != user_id
+                                else VISIBILITY_USER
+                            )
+                        )
+                        asset_created_by_user = created_by_user_id or user_id
+                        asset_created_by_task = created_by_task_id or source_task_id
+                        asset_tags = tags
+                        if asset_tags is None and isinstance(metadata, dict):
+                            potential_tags = metadata.get("tags")
+                            if isinstance(potential_tags, dict):
+                                asset_tags = potential_tags
+                        asset_width = width
+                        asset_height = height
+                        asset_duration = duration
+                        if isinstance(metadata, dict):
+                            asset_width = asset_width or metadata.get("width")
+                            asset_height = asset_height or metadata.get("height")
+                            asset_duration = asset_duration or metadata.get("duration")
+
+                        media_library_service.record_generated_asset(
+                            file_id=updated_record.id,
+                            owner_id=asset_owner_id,
+                            display_name=updated_record.original_filename
+                            or updated_record.filename,
+                            media_type=updated_record.file_type,
+                            visibility_scope=asset_visibility,
+                            mime_type=updated_record.mime_type,
+                            source=source_type,
+                            created_by_user_id=asset_created_by_user,
+                            created_by_task_id=asset_created_by_task,
+                            folder_id=folder_id,
+                            tags=asset_tags,
+                            metadata=metadata,
+                            thumbnail_url=thumbnail_url,
+                            checksum=checksum,
+                            width=asset_width,
+                            height=asset_height,
+                            duration=asset_duration,
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive logging
+                        logger.warning("同步媒体库失败: %s", exc)
                     return True, "文件上传成功", updated_record
                 else:
                     logger.error("更新文件状态失败")
@@ -166,6 +235,37 @@ class GeneratedFileManager:
         except Exception as e:
             logger.error(f"保存生成内容失败: {str(e)}")
             return False, f"保存失败: {str(e)}", None
+
+    def get_presigned_download_url(
+        self, cloud_url: Optional[str], expires_in: int = 3600
+    ) -> Optional[str]:
+        """根据云存储URL生成预签名下载链接
+
+        Args:
+            cloud_url: 已保存的云端访问地址
+            expires_in: 预签名链接有效期（秒）
+
+        Returns:
+            可直接访问的URL（若无法生成则返回原始URL）
+        """
+        if not cloud_url:
+            return None
+
+        try:
+            file_record = self.file_table.get_file_by_cloud_url(cloud_url)
+            if not file_record or not file_record.cloud_path:
+                return cloud_url
+
+            cos_service = self._get_cos_service()
+            if not cos_service:
+                return cloud_url
+
+            return cos_service.get_presigned_url(
+                file_record.cloud_path, expires_in=expires_in
+            )
+        except Exception as exc:  # pragma: no cover - 防御性日志
+            logger.warning("生成预签名下载链接失败: %s", exc, exc_info=True)
+            return cloud_url
 
     async def migrate_external_url(
         self,

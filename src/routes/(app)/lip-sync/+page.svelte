@@ -21,6 +21,8 @@
 	} from '$lib/apis/kling-lip-sync';
 	import { format } from 'date-fns';
 	import { zhCN } from 'date-fns/locale';
+	import MediaAssetSelector from '$lib/components/media-library/MediaAssetSelector.svelte';
+	import { type MediaAsset } from '$lib/apis/media-library';
 
 	const i18n = getContext('i18n');
 
@@ -51,6 +53,7 @@
 	let videoInputType: 'video_file' | 'video_url' | 'video_id' = 'video_file';
 	let videoInput: HTMLInputElement;
 	let uploadedVideoUrl = '';
+	let selectedMediaVideoName = '';
 	let isUploadingVideo = false;
 
 	// 文本转视频参数
@@ -66,6 +69,13 @@
 	let audioType: 'file' | 'url' = 'file';
 	let audioInput: HTMLInputElement;
 	let isUploadingAudio = false;
+
+	type MediaSelectorContext = 'lip-video';
+
+	let mediaAssetSelectorOpen = false;
+	let mediaAssetSelectorContext: MediaSelectorContext | null = null;
+	let mediaAssetSelectorMediaType: 'image' | 'video' | 'all' = 'video';
+	let mediaAssetSelectorMultiple = false;
 
 	// 轮询控制
 	let pollingInterval: NodeJS.Timeout | null = null;
@@ -319,6 +329,53 @@
 		}
 	};
 
+	// ======================== 媒体库选择 ========================
+
+	function openMediaAssetSelector(
+		context: MediaSelectorContext,
+		mediaType: 'image' | 'video' | 'all' = 'video',
+		multiple = false
+	) {
+		if (!$user?.token) {
+			toast.error('请先登录后再选择媒体资源');
+			return;
+		}
+		mediaAssetSelectorContext = context;
+		mediaAssetSelectorMediaType = mediaType;
+		mediaAssetSelectorMultiple = multiple;
+		mediaAssetSelectorOpen = true;
+	}
+
+	const handleMediaAssetSelection = (assets: MediaAsset[]) => {
+		mediaAssetSelectorOpen = false;
+		if (!assets?.length || !mediaAssetSelectorContext) {
+			mediaAssetSelectorContext = null;
+			return;
+		}
+
+		const asset = assets[0];
+		const url = asset.file?.cloud_url;
+		if (!url) {
+			toast.error('所选素材缺少可用链接');
+			mediaAssetSelectorContext = null;
+			return;
+		}
+
+		switch (mediaAssetSelectorContext) {
+			case 'lip-video': {
+				uploadedVideoUrl = url;
+				selectedMediaVideoName = asset.display_name ?? asset.id;
+				if (videoInput) {
+					videoInput.value = '';
+				}
+				toast.success('已选择媒体库视频');
+				break;
+			}
+		}
+
+		mediaAssetSelectorContext = null;
+	};
+
 	// ======================== 文件处理 ========================
 
 	const handleVideoUpload = async (event: Event) => {
@@ -326,6 +383,7 @@
 		const file = target.files?.[0];
 
 		if (!file) return;
+		selectedMediaVideoName = '';
 
 		// 检查文件类型
 		if (!file.type.startsWith('video/')) {
@@ -350,6 +408,7 @@
 
 			if (result.success && result.video_url) {
 				uploadedVideoUrl = result.video_url;
+				selectedMediaVideoName = file.name;
 				toast.success('视频上传成功');
 				console.log('🎬 视频上传成功:', result.video_url);
 			} else {
@@ -604,9 +663,18 @@
 						<!-- 视频文件上传 -->
 						{#if videoInputType === 'video_file'}
 							<div>
-								<label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
-									视频文件（MP4/MOV，最大100MB）
-								</label>
+								<div class="mb-2 flex items-center justify-between gap-2">
+									<label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+										视频文件（MP4/MOV，最大100MB）
+									</label>
+									<button
+										type="button"
+										on:click={() => openMediaAssetSelector('lip-video', 'video')}
+										class="rounded-md border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+									>
+										从媒体库选择
+									</button>
+								</div>
 								<input
 									type="file"
 									accept="video/mp4,video/mov,video/avi,video/mkv"
@@ -623,7 +691,9 @@
 										上传中...
 									</div>
 								{:else if uploadedVideoUrl}
-									<div class="mt-2 text-xs text-green-600">✓ 视频上传成功</div>
+									<div class="mt-2 text-xs text-green-600">
+										✓ 已关联视频：{selectedMediaVideoName || '视频上传成功'}
+									</div>
 								{/if}
 								<div class="text-xs text-gray-500 mt-1">
 									支持格式：MP4/MOV，大小≤100MB，时长2-60秒，分辨率720p/1080p
@@ -982,3 +1052,15 @@
 		</div>
 	</div>
 </div>
+
+<MediaAssetSelector
+	token={$user?.token ?? ''}
+	open={mediaAssetSelectorOpen}
+	mediaType={mediaAssetSelectorMediaType}
+	multiple={mediaAssetSelectorMultiple}
+	on:close={() => {
+		mediaAssetSelectorOpen = false;
+		mediaAssetSelectorContext = null;
+	}}
+	on:confirm={({ detail }) => handleMediaAssetSelection(detail)}
+/>

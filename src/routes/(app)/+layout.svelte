@@ -354,6 +354,16 @@
 {/if}
 
 <style>
+	.main-container {
+		width: 100%;
+		max-width: 1600px;
+	}
+
+	.page-container {
+		width: 100%;
+		max-width: 100%;
+	}
+
 	.loading {
 		display: inline-block;
 		clip-path: inset(0 1ch 0 0);

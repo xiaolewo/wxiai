@@ -399,6 +399,22 @@ async def submit_kling_lip_sync_task(
                 }
             )
 
+            # 为云存储的音视频生成可访问链接
+            file_manager = get_file_manager()
+            if api_request.get("input_type") == "video_url":
+                accessible_video = file_manager.get_presigned_download_url(
+                    api_request.get("video_input"), expires_in=3600
+                )
+                if accessible_video:
+                    api_request["video_input"] = accessible_video
+
+            if api_request.get("audio_url"):
+                accessible_audio = file_manager.get_presigned_download_url(
+                    api_request.get("audio_url"), expires_in=3600
+                )
+                if accessible_audio:
+                    api_request["audio_url"] = accessible_audio
+
             logger.info(f"🎬 【可灵对口型后端】API请求数据: {api_request}")
             logger.info(
                 f"🎬 【可灵对口型后端】视频URL: {api_request.get('video_input')}"

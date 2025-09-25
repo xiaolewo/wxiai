@@ -355,6 +355,7 @@ def run_migrations():
             channels,
             chats,
             models,
+            media_library,
         )
 
         # 导入所有即梦模型以确保表被正确注册
@@ -463,6 +464,13 @@ def run_migrations():
             log.warning(f"Failed to import kling_lip_sync models: {e}")
 
         try:
+            from open_webui.models.seedance import SeedanceConfig, SeedanceTask
+
+            log.info("Seedance models imported successfully")
+        except ImportError as e:
+            log.warning(f"Failed to import seedance models: {e}")
+
+        try:
             from open_webui.models.channels import Channel
 
             log.info("Channel model imported successfully")
@@ -559,8 +567,8 @@ def run_migrations():
                             text(
                                 """
                             INSERT INTO jimeng_outpainting_config 
-                            (enabled, base_url, credits_cost, default_steps, default_strength, default_scale, default_quality) 
-                            VALUES (0, 'https://visual.volcengineapi.com', 40, 30, 0.8, 7.0, 'M')
+                            (enabled, base_url, credits_cost, default_steps, default_strength, default_scale, default_quality, default_max_width, default_max_height) 
+                            VALUES (0, 'https://visual.volcengineapi.com', 40, 30, 0.8, 7.0, 'M', 1920, 1920)
                         """
                             )
                         )
@@ -624,6 +632,51 @@ def run_migrations():
                 except Exception as hailuo_config_error:
                     log.warning(
                         f"Failed to insert hailuo_config defaults: {hailuo_config_error}"
+                    )
+
+                # 媒体库默认设置
+                try:
+                    result = conn.execute(
+                        text("SELECT COUNT(*) FROM media_library_settings")
+                    )
+                    if result.fetchone()[0] == 0:
+                        conn.execute(
+                            text(
+                                """
+                            INSERT INTO media_library_settings (
+                                id,
+                                enable_group_sharing,
+                                allow_bulk_download,
+                                allowed_media_types,
+                                default_visibility,
+                                max_storage_per_user,
+                                max_storage_per_group,
+                                signed_url_ttl_seconds,
+                                thumbnail_strategy,
+                                extra_config,
+                                created_at,
+                                updated_at
+                            ) VALUES (
+                                'default',
+                                0,
+                                1,
+                                NULL,
+                                'user',
+                                NULL,
+                                NULL,
+                                NULL,
+                                NULL,
+                                NULL,
+                                CURRENT_TIMESTAMP,
+                                CURRENT_TIMESTAMP
+                            )
+                        """
+                            )
+                        )
+                        log.info("Inserted default configuration for media library")
+                except Exception as media_settings_error:
+                    log.warning(
+                        f"Failed to insert media_library_settings defaults: {media_settings_error}"
                     )
 
                 conn.commit()

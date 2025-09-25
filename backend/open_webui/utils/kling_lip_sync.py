@@ -6,6 +6,8 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from open_webui.services.file_manager import get_file_manager
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,9 +63,20 @@ class KlingLipSyncAPI:
     async def _download_audio_to_base64(self, audio_url: str) -> str:
         """从URL下载音频文件并转换为base64"""
         try:
+            accessible_url = audio_url
+            try:
+                file_manager = get_file_manager()
+                url = file_manager.get_presigned_download_url(
+                    audio_url, expires_in=3600
+                )
+                if url:
+                    accessible_url = url
+            except Exception as exc:  # pragma: no cover - 防御性的日志
+                logger.warning(f"🎬 【可灵对口型】生成音频预签名URL失败: {exc}")
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    audio_url, timeout=aiohttp.ClientTimeout(total=30)
+                    accessible_url, timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
                     if response.status == 200:
                         audio_data = await response.read()

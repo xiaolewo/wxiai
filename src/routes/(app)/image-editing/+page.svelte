@@ -19,6 +19,8 @@
 	// 导入新组件
 	import InpaintingModal from '$lib/components/image-editing/InpaintingModal.svelte';
 	import MaskPreview from '$lib/components/image-editing/MaskPreview.svelte';
+	import MediaAssetSelector from '$lib/components/media-library/MediaAssetSelector.svelte';
+	import { type MediaAsset } from '$lib/apis/media-library';
 
 	const i18n = getContext('i18n');
 
@@ -47,6 +49,7 @@
 	let uploadedMaskImageUrl = '';
 	let originalImageInput: HTMLInputElement;
 	let isUploadingOriginal = false;
+	let selectedOriginalImageName = '';
 
 	// 弹窗涂抹相关
 	let showInpaintingModal = false;
@@ -72,6 +75,13 @@
 
 	let requiredCredits = 30;
 	let editCredits = 40;
+
+	type MediaSelectorContext = 'inpainting-original';
+
+	let mediaAssetSelectorOpen = false;
+	let mediaAssetSelectorContext: MediaSelectorContext | null = null;
+	let mediaAssetSelectorMediaType: 'image' | 'video' | 'all' = 'image';
+	let mediaAssetSelectorMultiple = false;
 
 	// 计算当前所需积分
 	$: currentRequiredCredits = mode === 'edit' ? editCredits : requiredCredits;
@@ -301,6 +311,56 @@
 		// 蒙版已经在弹窗确认时上传，无需重复操作
 	};
 
+	// ======================== 媒体库选择 ========================
+
+	function openMediaAssetSelector(
+		context: MediaSelectorContext,
+		mediaType: 'image' | 'video' | 'all' = 'image',
+		multiple = false
+	) {
+		if (!$user?.token) {
+			toast.error('请先登录后再选择媒体资源');
+			return;
+		}
+		mediaAssetSelectorContext = context;
+		mediaAssetSelectorMediaType = mediaType;
+		mediaAssetSelectorMultiple = multiple;
+		mediaAssetSelectorOpen = true;
+	}
+
+	const handleMediaAssetSelection = (assets: MediaAsset[]) => {
+		mediaAssetSelectorOpen = false;
+		if (!assets?.length || !mediaAssetSelectorContext) {
+			mediaAssetSelectorContext = null;
+			return;
+		}
+
+		const asset = assets[0];
+		const url = asset.file?.cloud_url;
+		if (!url) {
+			toast.error('所选素材缺少可用链接');
+			mediaAssetSelectorContext = null;
+			return;
+		}
+
+		switch (mediaAssetSelectorContext) {
+			case 'inpainting-original': {
+				uploadedOriginalImageUrl = url;
+				selectedOriginalImageName = asset.display_name ?? asset.id;
+				if (originalImageInput) {
+					originalImageInput.value = '';
+				}
+				hasMask = false;
+				maskBlob = null;
+				uploadedMaskImageUrl = '';
+				toast.success('已选择媒体库图片');
+				break;
+			}
+		}
+
+		mediaAssetSelectorContext = null;
+	};
+
 	// ======================== 文件处理 ========================
 
 	const handleOriginalImageUpload = async (event: Event) => {
@@ -308,6 +368,7 @@
 		const file = target.files?.[0];
 
 		if (!file) return;
+		selectedOriginalImageName = '';
 
 		// 检查文件类型
 		if (!file.type.startsWith('image/')) {
@@ -332,6 +393,10 @@
 
 			if (result.success && result.image_url) {
 				uploadedOriginalImageUrl = result.image_url;
+				selectedOriginalImageName = file.name;
+				hasMask = false;
+				maskBlob = null;
+				uploadedMaskImageUrl = '';
 				toast.success('原始图片上传成功');
 				console.log('🎨 原始图片上传成功:', result.image_url);
 			} else {
@@ -549,9 +614,18 @@
 				<div class="space-y-4">
 					<!-- 原始图片上传 -->
 					<div>
-						<label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
-							原始图片（JPG/PNG，最大5MB）
-						</label>
+						<div class="mb-2 flex items-center justify-between gap-2">
+							<label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+								原始图片（JPG/PNG，最大5MB）
+							</label>
+							<button
+								type="button"
+								on:click={() => openMediaAssetSelector('inpainting-original', 'image')}
+								class="rounded-md border border-blue-200 px-2.5 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+							>
+								从媒体库选择
+							</button>
+						</div>
 						<input
 							type="file"
 							accept="image/jpeg,image/jpg,image/png"
@@ -568,7 +642,9 @@
 								上传中...
 							</div>
 						{:else if uploadedOriginalImageUrl}
-							<div class="mt-2 text-xs text-green-600">✓ 原始图片上传成功</div>
+							<div class="mt-2 text-xs text-green-600">
+								✓ 已关联图片：{selectedOriginalImageName || '原始图片上传成功'}
+							</div>
 							<div class="mt-2">
 								<img
 									src={uploadedOriginalImageUrl}
@@ -987,3 +1063,15 @@
 		</div>
 	</div>
 {/if}
+
+<MediaAssetSelector
+	token={$user?.token ?? ''}
+	open={mediaAssetSelectorOpen}
+	mediaType={mediaAssetSelectorMediaType}
+	multiple={mediaAssetSelectorMultiple}
+	on:close={() => {
+		mediaAssetSelectorOpen = false;
+		mediaAssetSelectorContext = null;
+	}}
+	on:confirm={({ detail }) => handleMediaAssetSelection(detail)}
+/>

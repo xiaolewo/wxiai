@@ -313,6 +313,21 @@ class GeneratedFileTable:
         except Exception:
             return None
 
+    def get_file_by_cloud_url(self, cloud_url: str) -> Optional[GeneratedFile]:
+        """根据云存储URL获取文件记录"""
+        if not cloud_url:
+            return None
+
+        try:
+            with get_db() as db:
+                return (
+                    db.query(GeneratedFile)
+                    .filter(GeneratedFile.cloud_url == cloud_url)
+                    .first()
+                )
+        except Exception:
+            return None
+
     def get_files_by_user(
         self,
         user_id: str,
@@ -414,6 +429,16 @@ class GeneratedFileTable:
                 )
         except Exception:
             return []
+
+    def get_files_by_ids(self, file_ids: List[str]) -> Dict[str, GeneratedFile]:
+        if not file_ids:
+            return {}
+
+        with get_db() as db:
+            records = (
+                db.query(GeneratedFile).filter(GeneratedFile.id.in_(file_ids)).all()
+            )
+            return {record.id: record for record in records}
 
 
 CloudStorageConfigs = CloudStorageTable

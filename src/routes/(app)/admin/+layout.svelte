@@ -88,6 +88,13 @@
 						>
 
 						<a
+							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/media-library')
+								? ''
+								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+							href="/admin/media-library">{$i18n.t('媒体库')}</a
+						>
+
+						<a
 							class="min-w-fit p-1.5 {$page.url.pathname.includes('/admin/settings')
 								? ''
 								: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"

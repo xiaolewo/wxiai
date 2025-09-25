@@ -3,15 +3,25 @@
 API客户端、任务处理、云存储迁移
 """
 
-import httpx
-import json
-from typing import Optional, Dict, Any
-from datetime import datetime
 import asyncio
+import base64
+import binascii
+import imghdr
+import json
+import logging
+from datetime import datetime
+from mimetypes import guess_extension
+from typing import Any, Dict, Optional
+from uuid import uuid4
+
+import httpx
 
 from open_webui.models.hailuo import HailuoConfig, HailuoTask, HailuoGenerateRequest
 from open_webui.models.credits import Credits
 from open_webui.services.file_manager import get_file_manager
+
+
+logger = logging.getLogger(__name__)
 
 
 class HailuoApiClient:
@@ -42,49 +52,87 @@ class HailuoApiClient:
         if req.last_frame_image:
             payload["last_frame_image"] = req.last_frame_image
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, headers=self.headers, json=payload)
-            if resp.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
-                }
-            data = resp.json()
-            # expected: { task_id, base_resp: {status_code,status_msg} }
-            if data.get("base_resp", {}).get("status_code") == 0:
-                return {"success": True, "task_id": data.get("task_id"), "raw": data}
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self.headers, json=payload)
+        except httpx.HTTPError as exc:
+            logger.exception("Hailuo create_task network error: %s", exc)
+            return {"success": False, "error": f"网络请求失败: {exc}"}
+
+        if resp.status_code != 200:
             return {
                 "success": False,
-                "error": data.get("base_resp", {}).get("status_msg", "create failed"),
-                "raw": data,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
             }
+
+        try:
+            data = resp.json()
+        except json.JSONDecodeError as exc:
+            logger.warning("Hailuo create_task JSON decode error: %s", exc)
+            return {"success": False, "error": "服务返回格式异常"}
+
+        if data.get("base_resp", {}).get("status_code") == 0:
+            return {"success": True, "task_id": data.get("task_id"), "raw": data}
+
+        error_msg = (
+            data.get("base_resp", {}).get("status_msg")
+            or data.get("message")
+            or data.get("error")
+            or "create failed"
+        )
+        return {
+            "success": False,
+            "error": error_msg,
+            "raw": data,
+        }
 
     async def query_task(self, task_id: str) -> Dict[str, Any]:
         url = f"{self.base_url}/minimax/v1/query/video_generation?task_id={task_id}"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(url, headers=self.headers)
-            if resp.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
-                }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.get(url, headers=self.headers)
+        except httpx.HTTPError as exc:
+            logger.exception("Hailuo query_task network error: %s", exc)
+            return {"success": False, "error": f"网络请求失败: {exc}"}
+
+        if resp.status_code != 200:
+            return {
+                "success": False,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+
+        try:
             data = resp.json()
-            # expected keys: task_id, status (Success/Fail/Running?), file_id, base_resp
-            ok = data.get("base_resp", {}).get("status_code") == 0
-            return {"success": ok, **data}
+        except json.JSONDecodeError as exc:
+            logger.warning("Hailuo query_task JSON decode error: %s", exc)
+            return {"success": False, "error": "服务返回格式异常"}
+
+        ok = data.get("base_resp", {}).get("status_code") == 0
+        return {"success": ok, **data}
 
     async def retrieve_file(self, file_id: str) -> Dict[str, Any]:
         url = f"{self.base_url}/minimax/v1/files/retrieve?file_id={file_id}"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(url, headers=self.headers)
-            if resp.status_code != 200:
-                return {
-                    "success": False,
-                    "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
-                }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.get(url, headers=self.headers)
+        except httpx.HTTPError as exc:
+            logger.exception("Hailuo retrieve_file network error: %s", exc)
+            return {"success": False, "error": f"网络请求失败: {exc}"}
+
+        if resp.status_code != 200:
+            return {
+                "success": False,
+                "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+            }
+
+        try:
             data = resp.json()
-            ok = data.get("base_resp", {}).get("status_code") == 0
-            return {"success": ok, **data}
+        except json.JSONDecodeError as exc:
+            logger.warning("Hailuo retrieve_file JSON decode error: %s", exc)
+            return {"success": False, "error": "服务返回格式异常"}
+
+        ok = data.get("base_resp", {}).get("status_code") == 0
+        return {"success": ok, **data}
 
 
 def _status_map(remote: str) -> str:
@@ -94,6 +142,88 @@ def _status_map(remote: str) -> str:
     if r in ("failure", "failed", "error"):
         return "failed"
     return "processing"
+
+
+def _decode_base64_payload(data: str) -> bytes:
+    cleaned = data.strip()
+    if not cleaned:
+        raise ValueError("图片数据为空")
+
+    padding = len(cleaned) % 4
+    if padding:
+        cleaned += "=" * (4 - padding)
+
+    try:
+        return base64.b64decode(cleaned, validate=True)
+    except binascii.Error as exc:
+        raise ValueError(f"图片数据不是有效的Base64编码: {exc}") from exc
+
+
+async def _prepare_image_reference(
+    user_id: str, raw_value: Optional[str], label: str
+) -> Optional[str]:
+    if not raw_value:
+        return None
+
+    value = raw_value.strip()
+    if not value:
+        return None
+
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+
+    base64_payload = value
+    mime_hint = None
+    if value.startswith("data:"):
+        parts = value.split(",", 1)
+        if len(parts) < 2 or not parts[1].strip():
+            raise ValueError("图片数据为空")
+        header = parts[0]
+        base64_payload = parts[1]
+        if ";" in header:
+            mime_hint = header.split(";", 1)[0].removeprefix("data:")
+        else:
+            mime_hint = header.removeprefix("data:")
+
+    image_bytes = _decode_base64_payload(base64_payload)
+
+    extension = None
+    if mime_hint:
+        extension = guess_extension(mime_hint) or None
+
+    detected_format = imghdr.what(None, h=image_bytes)
+    if detected_format:
+        detected_ext = (
+            f".{detected_format}"
+            if not detected_format.startswith(".")
+            else detected_format
+        )
+        extension = extension or detected_ext
+
+    if not extension:
+        extension = ".png"
+
+    file_manager = get_file_manager()
+    filename = f"hailuo_input_{label}_{uuid4().hex}{extension}"
+
+    upload_success, message, record = await file_manager.save_generated_content(
+        user_id=user_id,
+        file_data=image_bytes,
+        filename=filename,
+        file_type="image",
+        source_type="hailuo_input",
+        source_task_id=None,
+        metadata={
+            "kind": "hailuo_input",
+            "label": label,
+        },
+    )
+
+    if not upload_success or not record or not record.cloud_url:
+        detail = message or "图片上传失败"
+        raise ValueError(detail)
+
+    return record.cloud_url
 
 
 def _deduct_credits(user_id: str, amount: int, desc: str) -> bool:
@@ -128,7 +258,18 @@ async def process_hailuo_generation(
     model = req.model or cfg.default_model
     duration = int(req.duration or cfg.default_duration)
     resolution = req.resolution or cfg.default_resolution
-    is_first_last = bool(req.first_frame_image and req.last_frame_image)
+
+    try:
+        cloud_first = await _prepare_image_reference(
+            user_id, req.first_frame_image, "first"
+        )
+        cloud_last = await _prepare_image_reference(
+            user_id, req.last_frame_image, "last"
+        )
+    except ValueError as exc:
+        raise Exception(str(exc)) from exc
+
+    is_first_last = bool(cloud_first and cloud_last)
     cost = cfg.get_credits_cost(model, resolution, duration, first_last=is_first_last)
 
     if not _deduct_credits(user_id, cost, f"hailuo-{model}"):
@@ -146,17 +287,23 @@ async def process_hailuo_generation(
                 if req.prompt_optimizer is not None
                 else cfg.prompt_optimizer
             ),
-            "first_frame_url": req.first_frame_image,
-            "last_frame_url": req.last_frame_image,
+            "first_frame_url": cloud_first,
+            "last_frame_url": cloud_last,
             "credits_cost": cost,
             "status": "submitted",
             "properties": {"serviceType": "hailuo"},
+            "cloud_input_images": [url for url in [cloud_first, cloud_last] if url],
         }
     )
 
     client = HailuoApiClient(cfg)
     try:
-        created = await client.create_task(req)
+        payload_dict = req.model_dump()
+        payload_dict["first_frame_image"] = cloud_first
+        payload_dict["last_frame_image"] = cloud_last
+        sanitized_request = HailuoGenerateRequest(**payload_dict)
+
+        created = await client.create_task(sanitized_request)
         if not created.get("success"):
             _refund_credits(user_id, cost, "hailuo-create-failed")
             HailuoTask.update_task_status(

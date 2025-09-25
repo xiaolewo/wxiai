@@ -24,6 +24,7 @@
 	import Jimeng4 from './Settings/Jimeng4.svelte';
 	import Veo from './Settings/Veo.svelte';
 	import Hailuo from './Settings/Hailuo.svelte';
+	import Seedance from './Settings/Seedance.svelte';
 	import Interface from './Settings/Interface.svelte';
 	import Models from './Settings/Models.svelte';
 	import Connections from './Settings/Connections.svelte';
@@ -71,6 +72,7 @@
 			'jimeng-outpainting',
 			'jimeng',
 			'hailuo',
+			'seedance',
 			'veo',
 			'storage',
 			'pipelines',
@@ -776,6 +778,31 @@
 		</button>
 
 		<button
+			id="seedance"
+			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
+			'seedance'
+				? ''
+				: ' text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'}"
+			on:click={() => {
+				goto('/admin/settings/seedance');
+			}}
+		>
+			<div class=" self-center mr-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 24 24"
+					fill="currentColor"
+					class="w-4 h-4"
+				>
+					<path
+						d="M12 2a10 10 0 100 20 10 10 0 000-20Zm-.75 5a.75.75 0 011.5 0v4.69l2.28 2.28a.75.75 0 11-1.06 1.06l-2.5-2.5A.75.75 0 0111.25 12V7Z"
+					/>
+				</svg>
+			</div>
+			<div class=" self-center">🎞️ Seedance 视频</div>
+		</button>
+
+		<button
 			id="storage"
 			class="px-0.5 py-1 min-w-fit rounded-lg flex-1 md:flex-none flex text-left transition {selectedTab ===
 			'storage'
@@ -1002,6 +1029,12 @@
 			/>
 		{:else if selectedTab === 'hailuo'}
 			<Hailuo
+				on:save={() => {
+					toast.success($i18n.t('Settings saved successfully!'));
+				}}
+			/>
+		{:else if selectedTab === 'seedance'}
+			<Seedance
 				on:save={() => {
 					toast.success($i18n.t('Settings saved successfully!'));
 				}}

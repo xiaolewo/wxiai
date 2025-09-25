@@ -78,6 +78,7 @@
 		deleteJimeng4Task,
 		uploadJimeng4ReferenceImage
 	} from '$lib/apis/jimeng4';
+	import { type MediaAsset } from '$lib/apis/media-library';
 
 	import {
 		type BananaConfig,
@@ -90,6 +91,8 @@
 
 	// Import MJ streaming/callback system
 	import { mjCallbackHandler, type MJTaskUpdate } from '$lib/apis/midjourney/streaming';
+	import MediaAssetSelector from '$lib/components/media-library/MediaAssetSelector.svelte';
+	import { fetchAssetAsBase64 } from '$lib/utils/media-assets';
 
 	const i18n = getContext('i18n');
 
@@ -231,8 +234,20 @@
 	let jimeng4ReferenceInput = '';
 	let jimeng4ReferenceUrls: string[] = [];
 	let jimeng4ManualReferenceUrls: string[] = [];
-	let jimeng4UploadedReferences: { url: string; fileId?: string; name?: string }[] = [];
+	let jimeng4UploadedReferences: {
+		url: string;
+		fileId?: string;
+		name?: string;
+		assetId?: string;
+		source?: 'upload' | 'media';
+	}[] = [];
 	let jimeng4Uploading = false;
+	let jimeng4ReferenceFileInput: HTMLInputElement | null = null;
+	type MediaSelectorContext = 'jimeng4' | 'dreamwork' | 'flux-single' | 'flux-multi' | 'banana';
+	let mediaAssetSelectorContext: MediaSelectorContext | null = null;
+	let mediaAssetSelectorOpen = false;
+	let mediaAssetSelectorMediaType: 'image' | 'video' | 'all' = 'image';
+	let mediaAssetSelectorMultiple = false;
 
 	// Flux 参数
 	let fluxModels: FluxModel[] = [];
@@ -565,8 +580,8 @@
 	};
 
 	const handleJimeng4ReferenceUpload = async (event: Event) => {
-		const input = event.target as HTMLInputElement;
-		const files = input?.files ? Array.from(input.files) : [];
+		const inputEl = event.target as HTMLInputElement;
+		const files = inputEl?.files ? Array.from(inputEl.files) : [];
 		if (files.length === 0) {
 			return;
 		}
@@ -580,7 +595,7 @@
 		let availableSlots = JIMENG4_MAX_REFERENCE_IMAGES - jimeng4ReferenceUrls.length;
 		if (availableSlots <= 0) {
 			toast.error(`最多支持 ${JIMENG4_MAX_REFERENCE_IMAGES} 张参考图`);
-			input.value = '';
+			if (jimeng4ReferenceFileInput) jimeng4ReferenceFileInput.value = '';
 			return;
 		}
 
@@ -607,7 +622,7 @@
 						}
 						jimeng4UploadedReferences = [
 							...jimeng4UploadedReferences,
-							{ url: response.url, fileId: response.fileId, name: file.name }
+							{ url: response.url, fileId: response.fileId, name: file.name, source: 'upload' }
 						];
 						availableSlots -= 1;
 						reachedLimit = availableSlots <= 0;
@@ -625,13 +640,170 @@
 			}
 		} finally {
 			jimeng4Uploading = false;
-			if (input) {
-				input.value = '';
+			if (jimeng4ReferenceFileInput) {
+				jimeng4ReferenceFileInput.value = '';
 			}
 		}
 
 		if (reachedLimit) {
 			toast.info(`参考图数量已达上限 (${JIMENG4_MAX_REFERENCE_IMAGES} 张)`);
+		}
+	};
+
+	function openMediaAssetSelectorModal(
+		context: MediaSelectorContext,
+		mediaType: 'image' | 'video' | 'all',
+		multiple: boolean
+	) {
+		if (!$user?.token) {
+			toast.error('请先登录后再选择媒体资源');
+			return;
+		}
+		mediaAssetSelectorContext = context;
+		mediaAssetSelectorMediaType = mediaType;
+		mediaAssetSelectorMultiple = multiple;
+		mediaAssetSelectorOpen = true;
+	}
+
+	const openJimeng4MediaSelector = () => {
+		if (jimeng4ReferenceUrls.length >= JIMENG4_MAX_REFERENCE_IMAGES) {
+			toast.info(`参考图数量已达上限 (${JIMENG4_MAX_REFERENCE_IMAGES} 张)`);
+			return;
+		}
+		openMediaAssetSelectorModal('jimeng4', 'image', true);
+	};
+
+	const openDreamWorkMediaSelector = () => {
+		openMediaAssetSelectorModal('dreamwork', 'image', false);
+	};
+
+	const openFluxSingleMediaSelector = () => {
+		openMediaAssetSelectorModal('flux-single', 'image', false);
+	};
+
+	const openFluxMultiMediaSelector = () => {
+		if (fluxInputImageUrls.length >= 5) {
+			toast.info('多图参考最多支持 5 张');
+			return;
+		}
+		openMediaAssetSelectorModal('flux-multi', 'image', true);
+	};
+
+	const openBananaMediaSelector = () => {
+		if (bananaUploadedImages.length >= BANANA_MAX_IMAGES) {
+			toast.info(`参考图数量已达上限 (${BANANA_MAX_IMAGES} 张)`);
+			return;
+		}
+		openMediaAssetSelectorModal('banana', 'image', true);
+	};
+
+	const handleMediaAssetSelection = async (assets: MediaAsset[]) => {
+		mediaAssetSelectorOpen = false;
+		if (!assets?.length || !mediaAssetSelectorContext) return;
+
+		try {
+			switch (mediaAssetSelectorContext) {
+				case 'jimeng4': {
+					const existingUrls = new Set(jimeng4ReferenceUrls);
+					let changed = false;
+					for (const asset of assets) {
+						const url = asset.file?.cloud_url ?? '';
+						if (!url) {
+							toast.error('所选素材缺少可用链接，已跳过');
+							continue;
+						}
+						if (existingUrls.has(url)) {
+							continue;
+						}
+						if (existingUrls.size >= JIMENG4_MAX_REFERENCE_IMAGES) {
+							toast.info(`参考图数量已达上限 (${JIMENG4_MAX_REFERENCE_IMAGES} 张)`);
+							break;
+						}
+						jimeng4UploadedReferences = [
+							{ url, assetId: asset.id, name: asset.display_name ?? asset.id, source: 'media' },
+							...jimeng4UploadedReferences
+						];
+						existingUrls.add(url);
+						changed = true;
+					}
+					if (changed) {
+						toast.success('已添加媒体库参考图');
+					}
+					break;
+				}
+				case 'dreamwork': {
+					const asset = assets[0];
+					const url = asset.file?.cloud_url;
+					if (!url) {
+						toast.error('所选素材缺少可用链接');
+						break;
+					}
+					const base64 = await fetchAssetAsBase64(asset);
+					dreamWorkInputImage = base64;
+					toast.success('已选择媒体库图片');
+					break;
+				}
+				case 'flux-single': {
+					const asset = assets[0];
+					const url = asset.file?.cloud_url;
+					if (!url) {
+						toast.error('所选素材缺少可用链接');
+						break;
+					}
+					fluxInputImageUrl = url;
+					toast.success('已选择媒体库图片');
+					break;
+				}
+				case 'flux-multi': {
+					let changed = false;
+					for (const asset of assets) {
+						const url = asset.file?.cloud_url;
+						if (!url) {
+							toast.error('所选素材缺少可用链接，已跳过');
+							continue;
+						}
+						if (fluxInputImageUrls.includes(url)) {
+							continue;
+						}
+						if (fluxInputImageUrls.length >= 5) {
+							toast.info('多图参考最多支持 5 张');
+							break;
+						}
+						fluxInputImageUrls = [...fluxInputImageUrls, url];
+						changed = true;
+					}
+					if (changed) {
+						toast.success('已添加媒体库图片');
+					}
+					break;
+				}
+				case 'banana': {
+					let changed = false;
+					for (const asset of assets) {
+						if (bananaUploadedImages.length >= BANANA_MAX_IMAGES) {
+							toast.info(`参考图数量已达上限 (${BANANA_MAX_IMAGES} 张)`);
+							break;
+						}
+						const url = asset.file?.cloud_url;
+						if (!url) {
+							toast.error('所选素材缺少可用链接，已跳过');
+							continue;
+						}
+						const base64 = await fetchAssetAsBase64(asset);
+						bananaUploadedImages = [...bananaUploadedImages, base64];
+						changed = true;
+					}
+					if (changed) {
+						toast.success('已添加媒体库图片');
+					}
+					break;
+				}
+			}
+		} catch (error) {
+			console.error('处理媒体库选择失败:', error);
+			toast.error(error instanceof Error ? error.message : '处理媒体库资源时发生错误');
+		} finally {
+			mediaAssetSelectorContext = null;
 		}
 	};
 
@@ -2965,7 +3137,7 @@
 							<div class="mt-3 space-y-2">
 								<div class="flex items-center justify-between">
 									<label class="text-sm font-medium text-gray-700 dark:text-gray-300"
-										>上传参考图</label
+										>参考图来源</label
 									>
 									{#if jimeng4Uploading}
 										<div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -2974,15 +3146,32 @@
 										</div>
 									{/if}
 								</div>
-								<input
-									type="file"
-									accept="image/*"
-									multiple
-									on:change={handleJimeng4ReferenceUpload}
-									class="w-full text-xs text-gray-600 dark:text-gray-300"
-								/>
-								<div class="text-xs text-gray-500 dark:text-gray-400">
-									支持 JPG/PNG/WebP，单张 ≤ 10MB，最多 {JIMENG4_MAX_REFERENCE_IMAGES} 张（包含手动填写）
+								<div class="mt-2 flex flex-wrap items-center gap-2">
+									<button
+										type="button"
+										on:click={openJimeng4MediaSelector}
+										class="rounded-md border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-blue-500/40 dark:text-blue-200 dark:hover:bg-blue-900/40"
+									>
+										从媒体库选择
+									</button>
+									<button
+										type="button"
+										on:click={() => jimeng4ReferenceFileInput?.click()}
+										class="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+									>
+										上传本地图片
+									</button>
+									<input
+										type="file"
+										accept="image/*"
+										multiple
+										class="hidden"
+										bind:this={jimeng4ReferenceFileInput}
+										on:change={handleJimeng4ReferenceUpload}
+									/>
+								</div>
+								<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+									支持 JPG/PNG/WebP，单张 ≤ 10MB，最多 {JIMENG4_MAX_REFERENCE_IMAGES} 张（包含手动粘贴的URL）
 								</div>
 								{#if jimeng4UploadedReferences.length > 0}
 									<div class="flex flex-wrap gap-2 mt-2">
@@ -4403,6 +4592,20 @@
 		</div>
 	{/if}
 {/if}
+
+<MediaAssetSelector
+	token={$user?.token ?? ''}
+	open={mediaAssetSelectorOpen}
+	mediaType={mediaAssetSelectorMediaType}
+	multiple={mediaAssetSelectorMultiple}
+	scope={'mine'}
+	allowUpload={true}
+	on:close={() => {
+		mediaAssetSelectorOpen = false;
+		mediaAssetSelectorContext = null;
+	}}
+	on:confirm={(event) => handleMediaAssetSelection(event.detail)}
+/>
 
 <style>
 	/* 隐藏滚动条 */

@@ -730,6 +730,44 @@
 					</Tooltip>
 				</div>
 
+				<div class="">
+					<Tooltip content={$i18n.t('媒体库')} placement="right">
+						<a
+							class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-850 transition group"
+							href="/media-library"
+							on:click={async (e) => {
+								e.stopImmediatePropagation();
+								e.preventDefault();
+								goto('/media-library');
+								itemClickHandler();
+							}}
+							draggable="false"
+						>
+							<div class=" self-center flex items-center justify-center size-9">
+								<svg
+									xmlns="http://www.w3.org/2000/svg"
+									fill="none"
+									viewBox="0 0 24 24"
+									stroke-width="1.5"
+									stroke="currentColor"
+									class="size-4.5"
+								>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										d="M3 7.5A2.25 2.25 0 0 1 5.25 5.25h13.5A2.25 2.25 0 0 1 21 7.5v0A2.25 2.25 0 0 1 18.75 9.75H5.25A2.25 2.25 0 0 1 3 7.5v0Zm0 9A2.25 2.25 0 0 1 5.25 14.25h13.5A2.25 2.25 0 0 1 21 16.5v0a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 16.5v0Z"
+									/>
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										d="M7.5 8.25h.008v.008H7.5V8.25Zm0 9h.008v.008H7.5V17.25Zm3-9h.008v.008H10.5V8.25Zm0 9h.008v.008H10.5V17.25Zm3-9h.008v.008H13.5V8.25Zm0 9h.008v.008H13.5V17.25Zm3-9h.008v.008H16.5V8.25Zm0 9h.008v.008H16.5V17.25Z"
+									/>
+								</svg>
+							</div>
+						</a>
+					</Tooltip>
+				</div>
+
 				{#if $user?.role === 'admin' || $user?.permissions?.workspace?.prompts || $user?.permissions?.workspace?.tools}
 					<div class="">
 						<Tooltip content={$i18n.t('Workspace')} placement="right">
@@ -1015,6 +1053,40 @@
 						</div>
 						<div class="flex self-center translate-y-[0.5px]">
 							<div class=" self-center text-sm font-primary">视频生成</div>
+						</div>
+					</a>
+				</div>
+
+				<div class="px-[7px] flex justify-center text-gray-800 dark:text-gray-200">
+					<a
+						class="grow flex items-center space-x-3 rounded-lg px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-900 transition"
+						href="/media-library"
+						on:click={itemClickHandler}
+						draggable="false"
+					>
+						<div class="self-center">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="2"
+								stroke="currentColor"
+								class="size-4.5"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M3 7.5A2.25 2.25 0 0 1 5.25 5.25h13.5A2.25 2.25 0 0 1 21 7.5v0A2.25 2.25 0 0 1 18.75 9.75H5.25A2.25 2.25 0 0 1 3 7.5v0Zm0 9A2.25 2.25 0 0 1 5.25 14.25h13.5A2.25 2.25 0 0 1 21 16.5v0a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 16.5v0Z"
+								/>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M7.5 8.25h.008v.008H7.5V8.25Zm0 9h.008v.008H7.5V17.25Zm3-9h.008v.008H10.5V8.25Zm0 9h.008v.008H10.5V17.25Zm3-9h.008v.008H13.5V8.25Zm0 9h.008v.008H13.5V17.25Zm3-9h.008v.008H16.5V8.25Zm0 9h.008v.008H16.5V17.25Z"
+								/>
+							</svg>
+						</div>
+						<div class="flex self-center translate-y-[0.5px]">
+							<div class=" self-center text-sm font-primary">媒体库</div>
 						</div>
 					</a>
 				</div>

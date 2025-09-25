@@ -20,6 +20,18 @@ from open_webui.internal.db import Base, get_db
 class VeoConfig(Base):
     __tablename__ = "veo_config"
 
+    ALLOWED_MODEL_KEYS = {
+        "veo3",
+        "veo3-fast",
+        "veo3-pro",
+        "veo3-pro-frames",
+        "veo2",
+        "veo2-fast",
+        "veo2-fast-frames",
+        "veo2-fast-components",
+        "veo2-pro",
+    }
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     enabled = Column(Boolean, default=False, nullable=False)
     base_url = Column(String(500), default="https://api.veoai.com", nullable=False)
@@ -104,6 +116,11 @@ class VeoConfig(Base):
             else:
                 raise e
 
+    def _sanitize_model_credits(self, data: Optional[dict]) -> dict:
+        if not data:
+            return {}
+        return {k: v for k, v in data.items() if k in self.ALLOWED_MODEL_KEYS}
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -111,7 +128,9 @@ class VeoConfig(Base):
             "enabled": self.enabled,
             "base_url": self.base_url,
             "api_key": self.api_key,
-            "model_credits_config": self.model_credits_config
+            "model_credits_config": self._sanitize_model_credits(
+                self.model_credits_config
+            )
             or self._get_default_model_credits(),
             "default_model": self.default_model,
             "default_enhance_prompt": self.default_enhance_prompt,
@@ -134,14 +153,14 @@ class VeoConfig(Base):
             "veo2-fast-frames": 120,
             "veo2-fast-components": 160,
             "veo2-pro": 140,
-            "veo3-fast-frames": 90,
         }
 
     def get_credits_cost(self, model_name: str) -> int:
         """根据模型获取积分消耗"""
         # 优先使用自定义配置
-        if self.model_credits_config and model_name in self.model_credits_config:
-            return int(self.model_credits_config[model_name])
+        sanitized = self._sanitize_model_credits(self.model_credits_config)
+        if sanitized and model_name in sanitized:
+            return int(sanitized[model_name])
 
         # 回退到默认配置
         default_credits = self._get_default_model_credits()
@@ -150,20 +169,19 @@ class VeoConfig(Base):
     def get_supported_models(self) -> List[str]:
         """获取支持的模型列表"""
         if self.model_credits_config:
-            return list(self.model_credits_config.keys())
+            return list(self._sanitize_model_credits(self.model_credits_config).keys())
         return list(self._get_default_model_credits().keys())
 
     def get_model_image_limits(self, model_name: str) -> dict:
         """获取模型的图片数量限制"""
         limits = {
             # 特殊功能模型 - 有特定的图片数量限制
-            "veo3-pro-frames": {"max": 1, "description": "最多支持1个首帧"},
+            "veo3-pro-frames": {"max": 2, "description": "最多支持2张图(首尾帧)"},
             "veo2-fast-frames": {"max": 2, "description": "最多支持2张图(首尾帧)"},
             "veo2-fast-components": {
                 "max": 3,
                 "description": "最多支持3张图(视频元素)",
             },
-            "veo3-fast-frames": {"max": 1, "description": "最多支持1个首帧"},
             # 基础模型 - 都支持单张图片生成视频
             "veo2": {"max": 1, "description": "支持单张图片生成视频"},
             "veo2-fast": {"max": 1, "description": "支持单张图片生成视频"},
@@ -628,13 +646,12 @@ class VeoGenerateRequest(BaseModel):
         # 定义支持图片的模型和限制
         image_support = {
             # 特殊功能模型
-            "veo3-pro-frames": {"max": 1, "description": "最多支持1个首帧"},
+            "veo3-pro-frames": {"max": 2, "description": "最多支持2张图(首尾帧)"},
             "veo2-fast-frames": {"max": 2, "description": "最多支持2张图(首尾帧)"},
             "veo2-fast-components": {
                 "max": 3,
                 "description": "最多支持3张图(视频元素)",
             },
-            "veo3-fast-frames": {"max": 1, "description": "最多支持1个首帧"},
             # 基础模型 - 都支持单张图片生成视频
             "veo2": {"max": 1, "description": "支持单张图片生成视频"},
             "veo2-fast": {"max": 1, "description": "支持单张图片生成视频"},

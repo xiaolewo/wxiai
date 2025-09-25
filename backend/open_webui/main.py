@@ -83,6 +83,7 @@ from open_webui.routers import (
     kling_lip_sync,
     jimeng_inpainting,
     jimeng_outpainting,
+    seedance,
     jimeng,
     jimeng4,
     storage,
@@ -90,6 +91,8 @@ from open_webui.routers import (
     veo,
     hailuo,
     banana,
+    media_library,
+    admin_media_library,
 )
 
 from open_webui.routers.retrieval import (
@@ -1321,6 +1324,7 @@ app.include_router(credit.router, prefix="/api/v1/credit", tags=["credit"])
 app.include_router(midjourney.router, prefix="/api/v1", tags=["midjourney"])
 app.include_router(dreamwork.router, prefix="/api/v1", tags=["dreamwork"])
 app.include_router(kling.router, prefix="/api/v1", tags=["kling"])
+app.include_router(seedance.router, prefix="/api/v1", tags=["seedance"])
 app.include_router(
     kling_lip_sync.router, prefix="/api/v1/kling-lip-sync", tags=["kling-lip-sync"]
 )
@@ -1341,6 +1345,9 @@ app.include_router(flux.router, prefix="/api/v1", tags=["flux"])
 app.include_router(veo.router, prefix="/api/v1", tags=["veo"])
 app.include_router(hailuo.router, prefix="/api/v1", tags=["hailuo"])
 app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
+app.include_router(
+    media_library.router, prefix="/api/v1/media-library", tags=["media-library"]
+)
 
 app.include_router(channels.router, prefix="/api/v1/channels", tags=["channels"])
 app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
@@ -1361,6 +1368,12 @@ app.include_router(
     evaluations.router, prefix="/api/v1/evaluations", tags=["evaluations"]
 )
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+
+app.include_router(
+    admin_media_library.router,
+    prefix="/api/v1/admin/media-library",
+    tags=["admin-media-library"],
+)
 
 # SCIM 2.0 API for identity management
 if SCIM_ENABLED:
